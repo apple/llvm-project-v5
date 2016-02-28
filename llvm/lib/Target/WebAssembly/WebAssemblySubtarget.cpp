@@ -13,9 +13,9 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "WebAssemblySubtarget.h"
-#include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
 #include "WebAssemblyInstrInfo.h"
+#include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
+#include "WebAssemblySubtarget.h"
 #include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
@@ -46,4 +46,3 @@ WebAssemblySubtarget::WebAssemblySubtarget(const Triple &TT,
       TLInfo(TM, *this) {}
 
 bool WebAssemblySubtarget::enableMachineScheduler() const { return true; }
-bool WebAssemblySubtarget::useAA() const { return true; }

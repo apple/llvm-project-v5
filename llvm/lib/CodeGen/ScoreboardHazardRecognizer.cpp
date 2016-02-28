@@ -91,7 +91,7 @@ void ScoreboardHazardRecognizer::Reset() {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void ScoreboardHazardRecognizer::Scoreboard::dump() const {
+void ScoreboardHazardRecognizer::Scoreboard::dump() const {
   dbgs() << "Scoreboard:\n";
 
   unsigned last = Depth - 1;

@@ -22,7 +22,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <system_error>
-
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -105,7 +104,7 @@ bool GCOVFile::readGCDA(GCOVBuffer &Buffer) {
 }
 
 /// dump - Dump GCOVFile content to dbgs() for debugging purposes.
-LLVM_DUMP_METHOD void GCOVFile::dump() const {
+void GCOVFile::dump() const {
   for (const auto &FPtr : Functions)
     FPtr->dump();
 }
@@ -248,11 +247,9 @@ bool GCOVFunction::readGCNO(GCOVBuffer &Buff, GCOV::GCOVVersion Version) {
 /// readGCDA - Read a function from the GCDA buffer. Return false if an error
 /// occurs.
 bool GCOVFunction::readGCDA(GCOVBuffer &Buff, GCOV::GCOVVersion Version) {
-  uint32_t HeaderLength;
-  if (!Buff.readInt(HeaderLength))
+  uint32_t Dummy;
+  if (!Buff.readInt(Dummy))
     return false; // Function header length
-
-  uint64_t EndPos = Buff.getCursor() + HeaderLength * sizeof(uint32_t);
 
   uint32_t GCDAIdent;
   if (!Buff.readInt(GCDAIdent))
@@ -283,15 +280,13 @@ bool GCOVFunction::readGCDA(GCOVBuffer &Buff, GCOV::GCOVVersion Version) {
     }
   }
 
-  if (Buff.getCursor() < EndPos) {
-    StringRef GCDAName;
-    if (!Buff.readString(GCDAName))
-      return false;
-    if (Name != GCDAName) {
-      errs() << "Function names do not match: " << Name << " != " << GCDAName
-             << ".\n";
-      return false;
-    }
+  StringRef GCDAName;
+  if (!Buff.readString(GCDAName))
+    return false;
+  if (Name != GCDAName) {
+    errs() << "Function names do not match: " << Name << " != " << GCDAName
+           << ".\n";
+    return false;
   }
 
   if (!Buff.readArcTag()) {
@@ -345,7 +340,7 @@ uint64_t GCOVFunction::getExitCount() const {
 }
 
 /// dump - Dump GCOVFunction content to dbgs() for debugging purposes.
-LLVM_DUMP_METHOD void GCOVFunction::dump() const {
+void GCOVFunction::dump() const {
   dbgs() << "===== " << Name << " (" << Ident << ") @ " << Filename << ":"
          << LineNumber << "\n";
   for (const auto &Block : Blocks)
@@ -402,7 +397,7 @@ void GCOVBlock::collectLineCounts(FileInfo &FI) {
 }
 
 /// dump - Dump GCOVBlock content to dbgs() for debugging purposes.
-LLVM_DUMP_METHOD void GCOVBlock::dump() const {
+void GCOVBlock::dump() const {
   dbgs() << "Block : " << Number << " Counter : " << Counter << "\n";
   if (!SrcEdges.empty()) {
     dbgs() << "\tSource Edges : ";
@@ -501,7 +496,7 @@ public:
     OS << format("%5u:", LineNum) << Line << "\n";
   }
 };
-} // end anonymous namespace
+}
 
 /// Convert a path to a gcov filename. If PreservePaths is true, this
 /// translates "/" to "#", ".." to "^", and drops ".", to match gcov.
@@ -688,6 +683,7 @@ void FileInfo::print(raw_ostream &InfoOS, StringRef MainFilename,
   if (Options.FuncCoverage)
     printFuncCoverage(InfoOS);
   printFileCoverage(InfoOS);
+  return;
 }
 
 /// printFunctionSummary - Print function and block summary.

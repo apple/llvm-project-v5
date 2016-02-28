@@ -22,7 +22,6 @@
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SMLoc.h"
-#include "llvm/Support/TrailingObjects.h"
 #include "llvm/Support/raw_ostream.h"
 #include <map>
 
@@ -233,7 +232,7 @@ protected:
   /// We could pack these a bit tighter by not having the IK_FirstXXXInit
   /// and IK_LastXXXInit be their own values, but that would degrade
   /// readability for really no benefit.
-  enum InitKind : uint8_t {
+  enum InitKind {
     IK_BitInit,
     IK_FirstTypedInit,
     IK_BitsInit,
@@ -257,9 +256,6 @@ protected:
 
 private:
   const InitKind Kind;
-protected:
-  uint8_t Opc; // Used by UnOpInit, BinOpInit, and TernOpInit
-private:
   Init(const Init &) = delete;
   Init &operator=(const Init &) = delete;
   virtual void anchor();
@@ -268,7 +264,7 @@ public:
   InitKind getKind() const { return Kind; }
 
 protected:
-  explicit Init(InitKind K, uint8_t Opc = 0) : Kind(K), Opc(Opc) {}
+  explicit Init(InitKind K) : Kind(K) {}
 
 public:
   virtual ~Init() {}
@@ -369,8 +365,7 @@ class TypedInit : public Init {
   TypedInit &operator=(const TypedInit &Other) = delete;
 
 protected:
-  explicit TypedInit(InitKind K, RecTy *T, uint8_t Opc = 0)
-    : Init(K, Opc), Ty(T) {}
+  explicit TypedInit(InitKind K, RecTy *T) : Init(K), Ty(T) {}
   ~TypedInit() override {
     // If this is a DefInit we need to delete the RecordRecTy.
     if (getKind() == IK_DefInit)
@@ -457,12 +452,12 @@ public:
 /// BitsInit - { a, b, c } - Represents an initializer for a BitsRecTy value.
 /// It contains a vector of bits, whose size is determined by the type.
 ///
-class BitsInit final : public TypedInit, public FoldingSetNode,
-                       public TrailingObjects<BitsInit, Init *> {
-  unsigned NumBits;
+class BitsInit : public TypedInit, public FoldingSetNode {
+  std::vector<Init*> Bits;
 
-  BitsInit(unsigned N)
-    : TypedInit(IK_BitsInit, BitsRecTy::get(N)), NumBits(N) {}
+  BitsInit(ArrayRef<Init *> Range)
+    : TypedInit(IK_BitsInit, BitsRecTy::get(Range.size())),
+      Bits(Range.begin(), Range.end()) {}
 
   BitsInit(const BitsInit &Other) = delete;
   BitsInit &operator=(const BitsInit &Other) = delete;
@@ -475,7 +470,7 @@ public:
 
   void Profile(FoldingSetNodeID &ID) const;
 
-  unsigned getNumBits() const { return NumBits; }
+  unsigned getNumBits() const { return Bits.size(); }
 
   Init *convertInitializerTo(RecTy *Ty) const override;
   Init *
@@ -504,8 +499,8 @@ public:
   Init *resolveReferences(Record &R, const RecordVal *RV) const override;
 
   Init *getBit(unsigned Bit) const override {
-    assert(Bit < NumBits && "Bit index out of range!");
-    return getTrailingObjects<Init *>()[Bit];
+    assert(Bit < Bits.size() && "Bit index out of range!");
+    return Bits[Bit];
   }
 };
 
@@ -586,16 +581,16 @@ public:
 
 /// ListInit - [AL, AH, CL] - Represent a list of defs
 ///
-class ListInit final : public TypedInit, public FoldingSetNode,
-                       public TrailingObjects<BitsInit, Init *> {
-  unsigned NumValues;
+class ListInit : public TypedInit, public FoldingSetNode {
+  std::vector<Init*> Values;
 
 public:
-  typedef Init *const *const_iterator;
+  typedef std::vector<Init*>::const_iterator const_iterator;
 
 private:
-  explicit ListInit(unsigned N, RecTy *EltTy)
-    : TypedInit(IK_ListInit, ListRecTy::get(EltTy)), NumValues(N) {}
+  explicit ListInit(ArrayRef<Init *> Range, RecTy *EltTy)
+    : TypedInit(IK_ListInit, ListRecTy::get(EltTy)),
+      Values(Range.begin(), Range.end()) {}
 
   ListInit(const ListInit &Other) = delete;
   ListInit &operator=(const ListInit &Other) = delete;
@@ -609,8 +604,8 @@ public:
   void Profile(FoldingSetNodeID &ID) const;
 
   Init *getElement(unsigned i) const {
-    assert(i < NumValues && "List element index out of range!");
-    return getTrailingObjects<Init *>()[i];
+    assert(i < Values.size() && "List element index out of range!");
+    return Values[i];
   }
 
   Record *getElementAsRecord(unsigned i) const;
@@ -629,15 +624,13 @@ public:
 
   std::string getAsString() const override;
 
-  ArrayRef<Init*> getValues() const {
-    return makeArrayRef(getTrailingObjects<Init *>(), NumValues);
-  }
+  ArrayRef<Init*> getValues() const { return Values; }
 
-  const_iterator begin() const { return getTrailingObjects<Init *>(); }
-  const_iterator end  () const { return begin() + NumValues; }
+  const_iterator begin() const { return Values.begin(); }
+  const_iterator end  () const { return Values.end();   }
 
-  size_t         size () const { return NumValues;  }
-  bool           empty() const { return NumValues == 0; }
+  size_t         size () const { return Values.size();  }
+  bool           empty() const { return Values.empty(); }
 
   /// resolveListElementReference - This method is used to implement
   /// VarListElementInit::resolveReferences.  If the list element is resolvable
@@ -657,8 +650,7 @@ class OpInit : public TypedInit {
   OpInit &operator=(OpInit &Other) = delete;
 
 protected:
-  explicit OpInit(InitKind K, RecTy *Type, uint8_t Opc)
-    : TypedInit(K, Type, Opc) {}
+  explicit OpInit(InitKind K, RecTy *Type) : TypedInit(K, Type) {}
 
 public:
   static bool classof(const Init *I) {
@@ -683,15 +675,16 @@ public:
 
 /// UnOpInit - !op (X) - Transform an init.
 ///
-class UnOpInit : public OpInit, public FoldingSetNode {
+class UnOpInit : public OpInit {
 public:
-  enum UnaryOp : uint8_t { CAST, HEAD, TAIL, EMPTY };
+  enum UnaryOp { CAST, HEAD, TAIL, EMPTY };
 
 private:
+  UnaryOp Opc;
   Init *LHS;
 
   UnOpInit(UnaryOp opc, Init *lhs, RecTy *Type)
-    : OpInit(IK_UnOpInit, Type, opc), LHS(lhs) {}
+    : OpInit(IK_UnOpInit, Type), Opc(opc), LHS(lhs) {}
 
   UnOpInit(const UnOpInit &Other) = delete;
   UnOpInit &operator=(const UnOpInit &Other) = delete;
@@ -701,8 +694,6 @@ public:
     return I->getKind() == IK_UnOpInit;
   }
   static UnOpInit *get(UnaryOp opc, Init *lhs, RecTy *Type);
-
-  void Profile(FoldingSetNodeID &ID) const;
 
   // Clone - Clone this operator, replacing arguments with the new list
   OpInit *clone(std::vector<Init *> &Operands) const override {
@@ -717,7 +708,7 @@ public:
     return getOperand();
   }
 
-  UnaryOp getOpcode() const { return (UnaryOp)Opc; }
+  UnaryOp getOpcode() const { return Opc; }
   Init *getOperand() const { return LHS; }
 
   // Fold - If possible, fold this to a simpler init.  Return this if not
@@ -731,16 +722,16 @@ public:
 
 /// BinOpInit - !op (X, Y) - Combine two inits.
 ///
-class BinOpInit : public OpInit, public FoldingSetNode {
+class BinOpInit : public OpInit {
 public:
-  enum BinaryOp : uint8_t { ADD, AND, SHL, SRA, SRL, LISTCONCAT,
-                            STRCONCAT, CONCAT, EQ };
+  enum BinaryOp { ADD, AND, SHL, SRA, SRL, LISTCONCAT, STRCONCAT, CONCAT, EQ };
 
 private:
+  BinaryOp Opc;
   Init *LHS, *RHS;
 
   BinOpInit(BinaryOp opc, Init *lhs, Init *rhs, RecTy *Type) :
-      OpInit(IK_BinOpInit, Type, opc), LHS(lhs), RHS(rhs) {}
+      OpInit(IK_BinOpInit, Type), Opc(opc), LHS(lhs), RHS(rhs) {}
 
   BinOpInit(const BinOpInit &Other) = delete;
   BinOpInit &operator=(const BinOpInit &Other) = delete;
@@ -751,8 +742,6 @@ public:
   }
   static BinOpInit *get(BinaryOp opc, Init *lhs, Init *rhs,
                         RecTy *Type);
-
-  void Profile(FoldingSetNodeID &ID) const;
 
   // Clone - Clone this operator, replacing arguments with the new list
   OpInit *clone(std::vector<Init *> &Operands) const override {
@@ -770,7 +759,7 @@ public:
     }
   }
 
-  BinaryOp getOpcode() const { return (BinaryOp)Opc; }
+  BinaryOp getOpcode() const { return Opc; }
   Init *getLHS() const { return LHS; }
   Init *getRHS() const { return RHS; }
 
@@ -785,16 +774,17 @@ public:
 
 /// TernOpInit - !op (X, Y, Z) - Combine two inits.
 ///
-class TernOpInit : public OpInit, public FoldingSetNode {
+class TernOpInit : public OpInit {
 public:
-  enum TernaryOp : uint8_t { SUBST, FOREACH, IF };
+  enum TernaryOp { SUBST, FOREACH, IF };
 
 private:
+  TernaryOp Opc;
   Init *LHS, *MHS, *RHS;
 
   TernOpInit(TernaryOp opc, Init *lhs, Init *mhs, Init *rhs,
              RecTy *Type) :
-      OpInit(IK_TernOpInit, Type, opc), LHS(lhs), MHS(mhs), RHS(rhs) {}
+      OpInit(IK_TernOpInit, Type), Opc(opc), LHS(lhs), MHS(mhs), RHS(rhs) {}
 
   TernOpInit(const TernOpInit &Other) = delete;
   TernOpInit &operator=(const TernOpInit &Other) = delete;
@@ -806,8 +796,6 @@ public:
   static TernOpInit *get(TernaryOp opc, Init *lhs,
                          Init *mhs, Init *rhs,
                          RecTy *Type);
-
-  void Profile(FoldingSetNodeID &ID) const;
 
   // Clone - Clone this operator, replacing arguments with the new list
   OpInit *clone(std::vector<Init *> &Operands) const override {
@@ -827,7 +815,7 @@ public:
     }
   }
 
-  TernaryOp getOpcode() const { return (TernaryOp)Opc; }
+  TernaryOp getOpcode() const { return Opc; }
   Init *getLHS() const { return LHS; }
   Init *getMHS() const { return MHS; }
   Init *getRHS() const { return RHS; }
@@ -1157,22 +1145,21 @@ inline raw_ostream &operator<<(raw_ostream &OS, const RecordVal &RV) {
 class Record {
   static unsigned LastID;
 
+  // Unique record ID.
+  unsigned ID;
   Init *Name;
   // Location where record was instantiated, followed by the location of
   // multiclass prototypes used.
   SmallVector<SMLoc, 4> Locs;
   std::vector<Init *> TemplateArgs;
   std::vector<RecordVal> Values;
-  std::vector<std::pair<Record *, SMRange>> SuperClasses;
+  std::vector<Record *> SuperClasses;
+  std::vector<SMRange> SuperClassRanges;
 
   // Tracks Record instances. Not owned by Record.
   RecordKeeper &TrackedRecords;
 
   std::unique_ptr<DefInit> TheInit;
-
-  // Unique record ID.
-  unsigned ID;
-
   bool IsAnonymous;
 
   // Class-instance values can be used by other defs.  For example, Struct<i>
@@ -1194,8 +1181,8 @@ public:
   // Constructs a record.
   explicit Record(Init *N, ArrayRef<SMLoc> locs, RecordKeeper &records,
                   bool Anonymous = false) :
-    Name(N), Locs(locs.begin(), locs.end()), TrackedRecords(records),
-    ID(LastID++), IsAnonymous(Anonymous), ResolveFirst(false) {
+    ID(LastID++), Name(N), Locs(locs.begin(), locs.end()),
+    TrackedRecords(records), IsAnonymous(Anonymous), ResolveFirst(false) {
     init();
   }
   explicit Record(const std::string &N, ArrayRef<SMLoc> locs,
@@ -1207,10 +1194,11 @@ public:
   // ID number.  Don't copy TheInit either since it's owned by the original
   // record. All other fields can be copied normally.
   Record(const Record &O) :
-    Name(O.Name), Locs(O.Locs), TemplateArgs(O.TemplateArgs),
+    ID(LastID++), Name(O.Name), Locs(O.Locs), TemplateArgs(O.TemplateArgs),
     Values(O.Values), SuperClasses(O.SuperClasses),
-    TrackedRecords(O.TrackedRecords), ID(LastID++),
-    IsAnonymous(O.IsAnonymous), ResolveFirst(O.ResolveFirst) { }
+    SuperClassRanges(O.SuperClassRanges), TrackedRecords(O.TrackedRecords),
+    IsAnonymous(O.IsAnonymous),
+    ResolveFirst(O.ResolveFirst) { }
 
   static unsigned getNewUID() { return LastID++; }
 
@@ -1236,9 +1224,8 @@ public:
     return TemplateArgs;
   }
   ArrayRef<RecordVal> getValues() const { return Values; }
-  ArrayRef<std::pair<Record *, SMRange>>  getSuperClasses() const {
-    return SuperClasses;
-  }
+  ArrayRef<Record *>  getSuperClasses() const { return SuperClasses; }
+  ArrayRef<SMRange> getSuperClassRanges() const { return SuperClassRanges; }
 
   bool isTemplateArg(Init *Name) const {
     for (Init *TA : TemplateArgs)
@@ -1300,27 +1287,23 @@ public:
   }
 
   bool isSubClassOf(const Record *R) const {
-    for (const auto &SCPair : SuperClasses)
-      if (SCPair.first == R)
+    for (const Record *SC : SuperClasses)
+      if (SC == R)
         return true;
     return false;
   }
 
   bool isSubClassOf(StringRef Name) const {
-    for (const auto &SCPair : SuperClasses) {
-      if (const auto *SI = dyn_cast<StringInit>(SCPair.first->getNameInit())) {
-        if (SI->getValue() == Name)
-          return true;
-      } else if (SCPair.first->getNameInitAsString() == Name) {
+    for (const Record *SC : SuperClasses)
+      if (SC->getNameInitAsString() == Name)
         return true;
-      }
-    }
     return false;
   }
 
   void addSuperClass(Record *R, SMRange Range) {
     assert(!isSubClassOf(R) && "Already subclassing record!");
-    SuperClasses.push_back(std::make_pair(R, Range));
+    SuperClasses.push_back(R);
+    SuperClassRanges.push_back(Range);
   }
 
   /// resolveReferences - If there are any field references that refer to fields

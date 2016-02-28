@@ -19,12 +19,18 @@ using namespace llvm;
 
 namespace {
 
-class TestFunctionAnalysis : public AnalysisBase<TestFunctionAnalysis> {
+class TestFunctionAnalysis {
 public:
   struct Result {
     Result(int Count) : InstructionCount(Count) {}
     int InstructionCount;
   };
+
+  /// \brief Returns an opaque, unique ID for this pass type.
+  static void *ID() { return (void *)&PassID; }
+
+  /// \brief Returns the name of the analysis.
+  static StringRef name() { return "TestFunctionAnalysis"; }
 
   TestFunctionAnalysis(int &Runs) : Runs(Runs) {}
 
@@ -40,15 +46,24 @@ public:
   }
 
 private:
+  /// \brief Private static data to provide unique ID.
+  static char PassID;
+
   int &Runs;
 };
 
-class TestModuleAnalysis : public AnalysisBase<TestModuleAnalysis> {
+char TestFunctionAnalysis::PassID;
+
+class TestModuleAnalysis {
 public:
   struct Result {
     Result(int Count) : FunctionCount(Count) {}
     int FunctionCount;
   };
+
+  static void *ID() { return (void *)&PassID; }
+
+  static StringRef name() { return "TestModuleAnalysis"; }
 
   TestModuleAnalysis(int &Runs) : Runs(Runs) {}
 
@@ -61,10 +76,14 @@ public:
   }
 
 private:
+  static char PassID;
+
   int &Runs;
 };
 
-struct TestModulePass : PassBase<TestModulePass> {
+char TestModuleAnalysis::PassID;
+
+struct TestModulePass {
   TestModulePass(int &RunCount) : RunCount(RunCount) {}
 
   PreservedAnalyses run(Module &M) {
@@ -72,14 +91,18 @@ struct TestModulePass : PassBase<TestModulePass> {
     return PreservedAnalyses::none();
   }
 
+  static StringRef name() { return "TestModulePass"; }
+
   int &RunCount;
 };
 
-struct TestPreservingModulePass : PassBase<TestPreservingModulePass> {
+struct TestPreservingModulePass {
   PreservedAnalyses run(Module &M) { return PreservedAnalyses::all(); }
+
+  static StringRef name() { return "TestPreservingModulePass"; }
 };
 
-struct TestMinPreservingModulePass : PassBase<TestMinPreservingModulePass> {
+struct TestMinPreservingModulePass {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager *AM) {
     PreservedAnalyses PA;
 
@@ -89,9 +112,11 @@ struct TestMinPreservingModulePass : PassBase<TestMinPreservingModulePass> {
     PA.preserve<FunctionAnalysisManagerModuleProxy>();
     return PA;
   }
+
+  static StringRef name() { return "TestMinPreservingModulePass"; }
 };
 
-struct TestFunctionPass : PassBase<TestFunctionPass> {
+struct TestFunctionPass {
   TestFunctionPass(int &RunCount, int &AnalyzedInstrCount,
                    int &AnalyzedFunctionCount,
                    bool OnlyUseCachedResults = false)
@@ -122,6 +147,8 @@ struct TestFunctionPass : PassBase<TestFunctionPass> {
     return PreservedAnalyses::all();
   }
 
+  static StringRef name() { return "TestFunctionPass"; }
+
   int &RunCount;
   int &AnalyzedInstrCount;
   int &AnalyzedFunctionCount;
@@ -130,13 +157,15 @@ struct TestFunctionPass : PassBase<TestFunctionPass> {
 
 // A test function pass that invalidates all function analyses for a function
 // with a specific name.
-struct TestInvalidationFunctionPass : PassBase<TestInvalidationFunctionPass> {
+struct TestInvalidationFunctionPass {
   TestInvalidationFunctionPass(StringRef FunctionName) : Name(FunctionName) {}
 
   PreservedAnalyses run(Function &F) {
     return F.getName() == Name ? PreservedAnalyses::none()
                                : PreservedAnalyses::all();
   }
+
+  static StringRef name() { return "TestInvalidationFunctionPass"; }
 
   StringRef Name;
 };
@@ -203,13 +232,13 @@ TEST_F(PassManagerTest, BasicPreservedAnalyses) {
 TEST_F(PassManagerTest, Basic) {
   FunctionAnalysisManager FAM;
   int FunctionAnalysisRuns = 0;
-  FAM.registerPass([&] { return TestFunctionAnalysis(FunctionAnalysisRuns); });
+  FAM.registerPass(TestFunctionAnalysis(FunctionAnalysisRuns));
 
   ModuleAnalysisManager MAM;
   int ModuleAnalysisRuns = 0;
-  MAM.registerPass([&] { return TestModuleAnalysis(ModuleAnalysisRuns); });
-  MAM.registerPass([&] { return FunctionAnalysisManagerModuleProxy(FAM); });
-  FAM.registerPass([&] { return ModuleAnalysisManagerFunctionProxy(MAM); });
+  MAM.registerPass(TestModuleAnalysis(ModuleAnalysisRuns));
+  MAM.registerPass(FunctionAnalysisManagerModuleProxy(FAM));
+  FAM.registerPass(ModuleAnalysisManagerFunctionProxy(MAM));
 
   ModulePassManager MPM;
 

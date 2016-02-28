@@ -18,23 +18,20 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Transforms/IPO.h"
-#include "llvm/Transforms/IPO/FunctionAttrs.h"
 
 using namespace llvm;
 
 void llvm::initializeIPO(PassRegistry &Registry) {
   initializeArgPromotionPass(Registry);
   initializeConstantMergePass(Registry);
-  initializeCrossDSOCFIPass(Registry);
   initializeDAEPass(Registry);
   initializeDAHPass(Registry);
-  initializeForceFunctionAttrsLegacyPassPass(Registry);
+  initializeFunctionAttrsPass(Registry);
   initializeGlobalDCEPass(Registry);
   initializeGlobalOptPass(Registry);
   initializeIPCPPass(Registry);
   initializeAlwaysInlinerPass(Registry);
   initializeSimpleInlinerPass(Registry);
-  initializeInferFunctionAttrsLegacyPassPass(Registry);
   initializeInternalizePassPass(Registry);
   initializeLoopExtractorPass(Registry);
   initializeBlockExtractorPassPass(Registry);
@@ -42,8 +39,6 @@ void llvm::initializeIPO(PassRegistry &Registry) {
   initializeLowerBitSetsPass(Registry);
   initializeMergeFunctionsPass(Registry);
   initializePartialInlinerPass(Registry);
-  initializePostOrderFunctionAttrsLegacyPassPass(Registry);
-  initializeReversePostOrderFunctionAttrsPass(Registry);
   initializePruneEHPass(Registry);
   initializeStripDeadPrototypesLegacyPassPass(Registry);
   initializeStripSymbolsPass(Registry);
@@ -53,8 +48,6 @@ void llvm::initializeIPO(PassRegistry &Registry) {
   initializeBarrierNoopPass(Registry);
   initializeEliminateAvailableExternallyPass(Registry);
   initializeSampleProfileLoaderPass(Registry);
-  initializeFunctionImportPassPass(Registry);
-  initializeWholeProgramDevirtPass(Registry);
 }
 
 void LLVMInitializeIPO(LLVMPassRegistryRef R) {
@@ -74,7 +67,7 @@ void LLVMAddDeadArgEliminationPass(LLVMPassManagerRef PM) {
 }
 
 void LLVMAddFunctionAttrsPass(LLVMPassManagerRef PM) {
-  unwrap(PM)->add(createPostOrderFunctionAttrsLegacyPass());
+  unwrap(PM)->add(createFunctionAttrsPass());
 }
 
 void LLVMAddFunctionInliningPass(LLVMPassManagerRef PM) {

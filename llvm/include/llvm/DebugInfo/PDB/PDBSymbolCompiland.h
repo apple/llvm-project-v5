@@ -30,8 +30,8 @@ public:
   FORWARD_SYMBOL_METHOD(getLexicalParentId)
   FORWARD_SYMBOL_METHOD(getLibraryName)
   FORWARD_SYMBOL_METHOD(getName)
-
-  std::string getSourceFileName() const;
+  FORWARD_SYMBOL_METHOD(getSourceFileName)
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
 };
 }
 

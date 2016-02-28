@@ -85,7 +85,7 @@ computeTargetABI(const Triple &TT, StringRef CPU,
         (TT.getOS() == llvm::Triple::UnknownOS && TT.isOSBinFormatMachO()) ||
         CPU.startswith("cortex-m")) {
       TargetABI = ARMBaseTargetMachine::ARM_ABI_AAPCS;
-    } else if (TT.isWatchABI()) {
+    } else if (TT.isWatchOS()) {
       TargetABI = ARMBaseTargetMachine::ARM_ABI_AAPCS16;
     } else {
       TargetABI = ARMBaseTargetMachine::ARM_ABI_APCS;
@@ -188,15 +188,6 @@ ARMBaseTargetMachine::ARMBaseTargetMachine(const Target &T, const Triple &TT,
   if (Options.FloatABIType == FloatABI::Default)
     this->Options.FloatABIType =
         Subtarget.isTargetHardFloat() ? FloatABI::Hard : FloatABI::Soft;
-
-  // Default to triple-appropriate EABI
-  if (Options.EABIVersion == EABI::Default ||
-      Options.EABIVersion == EABI::Unknown) {
-    if (Subtarget.isTargetGNUAEABI())
-      this->Options.EABIVersion = EABI::GNU;
-    else
-      this->Options.EABIVersion = EABI::EABI5;
-  }
 }
 
 ARMBaseTargetMachine::~ARMBaseTargetMachine() {}

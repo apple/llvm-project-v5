@@ -10,17 +10,18 @@ add_llvm_library(LLVMCodeGen
   AtomicExpandPass.cpp
   BasicTargetTransformInfo.cpp
   BranchFolding.cpp
-  BuiltinGCs.cpp
   CalcSpillWeights.cpp
   CallingConvLower.cpp
   CodeGen.cpp
   CodeGenPrepare.cpp
+  CoreCLRGC.cpp
   CriticalAntiDepBreaker.cpp
-  DeadMachineInstructionElim.cpp
   DFAPacketizer.cpp
+  DeadMachineInstructionElim.cpp
   DwarfEHPrepare.cpp
   EarlyIfConversion.cpp
   EdgeBundles.cpp
+  ErlangGC.cpp
   ExecutionDepsFix.cpp
   ExpandISelPseudos.cpp
   ExpandPostRAPseudos.cpp
@@ -37,58 +38,57 @@ add_llvm_library(LLVMCodeGen
   InterferenceCache.cpp
   InterleavedAccessPass.cpp
   IntrinsicLowering.cpp
+  LLVMTargetMachine.cpp
   LatencyPriorityQueue.cpp
   LexicalScopes.cpp
-  LiveDebugValues.cpp
   LiveDebugVariables.cpp
-  LiveIntervalAnalysis.cpp
   LiveInterval.cpp
+  LiveIntervalAnalysis.cpp
   LiveIntervalUnion.cpp
-  LivePhysRegs.cpp
   LiveRangeCalc.cpp
   LiveRangeEdit.cpp
   LiveRegMatrix.cpp
+  LivePhysRegs.cpp
   LiveStackAnalysis.cpp
   LiveVariables.cpp
-  LLVMTargetMachine.cpp
   LocalStackSlotAllocation.cpp
-  LowerEmuTLS.cpp
   MachineBasicBlock.cpp
   MachineBlockFrequencyInfo.cpp
   MachineBlockPlacement.cpp
   MachineBranchProbabilityInfo.cpp
+  MachineCSE.cpp
   MachineCombiner.cpp
   MachineCopyPropagation.cpp
-  MachineCSE.cpp
-  MachineDominanceFrontier.cpp
   MachineDominators.cpp
-  MachineFunctionAnalysis.cpp
+  MachineDominanceFrontier.cpp
   MachineFunction.cpp
+  MachineFunctionAnalysis.cpp
   MachineFunctionPass.cpp
   MachineFunctionPrinterPass.cpp
-  MachineInstrBundle.cpp
   MachineInstr.cpp
+  MachineInstrBundle.cpp
   MachineLICM.cpp
   MachineLoopInfo.cpp
   MachineModuleInfo.cpp
   MachineModuleInfoImpls.cpp
   MachinePassRegistry.cpp
   MachinePostDominators.cpp
-  MachineRegionInfo.cpp
   MachineRegisterInfo.cpp
+  MachineRegionInfo.cpp
+  MachineSSAUpdater.cpp
   MachineScheduler.cpp
   MachineSink.cpp
-  MachineSSAUpdater.cpp
   MachineTraceMetrics.cpp
   MachineVerifier.cpp
   MIRPrinter.cpp
   MIRPrintingPass.cpp
+  OcamlGC.cpp
   OptimizePHIs.cpp
+  PHIElimination.cpp
+  PHIEliminationUtils.cpp
   ParallelCG.cpp
   Passes.cpp
   PeepholeOptimizer.cpp
-  PHIElimination.cpp
-  PHIEliminationUtils.cpp
   PostRASchedulerList.cpp
   ProcessImplicitDefs.cpp
   PrologEpilogInserter.cpp
@@ -102,22 +102,23 @@ add_llvm_library(LLVMCodeGen
   RegisterCoalescer.cpp
   RegisterPressure.cpp
   RegisterScavenging.cpp
-  SafeStack.cpp
   ScheduleDAG.cpp
   ScheduleDAGInstrs.cpp
   ScheduleDAGPrinter.cpp
   ScoreboardHazardRecognizer.cpp
-  ShadowStackGCLowering.cpp
   ShrinkWrap.cpp
+  ShadowStackGC.cpp
+  ShadowStackGCLowering.cpp
   SjLjEHPrepare.cpp
   SlotIndexes.cpp
   SpillPlacement.cpp
   SplitKit.cpp
   StackColoring.cpp
-  StackMapLivenessAnalysis.cpp
-  StackMaps.cpp
   StackProtector.cpp
   StackSlotColoring.cpp
+  StackMapLivenessAnalysis.cpp
+  StackMaps.cpp
+  StatepointExampleGC.cpp
   TailDuplication.cpp
   TargetFrameLoweringImpl.cpp
   TargetInstrInfo.cpp
@@ -143,4 +144,3 @@ add_dependencies(LLVMCodeGen intrinsics_gen)
 add_subdirectory(SelectionDAG)
 add_subdirectory(AsmPrinter)
 add_subdirectory(MIRParser)
-add_subdirectory(GlobalISel)

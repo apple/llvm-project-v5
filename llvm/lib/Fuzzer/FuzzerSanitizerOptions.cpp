@@ -10,8 +10,10 @@
 // Options reside in a separate file, so if we don't want to set the default
 // options we simply do not link this file in.
 // ASAN options:
+//   * don't dump the coverage to disk.
+//   * enable coverage by default.
 //   * enable handle_abort.
 //===----------------------------------------------------------------------===//
 extern "C" const char *__asan_default_options() {
-  return "handle_abort=1";
+  return "coverage_pcs=0:coverage=1:handle_abort=1";
 }

@@ -20,44 +20,46 @@
 
 using namespace llvm;
 
+#define GET_LLVM_INTRINSIC_FOR_GCC_BUILTIN
+#include "AMDGPUGenIntrinsics.inc"
+#undef GET_LLVM_INTRINSIC_FOR_GCC_BUILTIN
+
 AMDGPUIntrinsicInfo::AMDGPUIntrinsicInfo()
     : TargetIntrinsicInfo() {}
 
-static const char *const IntrinsicNameTable[] = {
+std::string AMDGPUIntrinsicInfo::getName(unsigned IntrID, Type **Tys,
+                                         unsigned numTys) const {
+  static const char *const names[] = {
 #define GET_INTRINSIC_NAME_TABLE
 #include "AMDGPUGenIntrinsics.inc"
 #undef GET_INTRINSIC_NAME_TABLE
-};
+  };
 
-std::string AMDGPUIntrinsicInfo::getName(unsigned IntrID, Type **Tys,
-                                         unsigned numTys) const {
   if (IntrID < Intrinsic::num_intrinsics) {
     return nullptr;
   }
   assert(IntrID < AMDGPUIntrinsic::num_AMDGPU_intrinsics &&
          "Invalid intrinsic ID");
 
-  std::string Result(IntrinsicNameTable[IntrID - Intrinsic::num_intrinsics]);
+  std::string Result(names[IntrID - Intrinsic::num_intrinsics]);
   return Result;
 }
 
-unsigned AMDGPUIntrinsicInfo::lookupName(const char *NameData,
+unsigned AMDGPUIntrinsicInfo::lookupName(const char *Name,
                                          unsigned Len) const {
-  StringRef Name(NameData, Len);
-  if (!Name.startswith("llvm."))
+  if (!StringRef(Name, Len).startswith("llvm."))
     return 0; // All intrinsics start with 'llvm.'
 
-  // Look for a name match in our table.  If the intrinsic is not overloaded,
-  // require an exact match. If it is overloaded, require a prefix match. The
-  // AMDGPU enum enum starts at Intrinsic::num_intrinsics.
-  int Idx = Intrinsic::lookupLLVMIntrinsicByName(IntrinsicNameTable, Name);
-  if (Idx >= 0) {
-    bool IsPrefixMatch = Name.size() > strlen(IntrinsicNameTable[Idx]);
-    return IsPrefixMatch == isOverloaded(Idx + 1)
-               ? Intrinsic::num_intrinsics + Idx
-               : 0;
-  }
+#define GET_FUNCTION_RECOGNIZER
+#include "AMDGPUGenIntrinsics.inc"
+#undef GET_FUNCTION_RECOGNIZER
+  AMDGPUIntrinsic::ID IntrinsicID =
+      (AMDGPUIntrinsic::ID)Intrinsic::not_intrinsic;
+  IntrinsicID = getIntrinsicForGCCBuiltin("AMDGPU", Name);
 
+  if (IntrinsicID != (AMDGPUIntrinsic::ID)Intrinsic::not_intrinsic) {
+    return IntrinsicID;
+  }
   return 0;
 }
 

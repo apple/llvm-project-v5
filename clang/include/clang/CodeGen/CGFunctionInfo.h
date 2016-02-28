@@ -20,7 +20,6 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/Type.h"
 #include "llvm/ADT/FoldingSet.h"
-#include "llvm/Support/TrailingObjects.h"
 #include <cassert>
 
 namespace llvm {
@@ -332,19 +331,13 @@ public:
   }
 };
 
-// Implementation detail of CGFunctionInfo, factored out so it can be named
-// in the TrailingObjects base class of CGFunctionInfo.
-struct CGFunctionInfoArgInfo {
-  CanQualType type;
-  ABIArgInfo info;
-};
-
 /// CGFunctionInfo - Class to encapsulate the information about a
 /// function definition.
-class CGFunctionInfo final
-    : public llvm::FoldingSetNode,
-      private llvm::TrailingObjects<CGFunctionInfo, CGFunctionInfoArgInfo> {
-  typedef CGFunctionInfoArgInfo ArgInfo;
+class CGFunctionInfo : public llvm::FoldingSetNode {
+  struct ArgInfo {
+    CanQualType type;
+    ABIArgInfo info;
+  };
 
   /// The LLVM::CallingConv to use for this function (as specified by the
   /// user).
@@ -381,16 +374,12 @@ class CGFunctionInfo final
   unsigned ArgStructAlign;
 
   unsigned NumArgs;
-
   ArgInfo *getArgsBuffer() {
-    return getTrailingObjects<ArgInfo>();
+    return reinterpret_cast<ArgInfo*>(this+1);
   }
   const ArgInfo *getArgsBuffer() const {
-    return getTrailingObjects<ArgInfo>();
+    return reinterpret_cast<const ArgInfo*>(this + 1);
   }
-
-  size_t numTrailingObjects(OverloadToken<ArgInfo>) { return NumArgs + 1; }
-  friend class TrailingObjects;
 
   CGFunctionInfo() : Required(RequiredArgs::All) {}
 
@@ -402,7 +391,6 @@ public:
                                 CanQualType resultType,
                                 ArrayRef<CanQualType> argTypes,
                                 RequiredArgs required);
-  void operator delete(void *p) { ::operator delete(p); }
 
   typedef const ArgInfo *const_arg_iterator;
   typedef ArgInfo *arg_iterator;
@@ -519,29 +507,6 @@ public:
       i->Profile(ID);
     }
   }
-};
-
-/// CGCalleeInfo - Class to encapsulate the information about a callee to be
-/// used during the generation of call/invoke instructions.
-class CGCalleeInfo {
-  /// \brief The function proto type of the callee.
-  const FunctionProtoType *CalleeProtoTy;
-  /// \brief The function declaration of the callee.
-  const Decl *CalleeDecl;
-
-public:
-  explicit CGCalleeInfo() : CalleeProtoTy(nullptr), CalleeDecl(nullptr) {}
-  CGCalleeInfo(const FunctionProtoType *calleeProtoTy, const Decl *calleeDecl)
-      : CalleeProtoTy(calleeProtoTy), CalleeDecl(calleeDecl) {}
-  CGCalleeInfo(const FunctionProtoType *calleeProtoTy)
-      : CalleeProtoTy(calleeProtoTy), CalleeDecl(nullptr) {}
-  CGCalleeInfo(const Decl *calleeDecl)
-      : CalleeProtoTy(nullptr), CalleeDecl(calleeDecl) {}
-
-  const FunctionProtoType *getCalleeFunctionProtoType() {
-    return CalleeProtoTy;
-  }
-  const Decl *getCalleeDecl() { return CalleeDecl; }
 };
 
 }  // end namespace CodeGen

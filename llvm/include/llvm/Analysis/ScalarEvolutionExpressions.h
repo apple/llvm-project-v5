@@ -43,7 +43,6 @@ namespace llvm {
       SCEV(ID, scConstant), V(v) {}
   public:
     ConstantInt *getValue() const { return V; }
-    const APInt &getAPInt() const { return getValue()->getValue(); }
 
     Type *getType() const { return V->getType(); }
 
@@ -164,18 +163,6 @@ namespace llvm {
 
     NoWrapFlags getNoWrapFlags(NoWrapFlags Mask = NoWrapMask) const {
       return (NoWrapFlags)(SubclassData & Mask);
-    }
-
-    bool hasNoUnsignedWrap() const {
-      return getNoWrapFlags(SCEV::FlagNUW) != SCEV::FlagAnyWrap;
-    }
-
-    bool hasNoSignedWrap() const {
-      return getNoWrapFlags(SCEV::FlagNSW) != SCEV::FlagAnyWrap;
-    }
-
-    bool hasNoSelfWrap() const {
-      return getNoWrapFlags(SCEV::FlagNW) != SCEV::FlagAnyWrap;
     }
 
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -536,10 +523,14 @@ namespace llvm {
         case scMulExpr:
         case scSMaxExpr:
         case scUMaxExpr:
-        case scAddRecExpr:
-	  for (const auto *Op : cast<SCEVNAryExpr>(S)->operands())
-	    push(Op);
+        case scAddRecExpr: {
+          const SCEVNAryExpr *NAry = cast<SCEVNAryExpr>(S);
+          for (SCEVNAryExpr::op_iterator I = NAry->op_begin(),
+                 E = NAry->op_end(); I != E; ++I) {
+            push(*I);
+          }
           break;
+        }
         case scUDivExpr: {
           const SCEVUDivExpr *UDiv = cast<SCEVUDivExpr>(S);
           push(UDiv->getLHS());

@@ -103,15 +103,14 @@ bool runToolOnCode(clang::FrontendAction *ToolAction, const Twine &Code,
                    const Twine &FileName,
                    std::shared_ptr<PCHContainerOperations> PCHContainerOps) {
   return runToolOnCodeWithArgs(ToolAction, Code, std::vector<std::string>(),
-                               FileName, "clang-tool", PCHContainerOps);
+                               FileName, PCHContainerOps);
 }
 
 static std::vector<std::string>
-getSyntaxOnlyToolArgs(const Twine &ToolName,
-                      const std::vector<std::string> &ExtraArgs,
+getSyntaxOnlyToolArgs(const std::vector<std::string> &ExtraArgs,
                       StringRef FileName) {
   std::vector<std::string> Args;
-  Args.push_back(ToolName.str());
+  Args.push_back("clang-tool");
   Args.push_back("-fsyntax-only");
   Args.insert(Args.end(), ExtraArgs.begin(), ExtraArgs.end());
   Args.push_back(FileName.str());
@@ -121,7 +120,6 @@ getSyntaxOnlyToolArgs(const Twine &ToolName,
 bool runToolOnCodeWithArgs(
     clang::FrontendAction *ToolAction, const Twine &Code,
     const std::vector<std::string> &Args, const Twine &FileName,
-    const Twine &ToolName,
     std::shared_ptr<PCHContainerOperations> PCHContainerOps,
     const FileContentMappings &VirtualMappedFiles) {
 
@@ -134,7 +132,7 @@ bool runToolOnCodeWithArgs(
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
   llvm::IntrusiveRefCntPtr<FileManager> Files(
       new FileManager(FileSystemOptions(), OverlayFileSystem));
-  ToolInvocation Invocation(getSyntaxOnlyToolArgs(ToolName, Args, FileNameRef),
+  ToolInvocation Invocation(getSyntaxOnlyToolArgs(Args, FileNameRef),
                             ToolAction, Files.get(), PCHContainerOps);
 
   SmallString<1024> CodeStorage;
@@ -472,12 +470,12 @@ std::unique_ptr<ASTUnit>
 buildASTFromCode(const Twine &Code, const Twine &FileName,
                  std::shared_ptr<PCHContainerOperations> PCHContainerOps) {
   return buildASTFromCodeWithArgs(Code, std::vector<std::string>(), FileName,
-                                  "clang-tool", PCHContainerOps);
+                                  PCHContainerOps);
 }
 
 std::unique_ptr<ASTUnit> buildASTFromCodeWithArgs(
     const Twine &Code, const std::vector<std::string> &Args,
-    const Twine &FileName, const Twine &ToolName,
+    const Twine &FileName,
     std::shared_ptr<PCHContainerOperations> PCHContainerOps) {
   SmallString<16> FileNameStorage;
   StringRef FileNameRef = FileName.toNullTerminatedStringRef(FileNameStorage);
@@ -491,8 +489,8 @@ std::unique_ptr<ASTUnit> buildASTFromCodeWithArgs(
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
   llvm::IntrusiveRefCntPtr<FileManager> Files(
       new FileManager(FileSystemOptions(), OverlayFileSystem));
-  ToolInvocation Invocation(getSyntaxOnlyToolArgs(ToolName, Args, FileNameRef),
-                            &Action, Files.get(), PCHContainerOps);
+  ToolInvocation Invocation(getSyntaxOnlyToolArgs(Args, FileNameRef), &Action,
+                            Files.get(), PCHContainerOps);
 
   SmallString<1024> CodeStorage;
   InMemoryFileSystem->addFile(FileNameRef, 0,

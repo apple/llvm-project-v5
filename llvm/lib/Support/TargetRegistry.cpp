@@ -73,7 +73,8 @@ const Target *TargetRegistry::lookupTarget(const std::string &TT,
   auto I = std::find_if(targets().begin(), targets().end(), ArchMatch);
 
   if (I == targets().end()) {
-    Error = "No available targets are compatible with this triple.";
+    Error = "No available targets are compatible with this triple, "
+      "see -version for the available targets.";
     return nullptr;
   }
 

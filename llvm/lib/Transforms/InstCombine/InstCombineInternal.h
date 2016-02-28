@@ -390,7 +390,6 @@ private:
   Value *EmitGEPOffset(User *GEP);
   Instruction *scalarizePHI(ExtractElementInst &EI, PHINode *PN);
   Value *EvaluateInDifferentElementOrder(Value *V, ArrayRef<int> Mask);
-  Instruction *foldCastedBitwiseLogic(BinaryOperator &I);
 
 public:
   /// \brief Inserts an instruction \p New before instruction \p Old
@@ -415,10 +414,10 @@ public:
   /// \brief A combiner-aware RAUW-like routine.
   ///
   /// This method is to be used when an instruction is found to be dead,
-  /// replaceable with another preexisting expression. Here we add all uses of
+  /// replacable with another preexisting expression. Here we add all uses of
   /// I to the worklist, replace all uses of I with the new value, then return
   /// I, so that the inst combiner will know that I was modified.
-  Instruction *replaceInstUsesWith(Instruction &I, Value *V) {
+  Instruction *ReplaceInstUsesWith(Instruction &I, Value *V) {
     // If there are no uses to replace, then we return nullptr to indicate that
     // no changes were made to the program.
     if (I.use_empty()) return nullptr;
@@ -452,16 +451,16 @@ public:
   /// When dealing with an instruction that has side effects or produces a void
   /// value, we can't rely on DCE to delete the instruction. Instead, visit
   /// methods should return the value returned by this function.
-  Instruction *eraseInstFromFunction(Instruction &I) {
+  Instruction *EraseInstFromFunction(Instruction &I) {
     DEBUG(dbgs() << "IC: ERASE " << I << '\n');
 
     assert(I.use_empty() && "Cannot erase instruction that is used!");
     // Make sure that we reprocess all operands now that we reduced their
     // use counts.
     if (I.getNumOperands() < 8) {
-      for (Use &Operand : I.operands())
-        if (auto *Inst = dyn_cast<Instruction>(Operand))
-          Worklist.Add(Inst);
+      for (User::op_iterator i = I.op_begin(), e = I.op_end(); i != e; ++i)
+        if (Instruction *Op = dyn_cast<Instruction>(*i))
+          Worklist.Add(Op);
     }
     Worklist.Remove(&I);
     I.eraseFromParent();
@@ -557,7 +556,7 @@ private:
   Value *InsertRangeTest(Value *V, Constant *Lo, Constant *Hi, bool isSigned,
                          bool Inside);
   Instruction *PromoteCastOfAllocation(BitCastInst &CI, AllocaInst &AI);
-  Instruction *MatchBSwapOrBitReverse(BinaryOperator &I);
+  Instruction *MatchBSwap(BinaryOperator &I);
   bool SimplifyStoreAtEndOfBlock(StoreInst &SI);
   Instruction *SimplifyMemTransfer(MemIntrinsic *MI);
   Instruction *SimplifyMemSet(MemSetInst *MI);

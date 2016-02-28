@@ -61,14 +61,14 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "si-lower-control-flow"
-
 namespace {
 
-class SILowerControlFlow : public MachineFunctionPass {
+class SILowerControlFlowPass : public MachineFunctionPass {
+
 private:
   static const unsigned SkipThreshold = 12;
 
+  static char ID;
   const SIRegisterInfo *TRI;
   const SIInstrInfo *TII;
 
@@ -94,15 +94,13 @@ private:
   void IndirectDst(MachineInstr &MI);
 
 public:
-  static char ID;
-
-  SILowerControlFlow() :
+  SILowerControlFlowPass(TargetMachine &tm) :
     MachineFunctionPass(ID), TRI(nullptr), TII(nullptr) { }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
 
   const char *getPassName() const override {
-    return "SI Lower control flow pseudo instructions";
+    return "SI Lower control flow instructions";
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
@@ -113,20 +111,14 @@ public:
 
 } // End anonymous namespace
 
-char SILowerControlFlow::ID = 0;
+char SILowerControlFlowPass::ID = 0;
 
-INITIALIZE_PASS(SILowerControlFlow, DEBUG_TYPE,
-                "SI lower control flow", false, false)
-
-char &llvm::SILowerControlFlowPassID = SILowerControlFlow::ID;
-
-
-FunctionPass *llvm::createSILowerControlFlowPass() {
-  return new SILowerControlFlow();
+FunctionPass *llvm::createSILowerControlFlowPass(TargetMachine &tm) {
+  return new SILowerControlFlowPass(tm);
 }
 
-bool SILowerControlFlow::shouldSkip(MachineBasicBlock *From,
-                                    MachineBasicBlock *To) {
+bool SILowerControlFlowPass::shouldSkip(MachineBasicBlock *From,
+                                        MachineBasicBlock *To) {
 
   unsigned NumInstr = 0;
 
@@ -145,7 +137,7 @@ bool SILowerControlFlow::shouldSkip(MachineBasicBlock *From,
   return false;
 }
 
-void SILowerControlFlow::Skip(MachineInstr &From, MachineOperand &To) {
+void SILowerControlFlowPass::Skip(MachineInstr &From, MachineOperand &To) {
 
   if (!shouldSkip(*From.getParent()->succ_begin(), To.getMBB()))
     return;
@@ -155,7 +147,7 @@ void SILowerControlFlow::Skip(MachineInstr &From, MachineOperand &To) {
     .addOperand(To);
 }
 
-void SILowerControlFlow::SkipIfDead(MachineInstr &MI) {
+void SILowerControlFlowPass::SkipIfDead(MachineInstr &MI) {
 
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
@@ -188,7 +180,7 @@ void SILowerControlFlow::SkipIfDead(MachineInstr &MI) {
   BuildMI(MBB, Insert, DL, TII->get(AMDGPU::S_ENDPGM));
 }
 
-void SILowerControlFlow::If(MachineInstr &MI) {
+void SILowerControlFlowPass::If(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
   unsigned Reg = MI.getOperand(0).getReg();
@@ -206,7 +198,7 @@ void SILowerControlFlow::If(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::Else(MachineInstr &MI) {
+void SILowerControlFlowPass::Else(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
   unsigned Dst = MI.getOperand(0).getReg();
@@ -225,13 +217,13 @@ void SILowerControlFlow::Else(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::Break(MachineInstr &MI) {
+void SILowerControlFlowPass::Break(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
 
   unsigned Dst = MI.getOperand(0).getReg();
   unsigned Src = MI.getOperand(1).getReg();
-
+ 
   BuildMI(MBB, &MI, DL, TII->get(AMDGPU::S_OR_B64), Dst)
           .addReg(AMDGPU::EXEC)
           .addReg(Src);
@@ -239,14 +231,14 @@ void SILowerControlFlow::Break(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::IfBreak(MachineInstr &MI) {
+void SILowerControlFlowPass::IfBreak(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
 
   unsigned Dst = MI.getOperand(0).getReg();
   unsigned Vcc = MI.getOperand(1).getReg();
   unsigned Src = MI.getOperand(2).getReg();
-
+ 
   BuildMI(MBB, &MI, DL, TII->get(AMDGPU::S_OR_B64), Dst)
           .addReg(Vcc)
           .addReg(Src);
@@ -254,14 +246,14 @@ void SILowerControlFlow::IfBreak(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::ElseBreak(MachineInstr &MI) {
+void SILowerControlFlowPass::ElseBreak(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
 
   unsigned Dst = MI.getOperand(0).getReg();
   unsigned Saved = MI.getOperand(1).getReg();
   unsigned Src = MI.getOperand(2).getReg();
-
+ 
   BuildMI(MBB, &MI, DL, TII->get(AMDGPU::S_OR_B64), Dst)
           .addReg(Saved)
           .addReg(Src);
@@ -269,7 +261,7 @@ void SILowerControlFlow::ElseBreak(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::Loop(MachineInstr &MI) {
+void SILowerControlFlowPass::Loop(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
   unsigned Src = MI.getOperand(0).getReg();
@@ -284,7 +276,7 @@ void SILowerControlFlow::Loop(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::EndCf(MachineInstr &MI) {
+void SILowerControlFlowPass::EndCf(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
   unsigned Reg = MI.getOperand(0).getReg();
@@ -297,14 +289,14 @@ void SILowerControlFlow::EndCf(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::Branch(MachineInstr &MI) {
+void SILowerControlFlowPass::Branch(MachineInstr &MI) {
   if (MI.getOperand(0).getMBB() == MI.getParent()->getNextNode())
     MI.eraseFromParent();
 
   // If these aren't equal, this is probably an infinite loop.
 }
 
-void SILowerControlFlow::Kill(MachineInstr &MI) {
+void SILowerControlFlowPass::Kill(MachineInstr &MI) {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
   const MachineOperand &Op = MI.getOperand(0);
@@ -333,7 +325,7 @@ void SILowerControlFlow::Kill(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
-void SILowerControlFlow::LoadM0(MachineInstr &MI, MachineInstr *MovRel, int Offset) {
+void SILowerControlFlowPass::LoadM0(MachineInstr &MI, MachineInstr *MovRel, int Offset) {
 
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
@@ -411,9 +403,9 @@ void SILowerControlFlow::LoadM0(MachineInstr &MI, MachineInstr *MovRel, int Offs
 //                         indirect Index. e.g. v0 = v[VecReg + Offset]
 //                         As an output, this is a constant value that needs
 //                         to be added to the value stored in M0.
-void SILowerControlFlow::computeIndirectRegAndOffset(unsigned VecReg,
-                                                     unsigned &Reg,
-                                                     int &Offset) {
+void SILowerControlFlowPass::computeIndirectRegAndOffset(unsigned VecReg,
+                                                         unsigned &Reg,
+                                                         int &Offset) {
   unsigned SubReg = TRI->getSubReg(VecReg, AMDGPU::sub0);
   if (!SubReg)
     SubReg = VecReg;
@@ -431,7 +423,7 @@ void SILowerControlFlow::computeIndirectRegAndOffset(unsigned VecReg,
   Reg = RC->getRegister(RegIdx);
 }
 
-void SILowerControlFlow::IndirectSrc(MachineInstr &MI) {
+void SILowerControlFlowPass::IndirectSrc(MachineInstr &MI) {
 
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
@@ -451,7 +443,7 @@ void SILowerControlFlow::IndirectSrc(MachineInstr &MI) {
   LoadM0(MI, MovRel, Off);
 }
 
-void SILowerControlFlow::IndirectDst(MachineInstr &MI) {
+void SILowerControlFlowPass::IndirectDst(MachineInstr &MI) {
 
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MI.getDebugLoc();
@@ -463,7 +455,7 @@ void SILowerControlFlow::IndirectDst(MachineInstr &MI) {
 
   computeIndirectRegAndOffset(Dst, Reg, Off);
 
-  MachineInstr *MovRel =
+  MachineInstr *MovRel = 
     BuildMI(*MBB.getParent(), DL, TII->get(AMDGPU::V_MOVRELD_B32_e32))
             .addReg(Reg, RegState::Define)
             .addReg(Val)
@@ -472,7 +464,7 @@ void SILowerControlFlow::IndirectDst(MachineInstr &MI) {
   LoadM0(MI, MovRel, Off);
 }
 
-bool SILowerControlFlow::runOnMachineFunction(MachineFunction &MF) {
+bool SILowerControlFlowPass::runOnMachineFunction(MachineFunction &MF) {
   TII = static_cast<const SIInstrInfo *>(MF.getSubtarget().getInstrInfo());
   TRI =
       static_cast<const SIRegisterInfo *>(MF.getSubtarget().getRegisterInfo());
@@ -572,11 +564,43 @@ bool SILowerControlFlow::runOnMachineFunction(MachineFunction &MF) {
             AMDGPU::EXEC).addReg(AMDGPU::EXEC);
   }
 
+  // FIXME: This seems inappropriate to do here.
   if (NeedFlat && MFI->IsKernel) {
+    // Insert the prologue initializing the SGPRs pointing to the scratch space
+    // for flat accesses.
+    const MachineFrameInfo *FrameInfo = MF.getFrameInfo();
+
     // TODO: What to use with function calls?
-    // We will need to Initialize the flat scratch register pair.
-    if (NeedFlat)
-      MFI->setHasFlatInstructions(true);
+
+    // FIXME: This is reporting stack size that is used in a scratch buffer
+    // rather than registers as well.
+    uint64_t StackSizeBytes = FrameInfo->getStackSize();
+
+    int IndirectBegin
+      = static_cast<const AMDGPUInstrInfo*>(TII)->getIndirectIndexBegin(MF);
+    // Convert register index to 256-byte unit.
+    uint64_t StackOffset = IndirectBegin < 0 ? 0 : (4 * IndirectBegin / 256);
+
+    assert((StackSizeBytes < 0xffff) && StackOffset < 0xffff &&
+           "Stack limits should be smaller than 16-bits");
+
+    // Initialize the flat scratch register pair.
+    // TODO: Can we use one s_mov_b64 here?
+
+    // Offset is in units of 256-bytes.
+    MachineBasicBlock &MBB = MF.front();
+    DebugLoc NoDL;
+    MachineBasicBlock::iterator Start = MBB.getFirstNonPHI();
+    const MCInstrDesc &SMovK = TII->get(AMDGPU::S_MOVK_I32);
+
+    assert(isInt<16>(StackOffset) && isInt<16>(StackSizeBytes));
+
+    BuildMI(MBB, Start, NoDL, SMovK, AMDGPU::FLAT_SCR_LO)
+      .addImm(StackOffset);
+
+    // Documentation says size is "per-thread scratch size in bytes"
+    BuildMI(MBB, Start, NoDL, SMovK, AMDGPU::FLAT_SCR_HI)
+      .addImm(StackSizeBytes);
   }
 
   return true;

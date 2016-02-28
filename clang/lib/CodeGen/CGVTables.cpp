@@ -175,16 +175,14 @@ CodeGenFunction::GenerateVarArgsThunk(llvm::Function *Fn,
   // Find the first store of "this", which will be to the alloca associated
   // with "this".
   Address ThisPtr(&*AI, CGM.getClassPointerAlignment(MD->getParent()));
-  llvm::BasicBlock *EntryBB = &Fn->front();
-  llvm::BasicBlock::iterator ThisStore =
+  llvm::BasicBlock *EntryBB = Fn->begin();
+  llvm::Instruction *ThisStore =
       std::find_if(EntryBB->begin(), EntryBB->end(), [&](llvm::Instruction &I) {
-        return isa<llvm::StoreInst>(I) &&
-               I.getOperand(0) == ThisPtr.getPointer();
-      });
-  assert(ThisStore != EntryBB->end() &&
-         "Store of this should be in entry block?");
+    return isa<llvm::StoreInst>(I) && I.getOperand(0) == ThisPtr.getPointer();
+  });
+  assert(ThisStore && "Store of this should be in entry block?");
   // Adjust "this", if necessary.
-  Builder.SetInsertPoint(&*ThisStore);
+  Builder.SetInsertPoint(ThisStore);
   llvm::Value *AdjustedThisPtr =
       CGM.getCXXABI().performThisAdjustment(*this, ThisPtr, Thunk.This);
   ThisStore->setOperand(0, AdjustedThisPtr);
@@ -378,8 +376,8 @@ void CodeGenFunction::EmitMustTailThunk(const CXXMethodDecl *MD,
   // Apply the standard set of call attributes.
   unsigned CallingConv;
   CodeGen::AttributeListType AttributeList;
-  CGM.ConstructAttributeList(Callee->getName(), *CurFnInfo, MD, AttributeList,
-                             CallingConv, /*AttrOnCallSite=*/true);
+  CGM.ConstructAttributeList(*CurFnInfo, MD, AttributeList, CallingConv,
+                             /*AttrOnCallSite=*/true);
   llvm::AttributeSet Attrs =
       llvm::AttributeSet::get(getLLVMContext(), AttributeList);
   Call->setAttributes(Attrs);
@@ -582,24 +580,6 @@ llvm::Constant *CodeGenVTables::CreateVTableInitializer(
         break;
       }
 
-      if (CGM.getLangOpts().CUDA) {
-        // Emit NULL for methods we can't codegen on this
-        // side. Otherwise we'd end up with vtable with unresolved
-        // references.
-        const CXXMethodDecl *MD = cast<CXXMethodDecl>(GD.getDecl());
-        // OK on device side: functions w/ __device__ attribute
-        // OK on host side: anything except __device__-only functions.
-        bool CanEmitMethod = CGM.getLangOpts().CUDAIsDevice
-                                 ? MD->hasAttr<CUDADeviceAttr>()
-                                 : (MD->hasAttr<CUDAHostAttr>() ||
-                                    !MD->hasAttr<CUDADeviceAttr>());
-        if (!CanEmitMethod) {
-          Init = llvm::ConstantExpr::getNullValue(Int8PtrTy);
-          break;
-        }
-        // Method is acceptable, continue processing as usual.
-      }
-
       if (cast<CXXMethodDecl>(GD.getDecl())->isPure()) {
         // We have a pure virtual member function.
         if (!PureVirtualFn) {
@@ -719,7 +699,7 @@ static bool shouldEmitAvailableExternallyVTable(const CodeGenModule &CGM,
          CGM.getCXXABI().canSpeculativelyEmitVTable(RD);
 }
 
-/// Compute the required linkage of the vtable for the given class.
+/// Compute the required linkage of the v-table for the given class.
 ///
 /// Note that we only call this at the end of the translation unit.
 llvm::GlobalVariable::LinkageTypes 
@@ -804,7 +784,7 @@ CodeGenModule::getVTableLinkage(const CXXRecordDecl *RD) {
   llvm_unreachable("Invalid TemplateSpecializationKind!");
 }
 
-/// This is a callback from Sema to tell us that that a particular vtable is
+/// This is a callback from Sema to tell us that that a particular v-table is
 /// required to be emitted in this translation unit.
 ///
 /// This is only called for vtables that _must_ be emitted (mainly due to key
@@ -832,43 +812,38 @@ CodeGenVTables::GenerateClassData(const CXXRecordDecl *RD) {
 /// the translation unit.
 ///
 /// The only semantic restriction here is that the object file should
-/// not contain a vtable definition when that vtable is defined
+/// not contain a v-table definition when that v-table is defined
 /// strongly elsewhere.  Otherwise, we'd just like to avoid emitting
-/// vtables when unnecessary.
+/// v-tables when unnecessary.
 bool CodeGenVTables::isVTableExternal(const CXXRecordDecl *RD) {
   assert(RD->isDynamicClass() && "Non-dynamic classes have no VTable.");
 
-  // We always synthesize vtables on the import side regardless of whether or
-  // not it is an explicit instantiation declaration.
-  if (CGM.getTarget().getCXXABI().isMicrosoft() && RD->hasAttr<DLLImportAttr>())
-    return false;
-
   // If we have an explicit instantiation declaration (and not a
-  // definition), the vtable is defined elsewhere.
+  // definition), the v-table is defined elsewhere.
   TemplateSpecializationKind TSK = RD->getTemplateSpecializationKind();
   if (TSK == TSK_ExplicitInstantiationDeclaration)
     return true;
 
   // Otherwise, if the class is an instantiated template, the
-  // vtable must be defined here.
+  // v-table must be defined here.
   if (TSK == TSK_ImplicitInstantiation ||
       TSK == TSK_ExplicitInstantiationDefinition)
     return false;
 
   // Otherwise, if the class doesn't have a key function (possibly
-  // anymore), the vtable must be defined here.
+  // anymore), the v-table must be defined here.
   const CXXMethodDecl *keyFunction = CGM.getContext().getCurrentKeyFunction(RD);
   if (!keyFunction)
     return false;
 
   // Otherwise, if we don't have a definition of the key function, the
-  // vtable must be defined somewhere else.
+  // v-table must be defined somewhere else.
   return !keyFunction->hasBody();
 }
 
 /// Given that we're currently at the end of the translation unit, and
-/// we've emitted a reference to the vtable for this class, should
-/// we define that vtable?
+/// we've emitted a reference to the v-table for this class, should
+/// we define that v-table?
 static bool shouldEmitVTableAtEndOfTranslationUnit(CodeGenModule &CGM,
                                                    const CXXRecordDecl *RD) {
   // If vtable is internal then it has to be done.
@@ -880,7 +855,7 @@ static bool shouldEmitVTableAtEndOfTranslationUnit(CodeGenModule &CGM,
 }
 
 /// Given that at some point we emitted a reference to one or more
-/// vtables, and that we are now at the end of the translation unit,
+/// v-tables, and that we are now at the end of the translation unit,
 /// decide whether we should emit them.
 void CodeGenModule::EmitDeferredVTables() {
 #ifndef NDEBUG
@@ -894,38 +869,25 @@ void CodeGenModule::EmitDeferredVTables() {
       VTables.GenerateClassData(RD);
 
   assert(savedSize == DeferredVTables.size() &&
-         "deferred extra vtables during vtable emission?");
+         "deferred extra v-tables during v-table emission?");
   DeferredVTables.clear();
 }
 
-bool CodeGenModule::NeedVTableBitSets() {
-  return getCodeGenOpts().WholeProgramVTables ||
-         getLangOpts().Sanitize.has(SanitizerKind::CFIVCall) ||
-         getLangOpts().Sanitize.has(SanitizerKind::CFINVCall) ||
-         getLangOpts().Sanitize.has(SanitizerKind::CFIDerivedCast) ||
-         getLangOpts().Sanitize.has(SanitizerKind::CFIUnrelatedCast);
-}
+bool CodeGenModule::IsCFIBlacklistedRecord(const CXXRecordDecl *RD) {
+  if (RD->hasAttr<UuidAttr>() &&
+      getContext().getSanitizerBlacklist().isBlacklistedType("attr:uuid"))
+    return true;
 
-bool CodeGenModule::IsBitSetBlacklistedRecord(const CXXRecordDecl *RD) {
-  std::string TypeName = RD->getQualifiedNameAsString();
-  auto isInBlacklist = [&](const SanitizerBlacklist &BL) {
-    if (RD->hasAttr<UuidAttr>() && BL.isBlacklistedType("attr:uuid"))
-      return true;
-
-    return BL.isBlacklistedType(TypeName);
-  };
-
-  return isInBlacklist(WholeProgramVTablesBlacklist) ||
-         ((LangOpts.Sanitize.has(SanitizerKind::CFIVCall) ||
-           LangOpts.Sanitize.has(SanitizerKind::CFINVCall) ||
-           LangOpts.Sanitize.has(SanitizerKind::CFIDerivedCast) ||
-           LangOpts.Sanitize.has(SanitizerKind::CFIUnrelatedCast)) &&
-          isInBlacklist(getContext().getSanitizerBlacklist()));
+  return getContext().getSanitizerBlacklist().isBlacklistedType(
+      RD->getQualifiedNameAsString());
 }
 
 void CodeGenModule::EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
                                             const VTableLayout &VTLayout) {
-  if (!NeedVTableBitSets())
+  if (!LangOpts.Sanitize.has(SanitizerKind::CFIVCall) &&
+      !LangOpts.Sanitize.has(SanitizerKind::CFINVCall) &&
+      !LangOpts.Sanitize.has(SanitizerKind::CFIDerivedCast) &&
+      !LangOpts.Sanitize.has(SanitizerKind::CFIUnrelatedCast))
     return;
 
   CharUnits PointerWidth =
@@ -935,7 +897,7 @@ void CodeGenModule::EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
   std::vector<BSEntry> BitsetEntries;
   // Create a bit set entry for each address point.
   for (auto &&AP : VTLayout.getAddressPoints()) {
-    if (IsBitSetBlacklistedRecord(AP.first.getBase()))
+    if (IsCFIBlacklistedRecord(AP.first.getBase()))
       continue;
 
     BitsetEntries.push_back(std::make_pair(AP.first.getBase(), AP.second));
@@ -970,7 +932,6 @@ void CodeGenModule::EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
   llvm::NamedMDNode *BitsetsMD =
       getModule().getOrInsertNamedMetadata("llvm.bitsets");
   for (auto BitsetEntry : BitsetEntries)
-    CreateVTableBitSetEntry(BitsetsMD, VTable,
-                            PointerWidth * BitsetEntry.second,
-                            BitsetEntry.first);
+    BitsetsMD->addOperand(CreateVTableBitSetEntry(
+        VTable, PointerWidth * BitsetEntry.second, BitsetEntry.first));
 }

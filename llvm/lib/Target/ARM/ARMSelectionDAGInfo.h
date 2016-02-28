@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the ARM subclass for SelectionDAGTargetInfo.
+// This file defines the ARM subclass for TargetSelectionDAGInfo.
 //
 //===----------------------------------------------------------------------===//
 
@@ -15,8 +15,7 @@
 #define LLVM_LIB_TARGET_ARM_ARMSELECTIONDAGINFO_H
 
 #include "MCTargetDesc/ARMAddressingModes.h"
-#include "llvm/CodeGen/RuntimeLibcalls.h"
-#include "llvm/CodeGen/SelectionDAGTargetInfo.h"
+#include "llvm/Target/TargetSelectionDAGInfo.h"
 
 namespace llvm {
 
@@ -36,7 +35,7 @@ namespace ARM_AM {
   }
 }  // end namespace ARM_AM
 
-class ARMSelectionDAGInfo : public SelectionDAGTargetInfo {
+class ARMSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
 
   SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, SDLoc dl,

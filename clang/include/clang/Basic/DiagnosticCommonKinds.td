@@ -157,8 +157,6 @@ def ext_old_implicitly_unsigned_long_cxx : ExtWarn<
   "this literal will %select{have type 'long long'|be ill-formed}0 "
   "in C++11 onwards">,
   InGroup<CXX11Compat>;
-def ext_clang_enable_if : Extension<"'enable_if' is a clang extension">,
-                          InGroup<GccCompat>;
 
 // SEH
 def err_seh_expected_handler : Error<
@@ -215,5 +213,5 @@ def err_arcmt_nsinvocation_ownership : Error<"NSInvocation's %0 is not safe to b
 
 // OpenMP
 def err_omp_more_one_clause : Error<
-  "directive '#pragma omp %0' cannot contain more than one '%1' clause%select{| with '%3' name modifier| with 'source' dependence}2">;
+  "directive '#pragma omp %0' cannot contain more than one '%1' clause%select{| with '%3' name modifier}2">;
 }

@@ -137,21 +137,20 @@ let Namespace = "Hexagon" in {
   def LC1  : Rc<3,  "lc1",       ["c3"]>,   DwarfRegNum<[70]>;
   def P3_0 : Rc<4,  "p3:0",      ["c4"], [P0, P1, P2, P3]>,
                                             DwarfRegNum<[71]>;
-  def C5   : Rc<5,  "c5",        ["c5"]>,   DwarfRegNum<[72]>; // future use
-  def C6   : Rc<6,  "c6",        [], [M0]>, DwarfRegNum<[73]>;
-  def C7   : Rc<7,  "c7",        [], [M1]>, DwarfRegNum<[74]>;
+  def C6   : Rc<6,  "c6",        [], [M0]>, DwarfRegNum<[72]>;
+  def C7   : Rc<7,  "c7",        [], [M1]>, DwarfRegNum<[73]>;
 
-  def USR  : Rc<8,  "usr",       ["c8"]>,   DwarfRegNum<[75]> {
+  def USR  : Rc<8,  "usr",       ["c8"]>,   DwarfRegNum<[74]> {
     let SubRegIndices = [subreg_overflow];
     let SubRegs = [USR_OVF];
   }
-  def PC   : Rc<9,  "pc">,                  DwarfRegNum<[76]>;
-  def UGP  : Rc<10, "ugp",       ["c10"]>,  DwarfRegNum<[77]>;
-  def GP   : Rc<11, "gp">,                  DwarfRegNum<[78]>;
-  def CS0  : Rc<12, "cs0",       ["c12"]>,  DwarfRegNum<[79]>;
-  def CS1  : Rc<13, "cs1",       ["c13"]>,  DwarfRegNum<[80]>;
-  def UPCL : Rc<14, "upcyclelo", ["c14"]>,  DwarfRegNum<[81]>;
-  def UPCH : Rc<15, "upcyclehi", ["c15"]>,  DwarfRegNum<[82]>;
+  def PC   : Rc<9,  "pc">,                  DwarfRegNum<[75]>;
+  def UGP  : Rc<10, "ugp",       ["c10"]>,  DwarfRegNum<[76]>;
+  def GP   : Rc<11, "gp">,                  DwarfRegNum<[77]>;
+  def CS0  : Rc<12, "cs0",       ["c12"]>,  DwarfRegNum<[78]>;
+  def CS1  : Rc<13, "cs1",       ["c13"]>,  DwarfRegNum<[79]>;
+  def UPCL : Rc<14, "upcyclelo", ["c14"]>,  DwarfRegNum<[80]>;
+  def UPCH : Rc<15, "upcyclehi", ["c15"]>,  DwarfRegNum<[81]>;
 }
 
   // Control registers pairs.
@@ -217,22 +216,21 @@ def DoubleRegs : RegisterClass<"Hexagon", [i64, f64, v8i8, v4i16, v2i32], 64,
 def VectorRegs : RegisterClass<"Hexagon", [v64i8, v32i16, v16i32, v8i64], 512,
                                (add (sequence "V%u", 0, 31))>;
 
-def VecDblRegs : RegisterClass<"Hexagon",
-                         [v128i8, v64i16, v32i32, v16i64], 1024,
+def VecDblRegs : RegisterClass<"Hexagon", [v16i64], 1024,
                                (add (sequence "W%u", 0, 15))>;
 
 def VectorRegs128B : RegisterClass<"Hexagon",
-                         [v128i8, v64i16, v32i32, v16i64], 1024,
+                         [v16i64], 1024,
                                (add (sequence "V%u", 0, 31))>;
 
 def VecDblRegs128B : RegisterClass<"Hexagon",
-                         [v256i8,v128i16,v64i32,v32i64], 2048,
+                         [v16i64], 2048,
                                (add (sequence "W%u", 0, 15))>;
 
-def VecPredRegs : RegisterClass<"Hexagon", [v512i1], 512,
+def VecPredRegs : RegisterClass<"Hexagon", [v16i32], 512,
                                 (add (sequence "Q%u", 0, 3))>;
 
-def VecPredRegs128B : RegisterClass<"Hexagon", [v1024i1], 1024,
+def VecPredRegs128B : RegisterClass<"Hexagon", [v16i64], 1024,
                                    (add (sequence "Q%u", 0, 3))>;
 
 def PredRegs : RegisterClass<"Hexagon", 
@@ -261,13 +259,7 @@ def VolatileV3 {
                          R28, R31,
                          P0, P1, P2, P3,
                          M0, M1,
-                         LC0, LC1, SA0, SA1, USR, USR_OVF, CS0, CS1,
-                         V0, V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11,
-                         V12, V13, V14, V15, V16, V17, V18, V19, V20, V21,
-                         V22, V23, V24, V25, V26, V27, V28, V29, V30, V31,
-                         W0, W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11,
-                         W12, W13, W14, W15,
-                         Q0, Q1, Q2, Q3];
+                         LC0, LC1, SA0, SA1, USR, USR_OVF];
 }
 
 def PositiveHalfWord : PatLeaf<(i32 IntRegs:$a),

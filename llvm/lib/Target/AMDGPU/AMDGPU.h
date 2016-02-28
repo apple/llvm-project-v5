@@ -20,10 +20,8 @@ class AMDGPUInstrPrinter;
 class AMDGPUSubtarget;
 class AMDGPUTargetMachine;
 class FunctionPass;
-struct MachineSchedContext;
 class MCAsmInfo;
 class raw_ostream;
-class ScheduleDAGInstrs;
 class Target;
 class TargetMachine;
 
@@ -44,18 +42,13 @@ FunctionPass *createSIFoldOperandsPass();
 FunctionPass *createSILowerI1CopiesPass();
 FunctionPass *createSIShrinkInstructionsPass();
 FunctionPass *createSILoadStoreOptimizerPass(TargetMachine &tm);
-FunctionPass *createSILowerControlFlowPass();
+FunctionPass *createSILowerControlFlowPass(TargetMachine &tm);
 FunctionPass *createSIFixControlFlowLiveIntervalsPass();
 FunctionPass *createSIFixSGPRCopiesPass();
 FunctionPass *createSIFixSGPRLiveRangesPass();
 FunctionPass *createSICodeEmitterPass(formatted_raw_ostream &OS);
-FunctionPass *createSIInsertWaitsPass();
-
-ScheduleDAGInstrs *createSIMachineScheduler(MachineSchedContext *C);
-
-ModulePass *createAMDGPUAnnotateKernelFeaturesPass();
-void initializeAMDGPUAnnotateKernelFeaturesPass(PassRegistry &);
-extern char &AMDGPUAnnotateKernelFeaturesID;
+FunctionPass *createSIInsertWaits(TargetMachine &tm);
+FunctionPass *createSIPrepareScratchRegs();
 
 void initializeSIFoldOperandsPass(PassRegistry &);
 extern char &SIFoldOperandsID;
@@ -69,21 +62,12 @@ extern char &SILowerI1CopiesID;
 void initializeSILoadStoreOptimizerPass(PassRegistry &);
 extern char &SILoadStoreOptimizerID;
 
-void initializeSILowerControlFlowPass(PassRegistry &);
-extern char &SILowerControlFlowPassID;
-
-
 // Passes common to R600 and SI
-FunctionPass *createAMDGPUPromoteAlloca(const TargetMachine *TM = nullptr);
-void initializeAMDGPUPromoteAllocaPass(PassRegistry&);
-extern char &AMDGPUPromoteAllocaID;
-
-FunctionPass *createAMDGPUAddDivergenceMetadata(const AMDGPUSubtarget &ST);
+FunctionPass *createAMDGPUPromoteAlloca(const AMDGPUSubtarget &ST);
 Pass *createAMDGPUStructurizeCFGPass();
 FunctionPass *createAMDGPUISelDag(TargetMachine &tm);
 ModulePass *createAMDGPUAlwaysInlinePass();
 ModulePass *createAMDGPUOpenCLImageTypeLoweringPass();
-FunctionPass *createAMDGPUAnnotateUniformValues();
 
 void initializeSIFixControlFlowLiveIntervalsPass(PassRegistry&);
 extern char &SIFixControlFlowLiveIntervalsID;
@@ -91,14 +75,6 @@ extern char &SIFixControlFlowLiveIntervalsID;
 void initializeSIFixSGPRLiveRangesPass(PassRegistry&);
 extern char &SIFixSGPRLiveRangesID;
 
-void initializeAMDGPUAnnotateUniformValuesPass(PassRegistry&);
-extern char &AMDGPUAnnotateUniformValuesPassID;
-
-void initializeSIAnnotateControlFlowPass(PassRegistry&);
-extern char &SIAnnotateControlFlowPassID;
-
-void initializeSIInsertWaitsPass(PassRegistry&);
-extern char &SIInsertWaitsID;
 
 extern Target TheAMDGPUTarget;
 extern Target TheGCNTarget;
@@ -112,6 +88,8 @@ enum TargetIndex {
   TI_SCRATCH_RSRC_DWORD3
 };
 }
+
+#define END_OF_TEXT_LABEL_NAME "EndOfTextLabel"
 
 } // End namespace llvm
 

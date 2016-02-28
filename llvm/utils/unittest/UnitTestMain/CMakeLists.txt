@@ -3,7 +3,5 @@ add_llvm_library(gtest_main
 
   LINK_LIBS
   gtest
-
-  LINK_COMPONENTS
-  Support # Depends on llvm::cl
+  LLVMSupport # Depends on llvm::cl
   )

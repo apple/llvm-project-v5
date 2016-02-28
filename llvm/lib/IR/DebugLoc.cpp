@@ -67,7 +67,7 @@ DebugLoc DebugLoc::get(unsigned Line, unsigned Col, const MDNode *Scope,
                          const_cast<MDNode *>(InlinedAt));
 }
 
-LLVM_DUMP_METHOD void DebugLoc::dump() const {
+void DebugLoc::dump() const {
 #ifndef NDEBUG
   if (!Loc)
     return;

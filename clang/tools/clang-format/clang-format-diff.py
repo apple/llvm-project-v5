@@ -31,6 +31,10 @@ import StringIO
 import sys
 
 
+# Change this to the full path if clang-format is not on the path.
+binary = 'clang-format'
+
+
 def main():
   parser = argparse.ArgumentParser(description=
                                    'Reformat changed lines in diff. Without -i '
@@ -52,11 +56,10 @@ def main():
                       help='let clang-format sort include blocks')
   parser.add_argument('-v', '--verbose', action='store_true',
                       help='be more verbose, ineffective without -i')
-  parser.add_argument('-style',
-                      help='formatting style to apply (LLVM, Google, Chromium, '
-                      'Mozilla, WebKit)')
-  parser.add_argument('-binary', default='clang-format',
-                      help='location of binary to use for clang-format')
+  parser.add_argument(
+      '-style',
+      help=
+      'formatting style to apply (LLVM, Google, Chromium, Mozilla, WebKit)')
   args = parser.parse_args()
 
   # Extract changed lines for each file.
@@ -92,7 +95,7 @@ def main():
   for filename, lines in lines_by_file.iteritems():
     if args.i and args.verbose:
       print 'Formatting', filename
-    command = [args.binary, filename]
+    command = [binary, filename]
     if args.i:
       command.append('-i')
     if args.sort_includes:

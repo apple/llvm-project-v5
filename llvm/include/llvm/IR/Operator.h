@@ -401,7 +401,6 @@ public:
   }
 
   Type *getSourceElementType() const;
-  Type *getResultElementType() const;
 
   /// Method to return the address space of the pointer operand.
   unsigned getPointerAddressSpace() const {

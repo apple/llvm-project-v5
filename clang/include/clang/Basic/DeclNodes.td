@@ -51,7 +51,6 @@ def Named : Decl<1>;
             : DDecl<VarTemplateSpecialization>;
         def ImplicitParam : DDecl<Var>;
         def ParmVar : DDecl<Var>;
-        def OMPCapturedExpr : DDecl<Var>;
       def NonTypeTemplateParm : DDecl<Declarator>;
   def Template : DDecl<Named, 1>;
     def RedeclarableTemplate : DDecl<Template, 1>;

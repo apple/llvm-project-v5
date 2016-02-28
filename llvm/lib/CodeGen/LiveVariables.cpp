@@ -64,7 +64,7 @@ LiveVariables::VarInfo::findKill(const MachineBasicBlock *MBB) const {
   return nullptr;
 }
 
-LLVM_DUMP_METHOD void LiveVariables::VarInfo::dump() const {
+void LiveVariables::VarInfo::dump() const {
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   dbgs() << "  Alive in blocks: ";
   for (SparseBitVector<>::iterator I = AliveBlocks.begin(),
@@ -522,15 +522,11 @@ void LiveVariables::runOnInstr(MachineInstr *MI,
       continue;
     unsigned MOReg = MO.getReg();
     if (MO.isUse()) {
-      if (!(TargetRegisterInfo::isPhysicalRegister(MOReg) &&
-            MRI->isReserved(MOReg)))
-        MO.setIsKill(false);
+      MO.setIsKill(false);
       if (MO.readsReg())
         UseRegs.push_back(MOReg);
     } else /*MO.isDef()*/ {
-      if (!(TargetRegisterInfo::isPhysicalRegister(MOReg) &&
-            MRI->isReserved(MOReg)))
-        MO.setIsDead(false);
+      MO.setIsDead(false);
       DefRegs.push_back(MOReg);
     }
   }

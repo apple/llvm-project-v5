@@ -14,6 +14,7 @@
 #include "Mips16ISelDAGToDAG.h"
 #include "MCTargetDesc/MipsBaseInfo.h"
 #include "Mips.h"
+#include "MipsAnalyzeImmediate.h"
 #include "MipsMachineFunction.h"
 #include "MipsRegisterInfo.h"
 #include "llvm/CodeGen/MachineConstantPool.h"

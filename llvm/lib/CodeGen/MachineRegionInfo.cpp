@@ -104,8 +104,8 @@ void MachineRegionInfoPass::verifyAnalysis() const {
 void MachineRegionInfoPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
   AU.addRequiredTransitive<DominatorTreeWrapperPass>();
-  AU.addRequired<PostDominatorTreeWrapperPass>();
-  AU.addRequired<DominanceFrontierWrapperPass>();
+  AU.addRequired<PostDominatorTree>();
+  AU.addRequired<DominanceFrontier>();
 }
 
 void MachineRegionInfoPass::print(raw_ostream &OS, const Module *) const {
@@ -113,7 +113,7 @@ void MachineRegionInfoPass::print(raw_ostream &OS, const Module *) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void MachineRegionInfoPass::dump() const {
+void MachineRegionInfoPass::dump() const {
   RI.dump();
 }
 #endif

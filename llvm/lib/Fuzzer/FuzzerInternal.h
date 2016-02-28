@@ -12,62 +12,25 @@
 #ifndef LLVM_FUZZER_INTERNAL_H
 #define LLVM_FUZZER_INTERNAL_H
 
-#include <algorithm>
 #include <cassert>
-#include <chrono>
 #include <climits>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
-#include <random>
-#include <string.h>
 #include <string>
-#include <unordered_set>
 #include <vector>
+#include <unordered_set>
 
 #include "FuzzerInterface.h"
 
 namespace fuzzer {
-using namespace std::chrono;
 typedef std::vector<uint8_t> Unit;
+using namespace std::chrono;
 
-// A simple POD sized array of bytes.
-template <size_t kMaxSize> class FixedWord {
-public:
-  FixedWord() {}
-  FixedWord(const uint8_t *B, uint8_t S) { Set(B, S); }
-
-  void Set(const uint8_t *B, uint8_t S) {
-    assert(S <= kMaxSize);
-    memcpy(Data, B, S);
-    Size = S;
-  }
-
-  bool operator==(const FixedWord<kMaxSize> &w) const {
-    return Size == w.Size && 0 == memcmp(Data, w.Data, Size);
-  }
-
-  bool operator<(const FixedWord<kMaxSize> &w) const {
-    if (Size != w.Size)
-      return Size < w.Size;
-    return memcmp(Data, w.Data, Size) < 0;
-  }
-
-  static size_t GetMaxSize() { return kMaxSize; }
-  const uint8_t *data() const { return Data; }
-  uint8_t size() const { return Size; }
-
-private:
-  uint8_t Size = 0;
-  uint8_t Data[kMaxSize];
-};
-
-typedef FixedWord<27> Word; // 28 bytes.
-
-bool IsFile(const std::string &Path);
 std::string FileToString(const std::string &Path);
-Unit FileToVector(const std::string &Path, size_t MaxSize = 0);
+Unit FileToVector(const std::string &Path);
 void ReadDirToVectorOfUnits(const char *Path, std::vector<Unit> *V,
-                            long *Epoch, size_t MaxSize);
+                            long *Epoch);
 void WriteToFile(const Unit &U, const std::string &Path);
 void CopyFileToErr(const std::string &Path);
 // Returns "Dir/FileName" or equivalent for the current OS.
@@ -75,17 +38,12 @@ std::string DirPlusFile(const std::string &DirPath,
                         const std::string &FileName);
 
 void Printf(const char *Fmt, ...);
-void PrintHexArray(const Unit &U, const char *PrintAfter = "");
-void PrintHexArray(const uint8_t *Data, size_t Size,
-                   const char *PrintAfter = "");
-void PrintASCII(const uint8_t *Data, size_t Size, const char *PrintAfter = "");
+void Print(const Unit &U, const char *PrintAfter = "");
 void PrintASCII(const Unit &U, const char *PrintAfter = "");
-void PrintASCII(const Word &W, const char *PrintAfter = "");
 std::string Hash(const Unit &U);
 void SetTimer(int Seconds);
-std::string Base64(const Unit &U);
-int ExecuteCommand(const std::string &Command);
-size_t GetPeakRSSMb();
+void PrintFileAsBase64(const std::string &Path);
+void ExecuteCommand(const std::string &Command);
 
 // Private copy of SHA1 implementation.
 static const int kSHA1NumBytes = 20;
@@ -94,29 +52,11 @@ void ComputeSHA1(const uint8_t *Data, size_t Len, uint8_t *Out);
 
 // Changes U to contain only ASCII (isprint+isspace) characters.
 // Returns true iff U has been changed.
-bool ToASCII(uint8_t *Data, size_t Size);
+bool ToASCII(Unit &U);
 bool IsASCII(const Unit &U);
 
 int NumberOfCpuCores();
 int GetPid();
-
-// Clears the current PC Map.
-void PcMapResetCurrent();
-// Merges the current PC Map into the combined one, and clears the former.
-void PcMapMergeCurrentToCombined();
-// Returns the size of the combined PC Map.
-size_t PcMapCombinedSize();
-
-class Random {
- public:
-  Random(unsigned int seed) : R(seed) {}
-  size_t Rand() { return R(); }
-  size_t RandBool() { return Rand() % 2; }
-  size_t operator()(size_t n) { return n ? Rand() % n : 0; }
-  std::mt19937 &Get_mt19937() { return R; }
- private:
-  std::mt19937 R;
-};
 
 // Dictionary.
 
@@ -128,159 +68,20 @@ bool ParseOneDictionaryEntry(const std::string &Str, Unit *U);
 // were parsed succesfully.
 bool ParseDictionaryFile(const std::string &Text, std::vector<Unit> *Units);
 
-class DictionaryEntry {
- public:
-  DictionaryEntry() {}
-  DictionaryEntry(Word W) : W(W) {}
-  DictionaryEntry(Word W, size_t PositionHint) : W(W), PositionHint(PositionHint) {}
-  const Word &GetW() const { return W; }
-
-  bool HasPositionHint() const { return PositionHint != std::numeric_limits<size_t>::max(); }
-  size_t GetPositionHint() const {
-    assert(HasPositionHint());
-    return PositionHint;
-  }
-  void IncUseCount() { UseCount++; }
-  void IncSuccessCount() { SuccessCount++; }
-  size_t GetUseCount() const { return UseCount; }
-  size_t GetSuccessCount() const {return SuccessCount; }
-
-private:
-  Word W;
-  size_t PositionHint = std::numeric_limits<size_t>::max();
-  size_t UseCount = 0;
-  size_t SuccessCount = 0;
-};
-
-class Dictionary {
- public:
-  static const size_t kMaxDictSize = 1 << 14;
-
-  bool ContainsWord(const Word &W) const {
-    return std::any_of(begin(), end(), [&](const DictionaryEntry &DE) {
-      return DE.GetW() == W;
-    });
-  }
-  const DictionaryEntry *begin() const { return &DE[0]; }
-  const DictionaryEntry *end() const { return begin() + Size; }
-  DictionaryEntry & operator[] (size_t Idx) {
-    assert(Idx < Size);
-    return DE[Idx];
-  }
-  void push_back(DictionaryEntry DE) {
-    if (Size < kMaxDictSize)
-      this->DE[Size++] = DE;
-  }
-  void clear() { Size = 0; }
-  bool empty() const { return Size == 0; }
-  size_t size() const { return Size; }
-
-private:
-  DictionaryEntry DE[kMaxDictSize];
-  size_t Size = 0;
-};
-
-class MutationDispatcher {
-public:
-  MutationDispatcher(Random &Rand) : Rand(Rand) {}
-  ~MutationDispatcher() {}
-  /// Indicate that we are about to start a new sequence of mutations.
-  void StartMutationSequence();
-  /// Print the current sequence of mutations.
-  void PrintMutationSequence();
-  /// Indicate that the current sequence of mutations was successfull.
-  void RecordSuccessfulMutationSequence();
-  /// Mutates data by shuffling bytes.
-  size_t Mutate_ShuffleBytes(uint8_t *Data, size_t Size, size_t MaxSize);
-  /// Mutates data by erasing a byte.
-  size_t Mutate_EraseByte(uint8_t *Data, size_t Size, size_t MaxSize);
-  /// Mutates data by inserting a byte.
-  size_t Mutate_InsertByte(uint8_t *Data, size_t Size, size_t MaxSize);
-  /// Mutates data by chanding one byte.
-  size_t Mutate_ChangeByte(uint8_t *Data, size_t Size, size_t MaxSize);
-  /// Mutates data by chanding one bit.
-  size_t Mutate_ChangeBit(uint8_t *Data, size_t Size, size_t MaxSize);
-
-  /// Mutates data by adding a word from the manual dictionary.
-  size_t Mutate_AddWordFromManualDictionary(uint8_t *Data, size_t Size,
-                                            size_t MaxSize);
-
-  /// Mutates data by adding a word from the temporary automatic dictionary.
-  size_t Mutate_AddWordFromTemporaryAutoDictionary(uint8_t *Data, size_t Size,
-                                                   size_t MaxSize);
-
-  /// Mutates data by adding a word from the persistent automatic dictionary.
-  size_t Mutate_AddWordFromPersistentAutoDictionary(uint8_t *Data, size_t Size,
-                                                    size_t MaxSize);
-
-  /// Tries to find an ASCII integer in Data, changes it to another ASCII int.
-  size_t Mutate_ChangeASCIIInteger(uint8_t *Data, size_t Size, size_t MaxSize);
-
-  /// CrossOver Data with some other element of the corpus.
-  size_t Mutate_CrossOver(uint8_t *Data, size_t Size, size_t MaxSize);
-
-  /// Applies one of the above mutations.
-  /// Returns the new size of data which could be up to MaxSize.
-  size_t Mutate(uint8_t *Data, size_t Size, size_t MaxSize);
-
-  /// Creates a cross-over of two pieces of Data, returns its size.
-  size_t CrossOver(const uint8_t *Data1, size_t Size1, const uint8_t *Data2,
-                   size_t Size2, uint8_t *Out, size_t MaxOutSize);
-
-  void AddWordToManualDictionary(const Word &W);
-
-  void AddWordToAutoDictionary(const Word &W, size_t PositionHint);
-  void ClearAutoDictionary();
-  void PrintRecommendedDictionary();
-
-  void SetCorpus(const std::vector<Unit> *Corpus) { this->Corpus = Corpus; }
-
-  Random &GetRand() { return Rand; }
-
-private:
-
-  struct Mutator {
-    size_t (MutationDispatcher::*Fn)(uint8_t *Data, size_t Size, size_t Max);
-    const char *Name;
-  };
-
-  size_t AddWordFromDictionary(Dictionary &D, uint8_t *Data, size_t Size,
-                               size_t MaxSize);
-
-  Random &Rand;
-  // Dictionary provided by the user via -dict=DICT_FILE.
-  Dictionary ManualDictionary;
-  // Temporary dictionary modified by the fuzzer itself,
-  // recreated periodically.
-  Dictionary TempAutoDictionary;
-  // Persistent dictionary modified by the fuzzer, consists of
-  // entries that led to successfull discoveries in the past mutations.
-  Dictionary PersistentAutoDictionary;
-  std::vector<Mutator> CurrentMutatorSequence;
-  std::vector<DictionaryEntry *> CurrentDictionaryEntrySequence;
-  const std::vector<Unit> *Corpus = nullptr;
-  std::vector<uint8_t> MutateInPlaceHere;
-
-  static Mutator Mutators[];
-};
-
 class Fuzzer {
-public:
+ public:
   struct FuzzingOptions {
     int Verbosity = 1;
     int MaxLen = 0;
     int UnitTimeoutSec = 300;
-    bool AbortOnTimeout = false;
-    int TimeoutExitCode = 77;
     int MaxTotalTimeSec = 0;
     bool DoCrossOver = true;
-    int MutateDepth = 5;
+    int  MutateDepth = 5;
     bool ExitOnFirst = false;
     bool UseCounters = false;
     bool UseIndirCalls = true;
     bool UseTraces = false;
-    bool UseMemcmp = true;
-    bool UseFullCoverageSet = false;
+    bool UseFullCoverageSet  = false;
     bool Reload = true;
     bool ShuffleAtStartUp = true;
     int PreferSmallDuringInitialShuffle = -1;
@@ -288,32 +89,24 @@ public:
     int SyncTimeout = 600;
     int ReportSlowUnits = 10;
     bool OnlyASCII = false;
+    int TBMDepth = 10;
+    int TBMWidth = 10;
     std::string OutputCorpus;
     std::string SyncCommand;
     std::string ArtifactPrefix = "./";
-    std::string ExactArtifactPath;
+    std::vector<Unit> Dictionary;
     bool SaveArtifacts = true;
-    bool PrintNEW = true; // Print a status line when new units are found;
-    bool OutputCSV = false;
-    bool PrintNewCovPcs = false;
-    bool PrintFinalStats = false;
   };
-  Fuzzer(UserCallback CB, MutationDispatcher &MD, FuzzingOptions Options);
-  void AddToCorpus(const Unit &U) {
-    Corpus.push_back(U);
-    UpdateCorpusDistribution();
-  }
-  size_t ChooseUnitIdxToMutate();
-  const Unit &ChooseUnitToMutate() { return Corpus[ChooseUnitIdxToMutate()]; };
+  Fuzzer(UserSuppliedFuzzer &USF, FuzzingOptions Options);
+  void AddToCorpus(const Unit &U) { Corpus.push_back(U); }
+  size_t ChooseUnitToMutate();
   void Loop();
-  void Drill();
   void ShuffleAndMinimize();
   void InitializeTraceState();
-  void AssignTaintLabels(uint8_t *Data, size_t Size);
   size_t CorpusSize() const { return Corpus.size(); }
-  void ReadDir(const std::string &Path, long *Epoch, size_t MaxSize) {
+  void ReadDir(const std::string &Path, long *Epoch) {
     Printf("Loading corpus: %s\n", Path.c_str());
-    ReadDirToVectorOfUnits(Path.c_str(), &Corpus, Epoch, MaxSize);
+    ReadDirToVectorOfUnits(Path.c_str(), &Corpus, Epoch);
   }
   void RereadOutputCorpus();
   // Save the current corpus to OutputCorpus.
@@ -323,36 +116,26 @@ public:
     return duration_cast<seconds>(system_clock::now() - ProcessStartTime)
         .count();
   }
-  size_t execPerSec() {
-    size_t Seconds = secondsSinceProcessStartUp();
-    return Seconds ? TotalNumberOfRuns / Seconds : 0;
-  }
 
   size_t getTotalNumberOfRuns() { return TotalNumberOfRuns; }
 
   static void StaticAlarmCallback();
 
-  void ExecuteCallback(const uint8_t *Data, size_t Size);
+  void ExecuteCallback(const Unit &U);
 
   // Merge Corpora[1:] into Corpora[0].
   void Merge(const std::vector<std::string> &Corpora);
-  MutationDispatcher &GetMD() { return MD; }
-  void PrintFinalStats();
 
-private:
+ private:
   void AlarmCallback();
-  void MutateAndTestOne();
+  void MutateAndTestOne(Unit *U);
   void ReportNewCoverage(const Unit &U);
-  bool RunOne(const uint8_t *Data, size_t Size);
-  bool RunOne(const Unit &U) { return RunOne(U.data(), U.size()); }
-  void RunOneAndUpdateCorpus(uint8_t *Data, size_t Size);
+  bool RunOne(const Unit &U);
+  void RunOneAndUpdateCorpus(Unit &U);
   void WriteToOutputCorpus(const Unit &U);
   void WriteUnitToFileWithPrefix(const Unit &U, const char *Prefix);
   void PrintStats(const char *Where, const char *End = "\n");
-  void PrintStatusForNewUnit(const Unit &U);
-  // Updates the probability distribution for the units in the corpus.
-  // Must be called whenever the corpus or unit weights are changed.
-  void UpdateCorpusDistribution();
+  void PrintUnitInASCII(const Unit &U, const char *PrintAfter = "");
 
   void SyncCorpus();
 
@@ -361,43 +144,38 @@ private:
   void PrepareCoverageBeforeRun();
   bool CheckCoverageAfterRun();
 
+
   // Trace-based fuzzing: we run a unit with some kind of tracing
   // enabled and record potentially useful mutations. Then
   // We apply these mutations one by one to the unit and run it again.
 
   // Start tracing; forget all previously proposed mutations.
   void StartTraceRecording();
-  // Stop tracing.
-  void StopTraceRecording();
+  // Stop tracing and return the number of proposed mutations.
+  size_t StopTraceRecording();
+  // Apply Idx-th trace-based mutation to U.
+  void ApplyTraceBasedMutation(size_t Idx, Unit *U);
 
   void SetDeathCallback();
   static void StaticDeathCallback();
   void DeathCallback();
-
-  uint8_t *CurrentUnitData;
-  size_t CurrentUnitSize;
+  Unit CurrentUnit;
 
   size_t TotalNumberOfRuns = 0;
   size_t TotalNumberOfExecutedTraceBasedMutations = 0;
-  size_t NumberOfNewUnitsAdded = 0;
 
   std::vector<Unit> Corpus;
   std::unordered_set<std::string> UnitHashesAddedToCorpus;
 
   // For UseCounters
   std::vector<uint8_t> CounterBitmap;
-  size_t TotalBits() { // Slow. Call it only for printing stats.
+  size_t TotalBits() {  // Slow. Call it only for printing stats.
     size_t Res = 0;
-    for (auto x : CounterBitmap)
-      Res += __builtin_popcount(x);
+    for (auto x : CounterBitmap) Res += __builtin_popcount(x);
     return Res;
   }
 
-  std::vector<uint8_t> MutateInPlaceHere;
-
-  std::piecewise_constant_distribution<double> CorpusDistribution;
-  UserCallback CB;
-  MutationDispatcher &MD;
+  UserSuppliedFuzzer &USF;
   FuzzingOptions Options;
   system_clock::time_point ProcessStartTime = system_clock::now();
   system_clock::time_point LastExternalSync = system_clock::now();
@@ -405,11 +183,22 @@ private:
   long TimeOfLongestUnitInSeconds = 0;
   long EpochOfLastReadOfOutputCorpus = 0;
   size_t LastRecordedBlockCoverage = 0;
-  size_t LastRecordedPcMapSize = 0;
   size_t LastRecordedCallerCalleeCoverage = 0;
-  size_t LastCoveragePcBufferLen = 0;
 };
 
-}; // namespace fuzzer
+class SimpleUserSuppliedFuzzer: public UserSuppliedFuzzer {
+ public:
+  SimpleUserSuppliedFuzzer(FuzzerRandomBase *Rand, UserCallback Callback)
+      : UserSuppliedFuzzer(Rand), Callback(Callback) {}
+
+  virtual int TargetFunction(const uint8_t *Data, size_t Size) override {
+    return Callback(Data, Size);
+  }
+
+ private:
+  UserCallback Callback = nullptr;
+};
+
+};  // namespace fuzzer
 
 #endif // LLVM_FUZZER_INTERNAL_H

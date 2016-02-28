@@ -211,8 +211,11 @@ public:
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addRequired<LoopInfoWrapperPass>();
+    AU.addRequiredID(LoopSimplifyID);
+    AU.addRequiredID(LCSSAID);
+    AU.addRequired<ScalarEvolutionWrapperPass>();
     AU.addRequired<BranchProbabilityInfoWrapperPass>();
-    getLoopAnalysisUsage(AU);
   }
 
   bool runOnLoop(Loop *L, LPPassManager &LPM) override;
@@ -223,8 +226,11 @@ char InductiveRangeCheckElimination::ID = 0;
 
 INITIALIZE_PASS_BEGIN(InductiveRangeCheckElimination, "irce",
                       "Inductive range check elimination", false, false)
+INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
+INITIALIZE_PASS_DEPENDENCY(LCSSA)
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(LoopPass)
 INITIALIZE_PASS_END(InductiveRangeCheckElimination, "irce",
                     "Inductive range check elimination", false, false)
 

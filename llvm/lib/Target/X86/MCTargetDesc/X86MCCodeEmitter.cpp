@@ -231,10 +231,6 @@ static bool Is32BitMemOperand(const MCInst &MI, unsigned Op) {
       (IndexReg.getReg() != 0 &&
        X86MCRegisterClasses[X86::GR32RegClassID].contains(IndexReg.getReg())))
     return true;
-  if (BaseReg.getReg() == X86::EIP) {
-    assert(IndexReg.getReg() == 0 && "Invalid eip-based address.");
-    return true;
-  }
   return false;
 }
 
@@ -377,8 +373,7 @@ void X86MCCodeEmitter::EmitMemModRMByte(const MCInst &MI, unsigned Op,
   bool HasEVEX = (TSFlags & X86II::EncodingMask) == X86II::EVEX;
 
   // Handle %rip relative addressing.
-  if (BaseReg == X86::RIP ||
-      BaseReg == X86::EIP) {    // [disp32+rIP] in X86-64 mode
+  if (BaseReg == X86::RIP) {    // [disp32+RIP] in X86-64 mode
     assert(is64BitMode(STI) && "Rip-relative addressing requires 64-bit mode");
     assert(IndexReg.getReg() == 0 && "Invalid rip-relative address");
     EmitByte(ModRMByte(0, RegOpcodeField, 5), CurByte, OS);
@@ -973,17 +968,17 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
              VEX_PP, CurByte, OS);
     if (EncodeRC)
       EmitByte((EVEX_z  << 7) |
-               (EVEX_rc << 5) |
-               (EVEX_b  << 4) |
-               (EVEX_V2 << 3) |
-               EVEX_aaa, CurByte, OS);
+              (EVEX_rc << 5) |
+              (EVEX_b  << 4) |
+              (EVEX_V2 << 3) |
+              EVEX_aaa, CurByte, OS);
     else
       EmitByte((EVEX_z  << 7) |
-               (EVEX_L2 << 6) |
-               (VEX_L   << 5) |
-               (EVEX_b  << 4) |
-               (EVEX_V2 << 3) |
-               EVEX_aaa, CurByte, OS);
+              (EVEX_L2 << 6) |
+              (VEX_L   << 5) |
+              (EVEX_b  << 4) |
+              (EVEX_V2 << 3) |
+              EVEX_aaa, CurByte, OS);
   }
 }
 
@@ -993,8 +988,6 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
 static unsigned DetermineREXPrefix(const MCInst &MI, uint64_t TSFlags,
                                    const MCInstrDesc &Desc) {
   unsigned REX = 0;
-  bool UsesHighByteReg = false;
-
   if (TSFlags & X86II::REX_W)
     REX |= 1 << 3; // set REX.W
 
@@ -1011,8 +1004,6 @@ static unsigned DetermineREXPrefix(const MCInst &MI, uint64_t TSFlags,
     const MCOperand &MO = MI.getOperand(i);
     if (!MO.isReg()) continue;
     unsigned Reg = MO.getReg();
-    if (Reg == X86::AH || Reg == X86::BH || Reg == X86::CH || Reg == X86::DH)
-      UsesHighByteReg = true;
     if (!X86II::isX86_64NonExtLowByteReg(Reg)) continue;
     // FIXME: The caller of DetermineREXPrefix slaps this prefix onto anything
     // that returns non-zero.
@@ -1082,9 +1073,6 @@ static unsigned DetermineREXPrefix(const MCInst &MI, uint64_t TSFlags,
     }
     break;
   }
-  if (REX && UsesHighByteReg)
-    report_fatal_error("Cannot encode high byte register in REX-prefixed instruction");
-
   return REX;
 }
 

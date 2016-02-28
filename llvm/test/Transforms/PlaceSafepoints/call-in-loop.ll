@@ -1,7 +1,7 @@
 ; If there's a call in the loop which dominates the backedge, we 
 ; don't need a safepoint poll (since the callee must contain a 
 ; poll test).
-;; RUN: opt < %s -place-safepoints -S | FileCheck %s
+;; RUN: opt %s -place-safepoints -S | FileCheck %s
 
 declare void @foo()
 
@@ -10,12 +10,13 @@ define void @test1() gc "statepoint-example" {
 
 entry:
 ; CHECK-LABEL: entry
-; CHECK: call void @do_safepoint
+; CHECK: statepoint
   br label %loop
 
 loop:
 ; CHECK-LABEL: loop
-; CHECK-NOT: call void @do_safepoint
+; CHECK: @llvm.experimental.gc.statepoint.p0f_isVoidf(i64 2882400000, i32 0, void ()* @foo
+; CHECK-NOT: statepoint
   call void @foo()
   br label %loop
 }

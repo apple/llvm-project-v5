@@ -35,19 +35,28 @@ namespace llvm {
       isLiteralStatementOperand
     } OperandType;
 
-    /// MiOpNo - For isMachineInstrOperand, this is the operand number of the
-    /// machine instruction.
-    unsigned MIOpNo;
-
     /// Str - For isLiteralTextOperand, this IS the literal text.  For
     /// isMachineInstrOperand, this is the PrinterMethodName for the operand..
     /// For isLiteralStatementOperand, this is the code to insert verbatim
     /// into the asm writer.
     std::string Str;
 
+    /// CGIOpNo - For isMachineInstrOperand, this is the index of the operand in
+    /// the CodeGenInstruction.
+    unsigned CGIOpNo;
+
+    /// MiOpNo - For isMachineInstrOperand, this is the operand number of the
+    /// machine instruction.
+    unsigned MIOpNo;
+
     /// MiModifier - For isMachineInstrOperand, this is the modifier string for
     /// an operand, specified with syntax like ${opname:modifier}.
     std::string MiModifier;
+
+    // PassSubtarget - Pass MCSubtargetInfo to the print method if this is
+    // equal to 1.
+    // FIXME: Remove after all ports are updated.
+    unsigned PassSubtarget;
 
     // To make VS STL happy
     AsmWriterOperand(OpType op = isLiteralTextOperand):OperandType(op) {}
@@ -57,10 +66,13 @@ namespace llvm {
     : OperandType(op), Str(LitStr) {}
 
     AsmWriterOperand(const std::string &Printer,
+                     unsigned _CGIOpNo,
                      unsigned _MIOpNo,
                      const std::string &Modifier,
+                     unsigned PassSubtarget,
                      OpType op = isMachineInstrOperand)
-    : OperandType(op), MIOpNo(_MIOpNo), Str(Printer), MiModifier(Modifier) {}
+    : OperandType(op), Str(Printer), CGIOpNo(_CGIOpNo), MIOpNo(_MIOpNo),
+    MiModifier(Modifier), PassSubtarget(PassSubtarget) {}
 
     bool operator!=(const AsmWriterOperand &Other) const {
       if (OperandType != Other.OperandType || Str != Other.Str) return true;
@@ -73,17 +85,16 @@ namespace llvm {
     }
 
     /// getCode - Return the code that prints this operand.
-    std::string getCode(bool PassSubtarget) const;
+    std::string getCode() const;
   };
 
   class AsmWriterInst {
   public:
     std::vector<AsmWriterOperand> Operands;
     const CodeGenInstruction *CGI;
-    unsigned CGIIndex;
 
-    AsmWriterInst(const CodeGenInstruction &CGI, unsigned CGIIndex,
-                  unsigned Variant);
+    AsmWriterInst(const CodeGenInstruction &CGI,
+                  unsigned Variant, unsigned PassSubtarget);
 
     /// MatchesAllButOneOp - If this instruction is exactly identical to the
     /// specified instruction except for one differing operand, return the

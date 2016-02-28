@@ -48,7 +48,6 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Bitcode/BitstreamReader.h"
-#include "llvm/Support/Compression.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -769,15 +768,6 @@ IdentID ASTIdentifierLookupTrait::ReadIdentifierID(const unsigned char *d) {
   return Reader.getGlobalIdentifierID(F, RawID >> 1);
 }
 
-static void markIdentifierFromAST(ASTReader &Reader, IdentifierInfo &II) {
-  if (!II.isFromAST()) {
-    II.setIsFromAST();
-    bool IsModule = Reader.getPreprocessor().getCurrentModule() != nullptr;
-    if (isInterestingIdentifier(Reader, II, IsModule))
-      II.setChangedSinceDeserialization();
-  }
-}
-
 IdentifierInfo *ASTIdentifierLookupTrait::ReadData(const internal_key_type& k,
                                                    const unsigned char* d,
                                                    unsigned DataLen) {
@@ -794,7 +784,12 @@ IdentifierInfo *ASTIdentifierLookupTrait::ReadData(const internal_key_type& k,
     II = &Reader.getIdentifierTable().getOwn(k);
     KnownII = II;
   }
-  markIdentifierFromAST(Reader, *II);
+  if (!II->isFromAST()) {
+    II->setIsFromAST();
+    bool IsModule = Reader.PP.getCurrentModule() != nullptr;
+    if (isInterestingIdentifier(Reader, *II, IsModule))
+      II->setChangedSinceDeserialization();
+  }
   Reader.markIdentifierUpToDate(II);
 
   IdentID ID = Reader.getGlobalIdentifierID(F, RawID);
@@ -1204,32 +1199,6 @@ bool ASTReader::ReadSLocEntry(int ID) {
     return true;
   }
 
-  // Local helper to read the (possibly-compressed) buffer data following the
-  // entry record.
-  auto ReadBuffer = [this](
-      BitstreamCursor &SLocEntryCursor,
-      StringRef Name) -> std::unique_ptr<llvm::MemoryBuffer> {
-    RecordData Record;
-    StringRef Blob;
-    unsigned Code = SLocEntryCursor.ReadCode();
-    unsigned RecCode = SLocEntryCursor.readRecord(Code, Record, &Blob);
-
-    if (RecCode == SM_SLOC_BUFFER_BLOB_COMPRESSED) {
-      SmallString<0> Uncompressed;
-      if (llvm::zlib::uncompress(Blob, Uncompressed, Record[0]) !=
-          llvm::zlib::StatusOK) {
-        Error("could not decompress embedded file contents");
-        return nullptr;
-      }
-      return llvm::MemoryBuffer::getMemBufferCopy(Uncompressed, Name);
-    } else if (RecCode == SM_SLOC_BUFFER_BLOB) {
-      return llvm::MemoryBuffer::getMemBuffer(Blob.drop_back(1), Name, true);
-    } else {
-      Error("AST record has invalid code");
-      return nullptr;
-    }
-  };
-
   ModuleFile *F = GlobalSLocEntryMap.find(-ID)->second;
   F->SLocEntryCursor.JumpToBit(F->SLocEntryOffsets[ID - F->SLocEntryBaseID]);
   BitstreamCursor &SLocEntryCursor = F->SLocEntryCursor;
@@ -1285,16 +1254,23 @@ bool ASTReader::ReadSLocEntry(int ID) {
       FileDeclIDs[FID] = FileDeclsInfo(F, llvm::makeArrayRef(FirstDecl,
                                                              NumFileDecls));
     }
-
+    
     const SrcMgr::ContentCache *ContentCache
       = SourceMgr.getOrCreateContentCache(File,
                               /*isSystemFile=*/FileCharacter != SrcMgr::C_User);
     if (OverriddenBuffer && !ContentCache->BufferOverridden &&
-        ContentCache->ContentsEntry == ContentCache->OrigEntry &&
-        !ContentCache->getRawBuffer()) {
-      auto Buffer = ReadBuffer(SLocEntryCursor, File->getName());
-      if (!Buffer)
+        ContentCache->ContentsEntry == ContentCache->OrigEntry) {
+      unsigned Code = SLocEntryCursor.ReadCode();
+      Record.clear();
+      unsigned RecCode = SLocEntryCursor.readRecord(Code, Record, &Blob);
+      
+      if (RecCode != SM_SLOC_BUFFER_BLOB) {
+        Error("AST record has invalid code");
         return true;
+      }
+      
+      std::unique_ptr<llvm::MemoryBuffer> Buffer
+        = llvm::MemoryBuffer::getMemBuffer(Blob.drop_back(1), File->getName());
       SourceMgr.overrideFileContents(File, std::move(Buffer));
     }
 
@@ -1311,10 +1287,18 @@ bool ASTReader::ReadSLocEntry(int ID) {
         (F->Kind == MK_ImplicitModule || F->Kind == MK_ExplicitModule)) {
       IncludeLoc = getImportLocation(F);
     }
+    unsigned Code = SLocEntryCursor.ReadCode();
+    Record.clear();
+    unsigned RecCode
+      = SLocEntryCursor.readRecord(Code, Record, &Blob);
 
-    auto Buffer = ReadBuffer(SLocEntryCursor, Name);
-    if (!Buffer)
+    if (RecCode != SM_SLOC_BUFFER_BLOB) {
+      Error("AST record has invalid code");
       return true;
+    }
+
+    std::unique_ptr<llvm::MemoryBuffer> Buffer =
+        llvm::MemoryBuffer::getMemBuffer(Blob.drop_back(1), Name);
     SourceMgr.createFileID(std::move(Buffer), FileCharacter, ID,
                            BaseOffset + Offset, IncludeLoc);
     break;
@@ -1906,14 +1890,19 @@ ASTReader::readInputFileInfo(ModuleFile &F, unsigned ID) {
          "invalid record type for input file");
   (void)Result;
 
+  std::string Filename;
+  off_t StoredSize;
+  time_t StoredTime;
+  bool Overridden;
+
   assert(Record[0] == ID && "Bogus stored ID or offset");
-  InputFileInfo R;
-  R.StoredSize = static_cast<off_t>(Record[1]);
-  R.StoredTime = static_cast<time_t>(Record[2]);
-  R.Overridden = static_cast<bool>(Record[3]);
-  R.Transient = static_cast<bool>(Record[4]);
-  R.Filename = Blob;
-  ResolveImportedPath(F, R.Filename);
+  StoredSize = static_cast<off_t>(Record[1]);
+  StoredTime = static_cast<time_t>(Record[2]);
+  Overridden = static_cast<bool>(Record[3]);
+  Filename = Blob;
+  ResolveImportedPath(F, Filename);
+
+  InputFileInfo R = { std::move(Filename), StoredSize, StoredTime, Overridden };
   return R;
 }
 
@@ -1938,10 +1927,11 @@ InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
   off_t StoredSize = FI.StoredSize;
   time_t StoredTime = FI.StoredTime;
   bool Overridden = FI.Overridden;
-  bool Transient = FI.Transient;
   StringRef Filename = FI.Filename;
 
-  const FileEntry *File = FileMgr.getFile(Filename, /*OpenFile=*/false);
+  const FileEntry *File
+    = Overridden? FileMgr.getVirtualFile(Filename, StoredSize, StoredTime)
+                : FileMgr.getFile(Filename, /*OpenFile=*/false);
 
   // If we didn't find the file, resolve it relative to the
   // original directory from which this AST file was created.
@@ -1956,8 +1946,9 @@ InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
 
   // For an overridden file, create a virtual file with the stored
   // size/timestamp.
-  if ((Overridden || Transient) && File == nullptr)
+  if (Overridden && File == nullptr) {
     File = FileMgr.getVirtualFile(Filename, StoredSize, StoredTime);
+  }
 
   if (File == nullptr) {
     if (Complain) {
@@ -1978,17 +1969,11 @@ InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
   // can lead to problems when lexing using the source locations from the
   // PCH.
   SourceManager &SM = getSourceManager();
-  // FIXME: Reject if the overrides are different.
-  if ((!Overridden && !Transient) && SM.isFileOverridden(File)) {
+  if (!Overridden && SM.isFileOverridden(File)) {
     if (Complain)
       Error(diag::err_fe_pch_file_overridden, Filename);
     // After emitting the diagnostic, recover by disabling the override so
     // that the original file will be used.
-    //
-    // FIXME: This recovery is just as broken as the original state; there may
-    // be another precompiled module that's using the overridden contents, or
-    // we might be half way through parsing it. Instead, we should treat the
-    // overridden contents as belonging to a separate FileEntry.
     SM.disableFileContentsOverride(File);
     // The FileEntry is a virtual file entry with the size of the contents
     // that would override the original contents. Set it to the original's
@@ -2039,10 +2024,8 @@ InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
 
     IsOutOfDate = true;
   }
-  // FIXME: If the file is overridden and we've already opened it,
-  // issue an error (or split it into a separate FileEntry).
 
-  InputFile IF = InputFile(File, Overridden || Transient, IsOutOfDate);
+  InputFile IF = InputFile(File, Overridden, IsOutOfDate);
 
   // Note that we've loaded this input file.
   F.InputFilesLoaded[ID-1] = IF;
@@ -2269,10 +2252,9 @@ ASTReader::ReadControlBlock(ModuleFile &F,
               (AllowConfigurationMismatch && Result == ConfigurationMismatch))
             Result = Success;
 
-          // If we can't load the module, exit early since we likely
-          // will rebuild the module anyway. The stream may be in the
-          // middle of a block.
-          if (Result != Success)
+          // If we've diagnosed a problem, we're done.
+          if (Result != Success &&
+              isDiagnosedResult(Result, ClientLoadCapabilities))
             return Result;
         } else if (Stream.SkipBlock()) {
           Error("malformed block record in AST file");
@@ -3483,7 +3465,7 @@ static bool SkipCursorToBlock(BitstreamCursor &Cursor, unsigned BlockID) {
   }
 }
 
-ASTReader::ASTReadResult ASTReader::ReadAST(StringRef FileName,
+ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
                                             ModuleKind Type,
                                             SourceLocation ImportLoc,
                                             unsigned ClientLoadCapabilities) {
@@ -3576,7 +3558,12 @@ ASTReader::ASTReadResult ASTReader::ReadAST(StringRef FileName,
 
       // Mark this identifier as being from an AST file so that we can track
       // whether we need to serialize it.
-      markIdentifierFromAST(*this, II);
+      if (!II.isFromAST()) {
+        II.setIsFromAST();
+        bool IsModule = PP.getCurrentModule() != nullptr;
+        if (isInterestingIdentifier(*this, II, IsModule))
+          II.setChangedSinceDeserialization();
+      }
 
       // Associate the ID with the identifier so that the writer can reuse it.
       auto ID = Trait.ReadIdentifierID(Data + KeyDataLen.first);
@@ -4063,9 +4050,7 @@ void ASTReader::InitializeContext() {
     if (Module *Imported = getSubmodule(Import.ID)) {
       makeModuleVisible(Imported, Module::AllVisible,
                         /*ImportLoc=*/Import.ImportLoc);
-      if (Import.ImportLoc.isValid())
-        PP.makeModuleVisible(Imported, Import.ImportLoc);
-      // FIXME: should we tell Sema to make the module visible too?
+      PP.makeModuleVisible(Imported, Import.ImportLoc);
     }
   }
   ImportedModules.clear();
@@ -4711,13 +4696,6 @@ bool ASTReader::ParseLanguageOptions(const RecordData &Record,
       ReadString(Record, Idx));
   }
   LangOpts.CommentOpts.ParseAllComments = Record[Idx++];
-
-  // OpenMP offloading options.
-  for (unsigned N = Record[Idx++]; N; --N) {
-    LangOpts.OMPTargetTriples.push_back(llvm::Triple(ReadString(Record, Idx)));
-  }
-
-  LangOpts.OMPHostIRFile = ReadString(Record, Idx);
 
   return Listener.ReadLanguageOptions(LangOpts, Complain,
                                       AllowCompatibleDifferences);
@@ -5435,9 +5413,9 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
 
   case TYPE_AUTO: {
     QualType Deduced = readType(*Loc.F, Record, Idx);
-    AutoTypeKeyword Keyword = (AutoTypeKeyword)Record[Idx++];
+    bool IsDecltypeAuto = Record[Idx++];
     bool IsDependent = Deduced.isNull() ? Record[Idx++] : false;
-    return Context.getAutoType(Deduced, Keyword, IsDependent);
+    return Context.getAutoType(Deduced, IsDecltypeAuto, IsDependent);
   }
 
   case TYPE_RECORD: {
@@ -5652,17 +5630,6 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     }
     QualType ValueType = readType(*Loc.F, Record, Idx);
     return Context.getAtomicType(ValueType);
-  }
-
-  case TYPE_PIPE: {
-    if (Record.size() != 1) {
-      Error("Incorrect encoding of pipe type");
-      return QualType();
-    }
-
-    // Reading the pipe element type.
-    QualType ElementType = readType(*Loc.F, Record, Idx);
-    return Context.getPipeType(ElementType);
   }
   }
   llvm_unreachable("Invalid TypeCode!");
@@ -5934,9 +5901,6 @@ void TypeLocReader::VisitAtomicTypeLoc(AtomicTypeLoc TL) {
   TL.setKWLoc(ReadSourceLocation(Record, Idx));
   TL.setLParenLoc(ReadSourceLocation(Record, Idx));
   TL.setRParenLoc(ReadSourceLocation(Record, Idx));
-}
-void TypeLocReader::VisitPipeTypeLoc(PipeTypeLoc TL) {
-  TL.setKWLoc(ReadSourceLocation(Record, Idx));
 }
 
 TypeSourceInfo *ASTReader::GetTypeSourceInfo(ModuleFile &F,
@@ -6457,12 +6421,6 @@ static Decl *getPredefinedDecl(ASTContext &Context, PredefinedDeclIDs ID) {
 
   case PREDEF_DECL_MAKE_INTEGER_SEQ_ID:
     return Context.getMakeIntegerSeqDecl();
-
-  case PREDEF_DECL_CF_CONSTANT_STRING_ID:
-    return Context.getCFConstantStringDecl();
-
-  case PREDEF_DECL_CF_CONSTANT_STRING_TAG_ID:
-    return Context.getCFConstantStringTagDecl();
   }
   llvm_unreachable("PredefinedDeclIDs unknown enum value");
 }
@@ -6902,7 +6860,7 @@ dumpModuleIDMap(StringRef Name,
   }
 }
 
-LLVM_DUMP_METHOD void ASTReader::dump() {
+void ASTReader::dump() {
   llvm::errs() << "*** PCH/ModuleFile Remappings:\n";
   dumpModuleIDMap("Global bit offset map", GlobalBitOffsetsMap);
   dumpModuleIDMap("Global source location entry map", GlobalSLocEntryMap);
@@ -7468,11 +7426,10 @@ IdentifierInfo *ASTReader::DecodeIdentifierInfo(IdentifierID ID) {
     const unsigned char *StrLenPtr = (const unsigned char*) Str - 2;
     unsigned StrLen = (((unsigned) StrLenPtr[0])
                        | (((unsigned) StrLenPtr[1]) << 8)) - 1;
-    auto &II = PP.getIdentifierTable().get(StringRef(Str, StrLen));
-    IdentifiersLoaded[ID] = &II;
-    markIdentifierFromAST(*this,  II);
+    IdentifiersLoaded[ID]
+      = &PP.getIdentifierTable().get(StringRef(Str, StrLen));
     if (DeserializationListener)
-      DeserializationListener->IdentifierRead(ID + 1, &II);
+      DeserializationListener->IdentifierRead(ID + 1, IdentifiersLoaded[ID]);
   }
 
   return IdentifiersLoaded[ID];
@@ -7601,9 +7558,8 @@ ASTReader::getSourceDescriptor(unsigned ID) {
   // Chained PCH are not suported.
   if (ModuleMgr.size() == 1) {
     ModuleFile &MF = ModuleMgr.getPrimaryModule();
-    StringRef ModuleName = llvm::sys::path::filename(MF.OriginalSourceFileName);
-    return ASTReader::ASTSourceDescriptor(ModuleName, MF.OriginalDir,
-                                          MF.FileName, MF.Signature);
+    return ASTReader::ASTSourceDescriptor(
+        MF.OriginalSourceFileName, MF.OriginalDir, MF.FileName, MF.Signature);
   }
   return None;
 }
@@ -7880,7 +7836,7 @@ ASTReader::ReadTemplateParameterList(ModuleFile &F,
 
   TemplateParameterList* TemplateParams =
     TemplateParameterList::Create(Context, TemplateLoc, LAngleLoc,
-                                  Params, RAngleLoc);
+                                  Params.data(), Params.size(), RAngleLoc);
   return TemplateParams;
 }
 

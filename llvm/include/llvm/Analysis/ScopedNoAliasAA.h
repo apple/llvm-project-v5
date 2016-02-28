@@ -48,10 +48,20 @@ private:
 };
 
 /// Analysis pass providing a never-invalidated alias analysis result.
-struct ScopedNoAliasAA : AnalysisBase<ScopedNoAliasAA> {
+class ScopedNoAliasAA {
+public:
   typedef ScopedNoAliasAAResult Result;
 
+  /// \brief Opaque, unique identifier for this analysis pass.
+  static void *ID() { return (void *)&PassID; }
+
   ScopedNoAliasAAResult run(Function &F, AnalysisManager<Function> *AM);
+
+  /// \brief Provide access to a name for this pass for debugging purposes.
+  static StringRef name() { return "ScopedNoAliasAA"; }
+
+private:
+  static char PassID;
 };
 
 /// Legacy wrapper pass to provide the ScopedNoAliasAAResult object.

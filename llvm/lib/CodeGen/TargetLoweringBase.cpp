@@ -231,8 +231,6 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::COPYSIGN_F80] = "copysignl";
   Names[RTLIB::COPYSIGN_F128] = "copysignl";
   Names[RTLIB::COPYSIGN_PPCF128] = "copysignl";
-  Names[RTLIB::FPEXT_F32_PPCF128] = "__gcc_stoq";
-  Names[RTLIB::FPEXT_F64_PPCF128] = "__gcc_dtoq";
   Names[RTLIB::FPEXT_F64_F128] = "__extenddftf2";
   Names[RTLIB::FPEXT_F32_F128] = "__extendsftf2";
   Names[RTLIB::FPEXT_F32_F64] = "__extendsfdf2";
@@ -245,13 +243,17 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::FPROUND_F64_F32] = "__truncdfsf2";
   Names[RTLIB::FPROUND_F80_F32] = "__truncxfsf2";
   Names[RTLIB::FPROUND_F128_F32] = "__trunctfsf2";
-  Names[RTLIB::FPROUND_PPCF128_F32] = "__gcc_qtos";
+  Names[RTLIB::FPROUND_PPCF128_F32] = "__trunctfsf2";
   Names[RTLIB::FPROUND_F80_F64] = "__truncxfdf2";
   Names[RTLIB::FPROUND_F128_F64] = "__trunctfdf2";
-  Names[RTLIB::FPROUND_PPCF128_F64] = "__gcc_qtod";
+  Names[RTLIB::FPROUND_PPCF128_F64] = "__trunctfdf2";
+  Names[RTLIB::FPTOSINT_F32_I8] = "__fixsfqi";
+  Names[RTLIB::FPTOSINT_F32_I16] = "__fixsfhi";
   Names[RTLIB::FPTOSINT_F32_I32] = "__fixsfsi";
   Names[RTLIB::FPTOSINT_F32_I64] = "__fixsfdi";
   Names[RTLIB::FPTOSINT_F32_I128] = "__fixsfti";
+  Names[RTLIB::FPTOSINT_F64_I8] = "__fixdfqi";
+  Names[RTLIB::FPTOSINT_F64_I16] = "__fixdfhi";
   Names[RTLIB::FPTOSINT_F64_I32] = "__fixdfsi";
   Names[RTLIB::FPTOSINT_F64_I64] = "__fixdfdi";
   Names[RTLIB::FPTOSINT_F64_I128] = "__fixdfti";
@@ -261,12 +263,16 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::FPTOSINT_F128_I32] = "__fixtfsi";
   Names[RTLIB::FPTOSINT_F128_I64] = "__fixtfdi";
   Names[RTLIB::FPTOSINT_F128_I128] = "__fixtfti";
-  Names[RTLIB::FPTOSINT_PPCF128_I32] = "__gcc_qtou";
+  Names[RTLIB::FPTOSINT_PPCF128_I32] = "__fixtfsi";
   Names[RTLIB::FPTOSINT_PPCF128_I64] = "__fixtfdi";
   Names[RTLIB::FPTOSINT_PPCF128_I128] = "__fixtfti";
+  Names[RTLIB::FPTOUINT_F32_I8] = "__fixunssfqi";
+  Names[RTLIB::FPTOUINT_F32_I16] = "__fixunssfhi";
   Names[RTLIB::FPTOUINT_F32_I32] = "__fixunssfsi";
   Names[RTLIB::FPTOUINT_F32_I64] = "__fixunssfdi";
   Names[RTLIB::FPTOUINT_F32_I128] = "__fixunssfti";
+  Names[RTLIB::FPTOUINT_F64_I8] = "__fixunsdfqi";
+  Names[RTLIB::FPTOUINT_F64_I16] = "__fixunsdfhi";
   Names[RTLIB::FPTOUINT_F64_I32] = "__fixunsdfsi";
   Names[RTLIB::FPTOUINT_F64_I64] = "__fixunsdfdi";
   Names[RTLIB::FPTOUINT_F64_I128] = "__fixunsdfti";
@@ -283,7 +289,7 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::SINTTOFP_I32_F64] = "__floatsidf";
   Names[RTLIB::SINTTOFP_I32_F80] = "__floatsixf";
   Names[RTLIB::SINTTOFP_I32_F128] = "__floatsitf";
-  Names[RTLIB::SINTTOFP_I32_PPCF128] = "__gcc_itoq";
+  Names[RTLIB::SINTTOFP_I32_PPCF128] = "__floatsitf";
   Names[RTLIB::SINTTOFP_I64_F32] = "__floatdisf";
   Names[RTLIB::SINTTOFP_I64_F64] = "__floatdidf";
   Names[RTLIB::SINTTOFP_I64_F80] = "__floatdixf";
@@ -298,7 +304,7 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::UINTTOFP_I32_F64] = "__floatunsidf";
   Names[RTLIB::UINTTOFP_I32_F80] = "__floatunsixf";
   Names[RTLIB::UINTTOFP_I32_F128] = "__floatunsitf";
-  Names[RTLIB::UINTTOFP_I32_PPCF128] = "__gcc_utoq";
+  Names[RTLIB::UINTTOFP_I32_PPCF128] = "__floatunsitf";
   Names[RTLIB::UINTTOFP_I64_F32] = "__floatundisf";
   Names[RTLIB::UINTTOFP_I64_F64] = "__floatundidf";
   Names[RTLIB::UINTTOFP_I64_F80] = "__floatundixf";
@@ -312,35 +318,27 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::OEQ_F32] = "__eqsf2";
   Names[RTLIB::OEQ_F64] = "__eqdf2";
   Names[RTLIB::OEQ_F128] = "__eqtf2";
-  Names[RTLIB::OEQ_PPCF128] = "__gcc_qeq";
   Names[RTLIB::UNE_F32] = "__nesf2";
   Names[RTLIB::UNE_F64] = "__nedf2";
   Names[RTLIB::UNE_F128] = "__netf2";
-  Names[RTLIB::UNE_PPCF128] = "__gcc_qne";
   Names[RTLIB::OGE_F32] = "__gesf2";
   Names[RTLIB::OGE_F64] = "__gedf2";
   Names[RTLIB::OGE_F128] = "__getf2";
-  Names[RTLIB::OGE_PPCF128] = "__gcc_qge";
   Names[RTLIB::OLT_F32] = "__ltsf2";
   Names[RTLIB::OLT_F64] = "__ltdf2";
   Names[RTLIB::OLT_F128] = "__lttf2";
-  Names[RTLIB::OLT_PPCF128] = "__gcc_qlt";
   Names[RTLIB::OLE_F32] = "__lesf2";
   Names[RTLIB::OLE_F64] = "__ledf2";
   Names[RTLIB::OLE_F128] = "__letf2";
-  Names[RTLIB::OLE_PPCF128] = "__gcc_qle";
   Names[RTLIB::OGT_F32] = "__gtsf2";
   Names[RTLIB::OGT_F64] = "__gtdf2";
   Names[RTLIB::OGT_F128] = "__gttf2";
-  Names[RTLIB::OGT_PPCF128] = "__gcc_qgt";
   Names[RTLIB::UO_F32] = "__unordsf2";
   Names[RTLIB::UO_F64] = "__unorddf2";
   Names[RTLIB::UO_F128] = "__unordtf2";
-  Names[RTLIB::UO_PPCF128] = "__gcc_qunord";
   Names[RTLIB::O_F32] = "__unordsf2";
   Names[RTLIB::O_F64] = "__unorddf2";
   Names[RTLIB::O_F128] = "__unordtf2";
-  Names[RTLIB::O_PPCF128] = "__gcc_qunord";
   Names[RTLIB::MEMCPY] = "memcpy";
   Names[RTLIB::MEMMOVE] = "memmove";
   Names[RTLIB::MEMSET] = "memset";
@@ -456,13 +454,9 @@ RTLIB::Libcall RTLIB::getFPEXT(EVT OpVT, EVT RetVT) {
       return FPEXT_F32_F64;
     if (RetVT == MVT::f128)
       return FPEXT_F32_F128;
-    if (RetVT == MVT::ppcf128)
-      return FPEXT_F32_PPCF128;
   } else if (OpVT == MVT::f64) {
     if (RetVT == MVT::f128)
       return FPEXT_F64_F128;
-    else if (RetVT == MVT::ppcf128)
-      return FPEXT_F64_PPCF128;
   }
 
   return UNKNOWN_LIBCALL;
@@ -507,6 +501,10 @@ RTLIB::Libcall RTLIB::getFPROUND(EVT OpVT, EVT RetVT) {
 /// UNKNOWN_LIBCALL if there is none.
 RTLIB::Libcall RTLIB::getFPTOSINT(EVT OpVT, EVT RetVT) {
   if (OpVT == MVT::f32) {
+    if (RetVT == MVT::i8)
+      return FPTOSINT_F32_I8;
+    if (RetVT == MVT::i16)
+      return FPTOSINT_F32_I16;
     if (RetVT == MVT::i32)
       return FPTOSINT_F32_I32;
     if (RetVT == MVT::i64)
@@ -514,6 +512,10 @@ RTLIB::Libcall RTLIB::getFPTOSINT(EVT OpVT, EVT RetVT) {
     if (RetVT == MVT::i128)
       return FPTOSINT_F32_I128;
   } else if (OpVT == MVT::f64) {
+    if (RetVT == MVT::i8)
+      return FPTOSINT_F64_I8;
+    if (RetVT == MVT::i16)
+      return FPTOSINT_F64_I16;
     if (RetVT == MVT::i32)
       return FPTOSINT_F64_I32;
     if (RetVT == MVT::i64)
@@ -549,6 +551,10 @@ RTLIB::Libcall RTLIB::getFPTOSINT(EVT OpVT, EVT RetVT) {
 /// UNKNOWN_LIBCALL if there is none.
 RTLIB::Libcall RTLIB::getFPTOUINT(EVT OpVT, EVT RetVT) {
   if (OpVT == MVT::f32) {
+    if (RetVT == MVT::i8)
+      return FPTOUINT_F32_I8;
+    if (RetVT == MVT::i16)
+      return FPTOUINT_F32_I16;
     if (RetVT == MVT::i32)
       return FPTOUINT_F32_I32;
     if (RetVT == MVT::i64)
@@ -556,6 +562,10 @@ RTLIB::Libcall RTLIB::getFPTOUINT(EVT OpVT, EVT RetVT) {
     if (RetVT == MVT::i128)
       return FPTOUINT_F32_I128;
   } else if (OpVT == MVT::f64) {
+    if (RetVT == MVT::i8)
+      return FPTOUINT_F64_I8;
+    if (RetVT == MVT::i16)
+      return FPTOUINT_F64_I16;
     if (RetVT == MVT::i32)
       return FPTOUINT_F64_I32;
     if (RetVT == MVT::i64)
@@ -712,35 +722,27 @@ static void InitCmpLibcallCCs(ISD::CondCode *CCs) {
   CCs[RTLIB::OEQ_F32] = ISD::SETEQ;
   CCs[RTLIB::OEQ_F64] = ISD::SETEQ;
   CCs[RTLIB::OEQ_F128] = ISD::SETEQ;
-  CCs[RTLIB::OEQ_PPCF128] = ISD::SETEQ;
   CCs[RTLIB::UNE_F32] = ISD::SETNE;
   CCs[RTLIB::UNE_F64] = ISD::SETNE;
   CCs[RTLIB::UNE_F128] = ISD::SETNE;
-  CCs[RTLIB::UNE_PPCF128] = ISD::SETNE;
   CCs[RTLIB::OGE_F32] = ISD::SETGE;
   CCs[RTLIB::OGE_F64] = ISD::SETGE;
   CCs[RTLIB::OGE_F128] = ISD::SETGE;
-  CCs[RTLIB::OGE_PPCF128] = ISD::SETGE;
   CCs[RTLIB::OLT_F32] = ISD::SETLT;
   CCs[RTLIB::OLT_F64] = ISD::SETLT;
   CCs[RTLIB::OLT_F128] = ISD::SETLT;
-  CCs[RTLIB::OLT_PPCF128] = ISD::SETLT;
   CCs[RTLIB::OLE_F32] = ISD::SETLE;
   CCs[RTLIB::OLE_F64] = ISD::SETLE;
   CCs[RTLIB::OLE_F128] = ISD::SETLE;
-  CCs[RTLIB::OLE_PPCF128] = ISD::SETLE;
   CCs[RTLIB::OGT_F32] = ISD::SETGT;
   CCs[RTLIB::OGT_F64] = ISD::SETGT;
   CCs[RTLIB::OGT_F128] = ISD::SETGT;
-  CCs[RTLIB::OGT_PPCF128] = ISD::SETGT;
   CCs[RTLIB::UO_F32] = ISD::SETNE;
   CCs[RTLIB::UO_F64] = ISD::SETNE;
   CCs[RTLIB::UO_F128] = ISD::SETNE;
-  CCs[RTLIB::UO_PPCF128] = ISD::SETNE;
   CCs[RTLIB::O_F32] = ISD::SETEQ;
   CCs[RTLIB::O_F64] = ISD::SETEQ;
   CCs[RTLIB::O_F128] = ISD::SETEQ;
-  CCs[RTLIB::O_PPCF128] = ISD::SETEQ;
 }
 
 /// NOTE: The TargetMachine owns TLOF.
@@ -763,6 +765,8 @@ TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm) : TM(tm) {
   EnableExtLdPromotion = false;
   HasFloatingPointExceptions = true;
   StackPointerRegisterToSaveRestore = 0;
+  ExceptionPointerRegister = 0;
+  ExceptionSelectorRegister = 0;
   BooleanContents = UndefinedBooleanContent;
   BooleanFloatContents = UndefinedBooleanContent;
   BooleanVectorContents = UndefinedBooleanContent;
@@ -772,7 +776,6 @@ TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm) : TM(tm) {
   MinFunctionAlignment = 0;
   PrefFunctionAlignment = 0;
   PrefLoopAlignment = 0;
-  GatherAllAliasesMaxDepth = 6;
   MinStackArgumentAlignment = 1;
   InsertFencesForAtomic = false;
   MinimumJumpTableEntries = 4;
@@ -824,9 +827,9 @@ void TargetLoweringBase::initActions() {
     setOperationAction(ISD::USUBO, VT, Expand);
     setOperationAction(ISD::SMULO, VT, Expand);
     setOperationAction(ISD::UMULO, VT, Expand);
+    setOperationAction(ISD::UABSDIFF, VT, Expand);
+    setOperationAction(ISD::SABSDIFF, VT, Expand);
 
-    setOperationAction(ISD::BITREVERSE, VT, Expand);
-    
     // These library functions default to expand.
     setOperationAction(ISD::FROUND, VT, Expand);
 
@@ -837,9 +840,6 @@ void TargetLoweringBase::initActions() {
       setOperationAction(ISD::SIGN_EXTEND_VECTOR_INREG, VT, Expand);
       setOperationAction(ISD::ZERO_EXTEND_VECTOR_INREG, VT, Expand);
     }
-
-    // For most targets @llvm.get.dynamic.area.offest just returns 0.
-    setOperationAction(ISD::GET_DYNAMIC_AREA_OFFSET, VT, Expand);
   }
 
   // Most targets ignore the @llvm.prefetch intrinsic.
@@ -1116,19 +1116,6 @@ MachineBasicBlock*
 TargetLoweringBase::emitPatchPoint(MachineInstr *MI,
                                    MachineBasicBlock *MBB) const {
   MachineFunction &MF = *MI->getParent()->getParent();
-  MachineFrameInfo &MFI = *MF.getFrameInfo();
-
-  // We're handling multiple types of operands here:
-  // PATCHPOINT MetaArgs - live-in, read only, direct
-  // STATEPOINT Deopt Spill - live-through, read only, indirect
-  // STATEPOINT Deopt Alloca - live-through, read only, direct
-  // (We're currently conservative and mark the deopt slots read/write in
-  // practice.) 
-  // STATEPOINT GC Spill - live-through, read/write, indirect
-  // STATEPOINT GC Alloca - live-through, read/write, direct
-  // The live-in vs live-through is handled already (the live through ones are
-  // all stack slots), but we need to handle the different type of stackmap
-  // operands and memory effects here.
 
   // MI changes inside this loop as we grow operands.
   for(unsigned OperIdx = 0; OperIdx != MI->getNumOperands(); ++OperIdx) {
@@ -1144,24 +1131,10 @@ TargetLoweringBase::emitPatchPoint(MachineInstr *MI,
     // Copy operands before the frame-index.
     for (unsigned i = 0; i < OperIdx; ++i)
       MIB.addOperand(MI->getOperand(i));
-    // Add frame index operands recognized by stackmaps.cpp
-    if (MFI.isStatepointSpillSlotObjectIndex(FI)) {
-      // indirect-mem-ref tag, size, #FI, offset.
-      // Used for spills inserted by StatepointLowering.  This codepath is not
-      // used for patchpoints/stackmaps at all, for these spilling is done via
-      // foldMemoryOperand callback only.
-      assert(MI->getOpcode() == TargetOpcode::STATEPOINT && "sanity");
-      MIB.addImm(StackMaps::IndirectMemRefOp);
-      MIB.addImm(MFI.getObjectSize(FI));
-      MIB.addOperand(MI->getOperand(OperIdx));
-      MIB.addImm(0);
-    } else {
-      // direct-mem-ref tag, #FI, offset.
-      // Used by patchpoint, and direct alloca arguments to statepoints
-      MIB.addImm(StackMaps::DirectMemRefOp);
-      MIB.addOperand(MI->getOperand(OperIdx));
-      MIB.addImm(0);
-    }
+    // Add frame index operands: direct-mem-ref tag, #FI, offset.
+    MIB.addImm(StackMaps::DirectMemRefOp);
+    MIB.addOperand(MI->getOperand(OperIdx));
+    MIB.addImm(0);
     // Copy the operands after the frame index.
     for (unsigned i = OperIdx + 1; i != MI->getNumOperands(); ++i)
       MIB.addOperand(MI->getOperand(i));
@@ -1171,6 +1144,7 @@ TargetLoweringBase::emitPatchPoint(MachineInstr *MI,
     assert(MIB->mayLoad() && "Folded a stackmap use to a non-load!");
 
     // Add a new memory operand for this FI.
+    const MachineFrameInfo &MFI = *MF.getFrameInfo();
     assert(MFI.getObjectOffset(FI) != -1);
 
     unsigned Flags = MachineMemOperand::MOLoad;
@@ -1272,17 +1246,10 @@ void TargetLoweringBase::computeRegisterProperties(
 
   // ppcf128 type is really two f64's.
   if (!isTypeLegal(MVT::ppcf128)) {
-    if (isTypeLegal(MVT::f64)) {
-      NumRegistersForVT[MVT::ppcf128] = 2*NumRegistersForVT[MVT::f64];
-      RegisterTypeForVT[MVT::ppcf128] = MVT::f64;
-      TransformToType[MVT::ppcf128] = MVT::f64;
-      ValueTypeActions.setTypeAction(MVT::ppcf128, TypeExpandFloat);
-    } else {
-      NumRegistersForVT[MVT::ppcf128] = NumRegistersForVT[MVT::i128];
-      RegisterTypeForVT[MVT::ppcf128] = RegisterTypeForVT[MVT::i128];
-      TransformToType[MVT::ppcf128] = MVT::i128;
-      ValueTypeActions.setTypeAction(MVT::ppcf128, TypeSoftenFloat);
-    }
+    NumRegistersForVT[MVT::ppcf128] = 2*NumRegistersForVT[MVT::f64];
+    RegisterTypeForVT[MVT::ppcf128] = MVT::f64;
+    TransformToType[MVT::ppcf128] = MVT::f64;
+    ValueTypeActions.setTypeAction(MVT::ppcf128, TypeExpandFloat);
   }
 
   // Decide how to handle f128. If the target does not have native f128 support,
@@ -1312,14 +1279,20 @@ void TargetLoweringBase::computeRegisterProperties(
     ValueTypeActions.setTypeAction(MVT::f32, TypeSoftenFloat);
   }
 
-  // Decide how to handle f16. If the target does not have native f16 support,
-  // promote it to f32, because there are no f16 library calls (except for
-  // conversions).
   if (!isTypeLegal(MVT::f16)) {
-    NumRegistersForVT[MVT::f16] = NumRegistersForVT[MVT::f32];
-    RegisterTypeForVT[MVT::f16] = RegisterTypeForVT[MVT::f32];
-    TransformToType[MVT::f16] = MVT::f32;
-    ValueTypeActions.setTypeAction(MVT::f16, TypePromoteFloat);
+    // If the target has native f32 support, promote f16 operations to f32.  If
+    // f32 is not supported, generate soft float library calls.
+    if (isTypeLegal(MVT::f32)) {
+      NumRegistersForVT[MVT::f16] = NumRegistersForVT[MVT::f32];
+      RegisterTypeForVT[MVT::f16] = RegisterTypeForVT[MVT::f32];
+      TransformToType[MVT::f16] = MVT::f32;
+      ValueTypeActions.setTypeAction(MVT::f16, TypePromoteFloat);
+    } else {
+      NumRegistersForVT[MVT::f16] = NumRegistersForVT[MVT::i16];
+      RegisterTypeForVT[MVT::f16] = RegisterTypeForVT[MVT::i16];
+      TransformToType[MVT::f16] = MVT::i16;
+      ValueTypeActions.setTypeAction(MVT::f16, TypeSoftenFloat);
+    }
   }
 
   // Loop over all of the vector value types to see which need transformations.
@@ -1601,11 +1574,13 @@ int TargetLoweringBase::InstructionOpcodeToISD(unsigned Opcode) const {
   case Invoke:         return 0;
   case Resume:         return 0;
   case Unreachable:    return 0;
+  case CleanupEndPad:  return 0;
   case CleanupRet:     return 0;
+  case CatchEndPad:  return 0;
   case CatchRet:       return 0;
-  case CatchPad:       return 0;
-  case CatchSwitch:    return 0;
-  case CleanupPad:     return 0;
+  case CatchPad:     return 0;
+  case TerminatePad: return 0;
+  case CleanupPad:   return 0;
   case Add:            return ISD::ADD;
   case FAdd:           return ISD::FADD;
   case Sub:            return ISD::SUB;
@@ -1681,10 +1656,6 @@ TargetLoweringBase::getTypeLegalizationCost(const DataLayout &DL,
 
     if (LK.first == TypeSplitVector || LK.first == TypeExpandInteger)
       Cost *= 2;
-
-    // Do not loop with f128 type.
-    if (MTy == LK.second)
-      return std::make_pair(Cost, MTy.getSimpleVT());
 
     // Keep legalizing the type.
     MTy = LK.second;

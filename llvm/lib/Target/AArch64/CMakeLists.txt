@@ -20,7 +20,6 @@ add_llvm_target(AArch64CodeGen
   AArch64AdvSIMDScalarPass.cpp
   AArch64AsmPrinter.cpp
   AArch64BranchRelaxation.cpp
-  AArch64CallLowering.cpp
   AArch64CleanupLocalDynamicTLSPass.cpp
   AArch64CollectLOH.cpp
   AArch64ConditionalCompares.cpp
@@ -30,7 +29,6 @@ add_llvm_target(AArch64CodeGen
   AArch64A53Fix835769.cpp
   AArch64FrameLowering.cpp
   AArch64ConditionOptimizer.cpp
-  AArch64RedundantCopyElimination.cpp
   AArch64ISelDAGToDAG.cpp
   AArch64ISelLowering.cpp
   AArch64InstrInfo.cpp

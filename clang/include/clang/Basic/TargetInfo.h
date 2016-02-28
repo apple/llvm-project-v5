@@ -202,9 +202,6 @@ protected:
   /// zero-length bitfield.
   unsigned UseZeroLengthBitfieldAlignment : 1;
 
-  /// \brief  Whether explicit bit field alignment attributes are honored.
-  unsigned UseExplicitBitFieldAlignment : 1;
-
   /// If non-zero, specifies a fixed alignment value for bitfields that follow
   /// zero length bitfield, regardless of the zero length bitfield type.
   unsigned ZeroLengthBitfieldBoundary;
@@ -416,10 +413,10 @@ public:
   }
 
   // Return the size of unwind_word for this target.
-  virtual unsigned getUnwindWordWidth() const { return getPointerWidth(0); }
+  unsigned getUnwindWordWidth() const { return getPointerWidth(0); }
 
   /// \brief Return the "preferred" register width on this target.
-  virtual unsigned getRegisterWidth() const {
+  unsigned getRegisterWidth() const {
     // Currently we assume the register width on the target matches the pointer
     // width, we can introduce a new variable for this if/when some target wants
     // it.
@@ -467,12 +464,6 @@ public:
   /// a zero length bitfield.
   unsigned getZeroLengthBitfieldBoundary() const {
     return ZeroLengthBitfieldBoundary;
-  }
-
-  /// \brief Check whether explicit bitfield alignment attributes should be
-  //  honored, as in "__attribute__((aligned(2))) int b : 1;".
-  bool useExplicitBitFieldAlignment() const {
-    return UseExplicitBitFieldAlignment;
   }
 
   /// \brief Check whether this target support '\#pragma options align=mac68k'.
@@ -652,19 +643,6 @@ public:
       // Don't copy Name or constraint string.
     }
   };
-
-  /// \brief Validate register name used for global register variables.
-  ///
-  /// This function returns true if the register passed in RegName can be used
-  /// for global register variables on this target. In addition, it returns
-  /// true in HasSizeMismatch if the size of the register doesn't match the
-  /// variable size passed in RegSize.
-  virtual bool validateGlobalRegisterVariable(StringRef RegName,
-                                              unsigned RegSize,
-                                              bool &HasSizeMismatch) const {
-    HasSizeMismatch = false;
-    return true;
-  }
 
   // validateOutputConstraint, validateInputConstraint - Checks that
   // a constraint is valid and provides information about it.
@@ -939,9 +917,6 @@ public:
   virtual bool hasSjLjLowering() const {
     return false;
   }
-
-  /// \brief Whether target allows to overalign ABI-specified prefered alignment
-  virtual bool allowsLargerPreferedTypeAlignment() const { return true; }
 
 protected:
   virtual uint64_t getPointerWidthV(unsigned AddrSpace) const {

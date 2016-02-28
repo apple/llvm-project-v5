@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int llvm_object_list_sections(void) {
+int object_list_sections(void) {
   LLVMMemoryBufferRef MB;
   LLVMObjectFileRef O;
   LLVMSectionIteratorRef sect;
@@ -49,7 +49,7 @@ int llvm_object_list_sections(void) {
   return 0;
 }
 
-int llvm_object_list_symbols(void) {
+int object_list_symbols(void) {
   LLVMMemoryBufferRef MB;
   LLVMObjectFileRef O;
   LLVMSectionIteratorRef sect;

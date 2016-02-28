@@ -19,7 +19,6 @@
 #include "clang/AST/DeclLookups.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclVisitor.h"
-#include "clang/AST/LocInfoType.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/AST/TypeVisitor.h"
 #include "clang/Basic/Builtins.h"
@@ -656,15 +655,6 @@ void ASTDumper::dumpTypeAsChild(const Type *T) {
       OS << "<<<NULL>>>";
       return;
     }
-    if (const LocInfoType *LIT = llvm::dyn_cast<LocInfoType>(T)) {
-      {
-        ColorScope Color(*this, TypeColor);
-        OS << "LocInfo Type";
-      }
-      dumpPointer(T);
-      dumpTypeAsChild(LIT->getTypeSourceInfo()->getType());
-      return;
-    }
 
     {
       ColorScope Color(*this, TypeColor);
@@ -1055,7 +1045,6 @@ void ASTDumper::VisitTypedefDecl(const TypedefDecl *D) {
   dumpType(D->getUnderlyingType());
   if (D->isModulePrivate())
     OS << " __module_private__";
-  dumpTypeAsChild(D->getUnderlyingType());
 }
 
 void ASTDumper::VisitEnumDecl(const EnumDecl *D) {
@@ -1227,7 +1216,6 @@ void ASTDumper::VisitNamespaceAliasDecl(const NamespaceAliasDecl *D) {
 void ASTDumper::VisitTypeAliasDecl(const TypeAliasDecl *D) {
   dumpName(D);
   dumpType(D->getUnderlyingType());
-  dumpTypeAsChild(D->getUnderlyingType());
 }
 
 void ASTDumper::VisitTypeAliasTemplateDecl(const TypeAliasTemplateDecl *D) {
@@ -1397,23 +1385,20 @@ void ASTDumper::VisitTemplateTemplateParmDecl(
 
 void ASTDumper::VisitUsingDecl(const UsingDecl *D) {
   OS << ' ';
-  if (D->getQualifier())
-    D->getQualifier()->print(OS, D->getASTContext().getPrintingPolicy());
+  D->getQualifier()->print(OS, D->getASTContext().getPrintingPolicy());
   OS << D->getNameAsString();
 }
 
 void ASTDumper::VisitUnresolvedUsingTypenameDecl(
     const UnresolvedUsingTypenameDecl *D) {
   OS << ' ';
-  if (D->getQualifier())
-    D->getQualifier()->print(OS, D->getASTContext().getPrintingPolicy());
+  D->getQualifier()->print(OS, D->getASTContext().getPrintingPolicy());
   OS << D->getNameAsString();
 }
 
 void ASTDumper::VisitUnresolvedUsingValueDecl(const UnresolvedUsingValueDecl *D) {
   OS << ' ';
-  if (D->getQualifier())
-    D->getQualifier()->print(OS, D->getASTContext().getPrintingPolicy());
+  D->getQualifier()->print(OS, D->getASTContext().getPrintingPolicy());
   OS << D->getNameAsString();
   dumpType(D->getType());
 }
@@ -1421,8 +1406,6 @@ void ASTDumper::VisitUnresolvedUsingValueDecl(const UnresolvedUsingValueDecl *D)
 void ASTDumper::VisitUsingShadowDecl(const UsingShadowDecl *D) {
   OS << ' ';
   dumpBareDeclRef(D->getTargetDecl());
-  if (auto *TD = dyn_cast<TypeDecl>(D->getUnderlyingDecl()))
-    dumpTypeAsChild(TD->getTypeForDecl());
 }
 
 void ASTDumper::VisitLinkageSpecDecl(const LinkageSpecDecl *D) {
@@ -1597,8 +1580,6 @@ void ASTDumper::VisitObjCPropertyDecl(const ObjCPropertyDecl *D) {
       OS << " strong";
     if (Attrs & ObjCPropertyDecl::OBJC_PR_unsafe_unretained)
       OS << " unsafe_unretained";
-    if (Attrs & ObjCPropertyDecl::OBJC_PR_class)
-      OS << " class";
     if (Attrs & ObjCPropertyDecl::OBJC_PR_getter)
       dumpDeclRef(D->getGetterMethodDecl(), "getter");
     if (Attrs & ObjCPropertyDecl::OBJC_PR_setter)

@@ -30,6 +30,7 @@ public:
   FORWARD_SYMBOL_METHOD(isConstType)
   FORWARD_SYMBOL_METHOD(getLength)
   FORWARD_SYMBOL_METHOD(getLexicalParentId)
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
   FORWARD_SYMBOL_METHOD(isUnalignedType)
   FORWARD_SYMBOL_METHOD(isVolatileType)
 };

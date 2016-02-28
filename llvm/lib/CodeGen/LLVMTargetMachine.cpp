@@ -42,10 +42,6 @@ static cl::opt<cl::boolOrDefault>
 EnableFastISelOption("fast-isel", cl::Hidden,
   cl::desc("Enable the \"fast\" instruction selector"));
 
-static cl::opt<bool>
-    EnableGlobalISel("global-isel", cl::Hidden, cl::init(false),
-                     cl::desc("Enable the \"global\" instruction selector"));
-
 void LLVMTargetMachine::initAsmInfo() {
   MRI = TheTarget.createMCRegInfo(getTargetTriple().str());
   MII = TheTarget.createMCInstrInfo();
@@ -98,10 +94,6 @@ addPassesToGenerateCode(LLVMTargetMachine *TM, PassManagerBase &PM,
                         AnalysisID StartAfter, AnalysisID StopAfter,
                         MachineFunctionInitializer *MFInitializer = nullptr) {
 
-  // When in emulated TLS mode, add the LowerEmuTLS pass.
-  if (TM->Options.EmulatedTLS)
-    PM.add(createLowerEmuTLSPass(TM));
-
   // Add internal analysis passes from the target machine.
   PM.add(createTargetTransformInfoWrapperPass(TM->getTargetIRAnalysis()));
 
@@ -133,17 +125,13 @@ addPassesToGenerateCode(LLVMTargetMachine *TM, PassManagerBase &PM,
   PM.add(new MachineFunctionAnalysis(*TM, MFInitializer));
 
   // Enable FastISel with -fast, but allow that to be overridden.
-  TM->setO0WantsFastISel(EnableFastISelOption != cl::BOU_FALSE);
   if (EnableFastISelOption == cl::BOU_TRUE ||
       (TM->getOptLevel() == CodeGenOpt::None &&
-       TM->getO0WantsFastISel()))
+       EnableFastISelOption != cl::BOU_FALSE))
     TM->setFastISel(true);
 
   // Ask the target for an isel.
-  if (LLVM_UNLIKELY(EnableGlobalISel)) {
-    if (PassConfig->addIRTranslator())
-      return nullptr;
-  } else if (PassConfig->addInstSelector())
+  if (PassConfig->addInstSelector())
     return nullptr;
 
   PassConfig->addMachinePasses();
@@ -165,7 +153,7 @@ bool LLVMTargetMachine::addPassesToEmitFile(
     return true;
 
   if (StopAfter) {
-    PM.add(createPrintMIRPass(errs()));
+    PM.add(createPrintMIRPass(outs()));
     return false;
   }
 
@@ -214,7 +202,6 @@ bool LLVMTargetMachine::addPassesToEmitFile(
     Triple T(getTargetTriple().str());
     AsmStreamer.reset(getTarget().createMCObjectStreamer(
         T, *Context, *MAB, Out, MCE, STI, Options.MCOptions.MCRelaxAll,
-        Options.MCOptions.MCIncrementalLinkerCompatible,
         /*DWARFMustBeAtTheEnd*/ true));
     break;
   }
@@ -267,7 +254,6 @@ bool LLVMTargetMachine::addPassesToEmitMC(PassManagerBase &PM, MCContext *&Ctx,
   const MCSubtargetInfo &STI = *getMCSubtargetInfo();
   std::unique_ptr<MCStreamer> AsmStreamer(getTarget().createMCObjectStreamer(
       T, *Ctx, *MAB, Out, MCE, STI, Options.MCOptions.MCRelaxAll,
-      Options.MCOptions.MCIncrementalLinkerCompatible,
       /*DWARFMustBeAtTheEnd*/ true));
 
   // Create the AsmPrinter, which takes ownership of AsmStreamer if successful.

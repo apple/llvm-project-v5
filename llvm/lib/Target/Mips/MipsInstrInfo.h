@@ -19,6 +19,7 @@
 #define LLVM_LIB_TARGET_MIPS_MIPSINSTRINFO_H
 
 #include "Mips.h"
+#include "MipsAnalyzeImmediate.h"
 #include "MipsRegisterInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/Support/ErrorHandling.h"

@@ -13,6 +13,7 @@
 
 #include "MipsSEFrameLowering.h"
 #include "MCTargetDesc/MipsBaseInfo.h"
+#include "MipsAnalyzeImmediate.h"
 #include "MipsMachineFunction.h"
 #include "MipsSEInstrInfo.h"
 #include "MipsSubtarget.h"
@@ -750,21 +751,6 @@ void MipsSEFrameLowering::emitInterruptEpilogueStub(
   BuildMI(MBB, MBBI, DL, STI.getInstrInfo()->get(Mips::MTC0), Mips::COP012)
       .addReg(Mips::K1)
       .addImm(0);
-}
-
-int MipsSEFrameLowering::getFrameIndexReference(const MachineFunction &MF,
-                                                int FI,
-                                                unsigned &FrameReg) const {
-  const MachineFrameInfo *MFI = MF.getFrameInfo();
-  MipsABIInfo ABI = STI.getABI();
-
-  if (MFI->isFixedObjectIndex(FI))
-    FrameReg = hasFP(MF) ? ABI.GetFramePtr() : ABI.GetStackPtr();
-  else
-    FrameReg = hasBP(MF) ? ABI.GetBasePtr() : ABI.GetStackPtr();
-
-  return MFI->getObjectOffset(FI) + MFI->getStackSize() -
-         getOffsetOfLocalArea() + MFI->getOffsetAdjustment();
 }
 
 bool MipsSEFrameLowering::

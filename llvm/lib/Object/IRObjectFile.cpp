@@ -24,9 +24,9 @@
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
-#include "llvm/MC/MCParser/MCTargetAsmParser.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -219,12 +219,6 @@ uint32_t IRObjectFile::getSymbolFlags(DataRefImpl Symb) const {
   uint32_t Res = BasicSymbolRef::SF_None;
   if (GV->isDeclarationForLinker())
     Res |= BasicSymbolRef::SF_Undefined;
-  else if (GV->hasHiddenVisibility() && !GV->hasLocalLinkage())
-    Res |= BasicSymbolRef::SF_Hidden;
-  if (const GlobalVariable *GVar = dyn_cast<GlobalVariable>(GV)) {
-    if (GVar->isConstant())
-      Res |= BasicSymbolRef::SF_Const;
-  }
   if (GV->hasPrivateLinkage())
     Res |= BasicSymbolRef::SF_FormatSpecific;
   if (!GV->hasLocalLinkage())
@@ -305,11 +299,11 @@ llvm::object::IRObjectFile::create(MemoryBufferRef Object,
   if (!BCOrErr)
     return BCOrErr.getError();
 
-  std::unique_ptr<MemoryBuffer> Buff =
-      MemoryBuffer::getMemBuffer(BCOrErr.get(), false);
+  std::unique_ptr<MemoryBuffer> Buff(
+      MemoryBuffer::getMemBuffer(BCOrErr.get(), false));
 
   ErrorOr<std::unique_ptr<Module>> MOrErr =
-      getLazyBitcodeModule(std::move(Buff), Context,
+      getLazyBitcodeModule(std::move(Buff), Context, nullptr,
                            /*ShouldLazyLoadMetadata*/ true);
   if (std::error_code EC = MOrErr.getError())
     return EC;

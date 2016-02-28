@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 2.8.12.2)
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "No build type selected, default to Debug")
-  set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type (default Debug)")
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if(POLICY CMP0022)
@@ -30,7 +30,7 @@ if(NOT DEFINED LLVM_VERSION_MAJOR)
   set(LLVM_VERSION_MAJOR 3)
 endif()
 if(NOT DEFINED LLVM_VERSION_MINOR)
-  set(LLVM_VERSION_MINOR 9)
+  set(LLVM_VERSION_MINOR 8)
 endif()
 if(NOT DEFINED LLVM_VERSION_PATCH)
   set(LLVM_VERSION_PATCH 0)
@@ -68,11 +68,6 @@ if(LLVM_PARALLEL_COMPILE_JOBS)
   endif()
 endif()
 
-set(LLVM_BUILD_GLOBAL_ISEL OFF CACHE BOOL "Experimental: Build GlobalISel")
-if(LLVM_BUILD_GLOBAL_ISEL)
-  add_definitions(-DLLVM_BUILD_GLOBAL_ISEL)
-endif()
-
 set(LLVM_PARALLEL_LINK_JOBS "" CACHE STRING
   "Define the maximum number of concurrent link jobs.")
 if(LLVM_PARALLEL_LINK_JOBS)
@@ -90,10 +85,6 @@ set(CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules"
   )
-
-# Generate a CompilationDatabase (compile_commands.json file) for our build,
-# for use by clang_complete, YouCompleteMe, etc.
-set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 option(LLVM_INSTALL_UTILS "Include utility binaries in the 'install' target." OFF)
 
@@ -310,9 +301,6 @@ endif( LLVM_USE_INTEL_JITEVENTS )
 option(LLVM_USE_OPROFILE
   "Use opagent JIT interface to inform OProfile about JIT code" OFF)
 
-option(LLVM_EXTERNALIZE_DEBUGINFO
-  "Generate dSYM files and strip executables and libraries (Darwin Only)" OFF)
-
 # If enabled, verify we are on a platform that supports oprofile.
 if( LLVM_USE_OPROFILE )
   if( NOT CMAKE_SYSTEM_NAME MATCHES "Linux" )
@@ -410,10 +398,6 @@ endif()
 # BEFORE this include, otherwise options will not be correctly set on
 # first cmake run
 include(config-ix)
-
-string(REPLACE "Native" ${LLVM_NATIVE_ARCH}
-  LLVM_TARGETS_TO_BUILD "${LLVM_TARGETS_TO_BUILD}")
-list(REMOVE_DUPLICATES LLVM_TARGETS_TO_BUILD)
 
 # By default, we target the host, but this can be overridden at CMake
 # invocation time.
@@ -699,13 +683,6 @@ if( LLVM_INCLUDE_EXAMPLES )
 endif()
 
 if( LLVM_INCLUDE_TESTS )
-  if(EXISTS ${LLVM_MAIN_SRC_DIR}/projects/test-suite AND TARGET clang)
-    include(LLVMExternalProjectUtils)
-    llvm_ExternalProject_Add(test-suite ${LLVM_MAIN_SRC_DIR}/projects/test-suite
-      USE_TOOLCHAIN
-      EXCLUDE_FROM_ALL
-      NO_INSTALL)
-  endif()
   add_subdirectory(test)
   add_subdirectory(unittests)
   if (MSVC)
@@ -769,21 +746,4 @@ if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
                               -DCMAKE_INSTALL_COMPONENT=llvm-headers
                               -P "${CMAKE_BINARY_DIR}/cmake_install.cmake")
   endif()
-endif()
-
-# This must be at the end of the LLVM root CMakeLists file because it must run
-# after all targets are created.
-if(LLVM_DISTRIBUTION_COMPONENTS)
-  if(CMAKE_CONFIGURATION_TYPES)
-    message(FATAL_ERROR "LLVM_DISTRIBUTION_COMPONENTS cannot be specified with multi-configuration generators (i.e. Xcode or Visual Studio)")
-  endif()
-  
-  add_custom_target(install-distribution)
-  foreach(target ${LLVM_DISTRIBUTION_COMPONENTS})
-    if(TARGET install-${target})
-      add_dependencies(install-distribution install-${target})
-    else()
-      message(FATAL_ERROR "Specified distribution component '${target}' doesn't have an install target")
-    endif()
-  endforeach()
 endif()

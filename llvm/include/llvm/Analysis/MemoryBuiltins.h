@@ -59,6 +59,16 @@ bool isCallocLikeFn(const Value *V, const TargetLibraryInfo *TLI,
 bool isAllocLikeFn(const Value *V, const TargetLibraryInfo *TLI,
                    bool LookThroughBitCast = false);
 
+/// \brief Tests if a value is a call or invoke to a library function that
+/// reallocates memory (such as realloc).
+bool isReallocLikeFn(const Value *V, const TargetLibraryInfo *TLI,
+                     bool LookThroughBitCast = false);
+
+/// \brief Tests if a value is a call or invoke to a library function that
+/// allocates memory and never returns null (such as operator new).
+bool isOperatorNewLikeFn(const Value *V, const TargetLibraryInfo *TLI,
+                         bool LookThroughBitCast = false);
+
 //===----------------------------------------------------------------------===//
 //  malloc Call Utility Functions.
 //
@@ -159,15 +169,15 @@ public:
 
   SizeOffsetType compute(Value *V);
 
-  static bool knownSize(const SizeOffsetType &SizeOffset) {
+  bool knownSize(SizeOffsetType &SizeOffset) {
     return SizeOffset.first.getBitWidth() > 1;
   }
 
-  static bool knownOffset(const SizeOffsetType &SizeOffset) {
+  bool knownOffset(SizeOffsetType &SizeOffset) {
     return SizeOffset.second.getBitWidth() > 1;
   }
 
-  static bool bothKnown(const SizeOffsetType &SizeOffset) {
+  bool bothKnown(SizeOffsetType &SizeOffset) {
     return knownSize(SizeOffset) && knownOffset(SizeOffset);
   }
 

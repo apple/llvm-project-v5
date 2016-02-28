@@ -190,21 +190,13 @@ clang::analyze_format_string::ParseLengthModifier(FormatSpecifier &FS,
       return false;
     case 'h':
       ++I;
-      if (I != E && *I == 'h') {
-        ++I;
-        lmKind = LengthModifier::AsChar;
-      } else {
-        lmKind = LengthModifier::AsShort;
-      }
+      lmKind = (I != E && *I == 'h') ? (++I, LengthModifier::AsChar)
+                                     : LengthModifier::AsShort;
       break;
     case 'l':
       ++I;
-      if (I != E && *I == 'l') {
-        ++I;
-        lmKind = LengthModifier::AsLongLong;
-      } else {
-        lmKind = LengthModifier::AsLong;
-      }
+      lmKind = (I != E && *I == 'l') ? (++I, LengthModifier::AsLongLong)
+                                     : LengthModifier::AsLong;
       break;
     case 'j': lmKind = LengthModifier::AsIntMax;     ++I; break;
     case 'z': lmKind = LengthModifier::AsSizeT;      ++I; break;

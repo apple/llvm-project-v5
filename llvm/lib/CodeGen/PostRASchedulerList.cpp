@@ -169,7 +169,7 @@ namespace {
     /// Observe - Update liveness information to account for the current
     /// instruction, which will not be scheduled.
     ///
-    void Observe(MachineInstr &MI, unsigned Count);
+    void Observe(MachineInstr *MI, unsigned Count);
 
     /// finishBlock - Clean up register live-range state.
     ///
@@ -335,7 +335,7 @@ bool PostRAScheduler::runOnMachineFunction(MachineFunction &Fn) {
         Scheduler.EmitSchedule();
         Current = MI;
         CurrentCount = Count;
-        Scheduler.Observe(*MI, CurrentCount);
+        Scheduler.Observe(MI, CurrentCount);
       }
       I = MI;
       if (MI->isBundle())
@@ -399,12 +399,8 @@ void SchedulePostRATDList::schedule() {
   }
 
   DEBUG(dbgs() << "********** List Scheduling **********\n");
-  DEBUG(
-    for (const SUnit &SU : SUnits) {
-      SU.dumpAll(this);
-      dbgs() << '\n';
-    }
-  );
+  DEBUG(for (unsigned su = 0, e = SUnits.size(); su != e; ++su)
+          SUnits[su].dumpAll(this));
 
   AvailableQueue.initNodes(SUnits);
   ListScheduleTopDown();
@@ -414,7 +410,7 @@ void SchedulePostRATDList::schedule() {
 /// Observe - Update liveness information to account for the current
 /// instruction, which will not be scheduled.
 ///
-void SchedulePostRATDList::Observe(MachineInstr &MI, unsigned Count) {
+void SchedulePostRATDList::Observe(MachineInstr *MI, unsigned Count) {
   if (AntiDepBreak)
     AntiDepBreak->Observe(MI, Count, EndIndex);
 }

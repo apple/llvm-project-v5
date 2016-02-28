@@ -21,6 +21,7 @@
 #include "clang/Basic/TargetBuiltins.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/CodeGen/CGFunctionInfo.h"
+#include "clang/Sema/SemaDiagnostic.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/DataLayout.h"
@@ -237,20 +238,10 @@ static Value *EmitSignBit(CodeGenFunction &CGF, Value *V) {
   llvm::Type *IntTy = llvm::IntegerType::get(C, Width);
   V = CGF.Builder.CreateBitCast(V, IntTy);
   if (Ty->isPPC_FP128Ty()) {
-    // We want the sign bit of the higher-order double. The bitcast we just
-    // did works as if the double-double was stored to memory and then
-    // read as an i128. The "store" will put the higher-order double in the
-    // lower address in both little- and big-Endian modes, but the "load"
-    // will treat those bits as a different part of the i128: the low bits in
-    // little-Endian, the high bits in big-Endian. Therefore, on big-Endian
-    // we need to shift the high bits down to the low before truncating.
+    // The higher-order double comes first, and so we need to truncate the
+    // pair to extract the overall sign. The order of the pair is the same
+    // in both little- and big-Endian modes.
     Width >>= 1;
-    if (CGF.getTarget().isBigEndian()) {
-      Value *ShiftCst = llvm::ConstantInt::get(IntTy, Width);
-      V = CGF.Builder.CreateLShr(V, ShiftCst);
-    } 
-    // We are truncating value in order to extract the higher-order 
-    // double, which we will be using to extract the sign from.
     IntTy = llvm::IntegerType::get(C, Width);
     V = CGF.Builder.CreateTrunc(V, IntTy);
   }
@@ -286,40 +277,6 @@ static llvm::Value *EmitOverflowIntrinsic(CodeGenFunction &CGF,
   llvm::Value *Tmp = CGF.Builder.CreateCall(Callee, {X, Y});
   Carry = CGF.Builder.CreateExtractValue(Tmp, 1);
   return CGF.Builder.CreateExtractValue(Tmp, 0);
-}
-
-// Emit a simple mangled intrinsic that has 1 argument and a return type
-// matching the argument type.
-static Value *emitUnaryBuiltin(CodeGenFunction &CGF,
-                               const CallExpr *E,
-                               unsigned IntrinsicID) {
-  llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
-
-  Value *F = CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
-  return CGF.Builder.CreateCall(F, Src0);
-}
-
-// Emit an intrinsic that has 3 float or double operands.
-static Value *emitTernaryFPBuiltin(CodeGenFunction &CGF,
-                                   const CallExpr *E,
-                                   unsigned IntrinsicID) {
-  llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
-  llvm::Value *Src1 = CGF.EmitScalarExpr(E->getArg(1));
-  llvm::Value *Src2 = CGF.EmitScalarExpr(E->getArg(2));
-
-  Value *F = CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
-  return CGF.Builder.CreateCall(F, {Src0, Src1, Src2});
-}
-
-// Emit an intrinsic that has 1 float or double operand, and 1 integer.
-static Value *emitFPIntBuiltin(CodeGenFunction &CGF,
-                               const CallExpr *E,
-                               unsigned IntrinsicID) {
-  llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
-  llvm::Value *Src1 = CGF.EmitScalarExpr(E->getArg(1));
-
-  Value *F = CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
-  return CGF.Builder.CreateCall(F, {Src0, Src1});
 }
 
 namespace {
@@ -376,69 +333,65 @@ Value *CodeGenFunction::EmitVAStartEnd(Value *ArgValue, bool IsStart) {
   return Builder.CreateCall(CGM.getIntrinsic(inst), ArgValue);
 }
 
-/// Checks if using the result of __builtin_object_size(p, @p From) in place of
-/// __builtin_object_size(p, @p To) is correct
-static bool areBOSTypesCompatible(int From, int To) {
-  // Note: Our __builtin_object_size implementation currently treats Type=0 and
-  // Type=2 identically. Encoding this implementation detail here may make
-  // improving __builtin_object_size difficult in the future, so it's omitted.
-  return From == To || (From == 0 && To == 1) || (From == 3 && To == 2);
-}
+// Returns true if we have a valid set of target features.
+bool CodeGenFunction::checkBuiltinTargetFeatures(
+    const FunctionDecl *TargetDecl) {
+  // Early exit if this is an indirect call.
+  if (!TargetDecl)
+    return true;
 
-static llvm::Value *
-getDefaultBuiltinObjectSizeResult(unsigned Type, llvm::IntegerType *ResType) {
-  return ConstantInt::get(ResType, (Type & 2) ? 0 : -1, /*isSigned=*/true);
-}
+  // Get the current enclosing function if it exists. If it doesn't
+  // we can't check the target features anyhow.
+  const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(CurFuncDecl);
+  if (!FD) return true;
 
-llvm::Value *
-CodeGenFunction::evaluateOrEmitBuiltinObjectSize(const Expr *E, unsigned Type,
-                                                 llvm::IntegerType *ResType) {
-  uint64_t ObjectSize;
-  if (!E->tryEvaluateObjectSize(ObjectSize, getContext(), Type))
-    return emitBuiltinObjectSize(E, Type, ResType);
-  return ConstantInt::get(ResType, ObjectSize, /*isSigned=*/true);
-}
+  unsigned BuiltinID = TargetDecl->getBuiltinID();
+  const char *FeatureList =
+      CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID);
 
-/// Returns a Value corresponding to the size of the given expression.
-/// This Value may be either of the following:
-///   - A llvm::Argument (if E is a param with the pass_object_size attribute on
-///     it)
-///   - A call to the @llvm.objectsize intrinsic
-llvm::Value *
-CodeGenFunction::emitBuiltinObjectSize(const Expr *E, unsigned Type,
-                                       llvm::IntegerType *ResType) {
-  // We need to reference an argument if the pointer is a parameter with the
-  // pass_object_size attribute.
-  if (auto *D = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts())) {
-    auto *Param = dyn_cast<ParmVarDecl>(D->getDecl());
-    auto *PS = D->getDecl()->getAttr<PassObjectSizeAttr>();
-    if (Param != nullptr && PS != nullptr &&
-        areBOSTypesCompatible(PS->getType(), Type)) {
-      auto Iter = SizeArguments.find(Param);
-      assert(Iter != SizeArguments.end());
+  if (!FeatureList || StringRef(FeatureList) == "")
+    return true;
 
-      const ImplicitParamDecl *D = Iter->second;
-      auto DIter = LocalDeclMap.find(D);
-      assert(DIter != LocalDeclMap.end());
+  StringRef TargetCPU = Target.getTargetOpts().CPU;
+  llvm::StringMap<bool> FeatureMap;
 
-      return EmitLoadOfScalar(DIter->second, /*volatile=*/false,
-                              getContext().getSizeType(), E->getLocStart());
-    }
+  if (const auto *TD = FD->getAttr<TargetAttr>()) {
+    // If we have a TargetAttr build up the feature map based on that.
+    TargetAttr::ParsedTargetAttr ParsedAttr = TD->parse();
+
+    // Make a copy of the features as passed on the command line into the
+    // beginning of the additional features from the function to override.
+    ParsedAttr.first.insert(ParsedAttr.first.begin(),
+                            Target.getTargetOpts().FeaturesAsWritten.begin(),
+                            Target.getTargetOpts().FeaturesAsWritten.end());
+
+    if (ParsedAttr.second != "")
+      TargetCPU = ParsedAttr.second;
+
+    // Now populate the feature map, first with the TargetCPU which is either
+    // the default or a new one from the target attribute string. Then we'll use
+    // the passed in features (FeaturesAsWritten) along with the new ones from
+    // the attribute.
+    Target.initFeatureMap(FeatureMap, CGM.getDiags(), TargetCPU,
+                          ParsedAttr.first);
+  } else {
+    Target.initFeatureMap(FeatureMap, CGM.getDiags(), TargetCPU,
+                          Target.getTargetOpts().Features);
   }
 
-  // LLVM can't handle Type=3 appropriately, and __builtin_object_size shouldn't
-  // evaluate E for side-effects. In either case, we shouldn't lower to
-  // @llvm.objectsize.
-  if (Type == 3 || E->HasSideEffects(getContext()))
-    return getDefaultBuiltinObjectSizeResult(Type, ResType);
-
-  // LLVM only supports 0 and 2, make sure that we pass along that
-  // as a boolean.
-  auto *CI = ConstantInt::get(Builder.getInt1Ty(), (Type & 2) >> 1);
-  // FIXME: Get right address space.
-  llvm::Type *Tys[] = {ResType, Builder.getInt8PtrTy(0)};
-  Value *F = CGM.getIntrinsic(Intrinsic::objectsize, Tys);
-  return Builder.CreateCall(F, {EmitScalarExpr(E), CI});
+  // If we have at least one of the features in the feature list return
+  // true, otherwise return false.
+  SmallVector<StringRef, 1> AttrFeatures;
+  StringRef(FeatureList).split(AttrFeatures, ",");
+  return std::all_of(AttrFeatures.begin(), AttrFeatures.end(),
+                     [&](StringRef &Feature) {
+                       SmallVector<StringRef, 1> OrFeatures;
+                       Feature.split(OrFeatures, "|");
+                       return std::any_of(OrFeatures.begin(), OrFeatures.end(),
+                                          [&](StringRef &Feature) {
+                                            return FeatureMap[Feature];
+                                          });
+                     });
 }
 
 RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
@@ -679,21 +632,32 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   case Builtin::BI__builtin_bswap16:
   case Builtin::BI__builtin_bswap32:
   case Builtin::BI__builtin_bswap64: {
-    return RValue::get(emitUnaryBuiltin(*this, E, Intrinsic::bswap));
-  }
-  case Builtin::BI__builtin_bitreverse16:
-  case Builtin::BI__builtin_bitreverse32:
-  case Builtin::BI__builtin_bitreverse64: {
-    return RValue::get(emitUnaryBuiltin(*this, E, Intrinsic::bitreverse));
+    Value *ArgValue = EmitScalarExpr(E->getArg(0));
+    llvm::Type *ArgType = ArgValue->getType();
+    Value *F = CGM.getIntrinsic(Intrinsic::bswap, ArgType);
+    return RValue::get(Builder.CreateCall(F, ArgValue));
   }
   case Builtin::BI__builtin_object_size: {
-    unsigned Type =
-        E->getArg(1)->EvaluateKnownConstInt(getContext()).getZExtValue();
-    auto *ResType = cast<llvm::IntegerType>(ConvertType(E->getType()));
+    // We rely on constant folding to deal with expressions with side effects.
+    assert(!E->getArg(0)->HasSideEffects(getContext()) &&
+           "should have been constant folded");
 
-    // We pass this builtin onto the optimizer so that it can figure out the
-    // object size in more complex cases.
-    return RValue::get(emitBuiltinObjectSize(E->getArg(0), Type, ResType));
+    // We pass this builtin onto the optimizer so that it can
+    // figure out the object size in more complex cases.
+    llvm::Type *ResType = ConvertType(E->getType());
+
+    // LLVM only supports 0 and 2, make sure that we pass along that
+    // as a boolean.
+    Value *Ty = EmitScalarExpr(E->getArg(1));
+    ConstantInt *CI = dyn_cast<ConstantInt>(Ty);
+    assert(CI);
+    uint64_t val = CI->getZExtValue();
+    CI = ConstantInt::get(Builder.getInt1Ty(), (val & 0x2) >> 1);
+    // FIXME: Get right address space.
+    llvm::Type *Tys[] = { ResType, Builder.getInt8PtrTy(0) };
+    Value *F = CGM.getIntrinsic(Intrinsic::objectsize, Tys);
+    return RValue::get(
+        Builder.CreateCall(F, {EmitScalarExpr(E->getArg(0)), CI}));
   }
   case Builtin::BI__builtin_prefetch: {
     Value *Locality, *RW, *Address = EmitScalarExpr(E->getArg(0));
@@ -1999,150 +1963,6 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
       return RValue::get(llvm::ConstantExpr::getBitCast(GV, CGM.Int8PtrTy));
     break;
   }
-
-  // OpenCL v2.0 s6.13.16.2, Built-in pipe read and write functions
-  case Builtin::BIread_pipe:
-  case Builtin::BIwrite_pipe: {
-    Value *Arg0 = EmitScalarExpr(E->getArg(0)),
-          *Arg1 = EmitScalarExpr(E->getArg(1));
-
-    // Type of the generic packet parameter.
-    unsigned GenericAS =
-        getContext().getTargetAddressSpace(LangAS::opencl_generic);
-    llvm::Type *I8PTy = llvm::PointerType::get(
-        llvm::Type::getInt8Ty(getLLVMContext()), GenericAS);
-
-    // Testing which overloaded version we should generate the call for.
-    if (2U == E->getNumArgs()) {
-      const char *Name = (BuiltinID == Builtin::BIread_pipe) ? "__read_pipe_2"
-                                                             : "__write_pipe_2";
-      // Creating a generic function type to be able to call with any builtin or
-      // user defined type.
-      llvm::Type *ArgTys[] = {Arg0->getType(), I8PTy};
-      llvm::FunctionType *FTy = llvm::FunctionType::get(
-          Int32Ty, llvm::ArrayRef<llvm::Type *>(ArgTys), false);
-      Value *BCast = Builder.CreatePointerCast(Arg1, I8PTy);
-      return RValue::get(Builder.CreateCall(
-          CGM.CreateRuntimeFunction(FTy, Name), {Arg0, BCast}));
-    } else {
-      assert(4 == E->getNumArgs() &&
-             "Illegal number of parameters to pipe function");
-      const char *Name = (BuiltinID == Builtin::BIread_pipe) ? "__read_pipe_4"
-                                                             : "__write_pipe_4";
-
-      llvm::Type *ArgTys[] = {Arg0->getType(), Arg1->getType(), Int32Ty, I8PTy};
-      Value *Arg2 = EmitScalarExpr(E->getArg(2)),
-            *Arg3 = EmitScalarExpr(E->getArg(3));
-      llvm::FunctionType *FTy = llvm::FunctionType::get(
-          Int32Ty, llvm::ArrayRef<llvm::Type *>(ArgTys), false);
-      Value *BCast = Builder.CreatePointerCast(Arg3, I8PTy);
-      // We know the third argument is an integer type, but we may need to cast
-      // it to i32.
-      if (Arg2->getType() != Int32Ty)
-        Arg2 = Builder.CreateZExtOrTrunc(Arg2, Int32Ty);
-      return RValue::get(Builder.CreateCall(
-          CGM.CreateRuntimeFunction(FTy, Name), {Arg0, Arg1, Arg2, BCast}));
-    }
-  }
-  // OpenCL v2.0 s6.13.16 ,s9.17.3.5 - Built-in pipe reserve read and write
-  // functions
-  case Builtin::BIreserve_read_pipe:
-  case Builtin::BIreserve_write_pipe:
-  case Builtin::BIwork_group_reserve_read_pipe:
-  case Builtin::BIwork_group_reserve_write_pipe:
-  case Builtin::BIsub_group_reserve_read_pipe:
-  case Builtin::BIsub_group_reserve_write_pipe: {
-    // Composing the mangled name for the function.
-    const char *Name;
-    if (BuiltinID == Builtin::BIreserve_read_pipe)
-      Name = "__reserve_read_pipe";
-    else if (BuiltinID == Builtin::BIreserve_write_pipe)
-      Name = "__reserve_write_pipe";
-    else if (BuiltinID == Builtin::BIwork_group_reserve_read_pipe)
-      Name = "__work_group_reserve_read_pipe";
-    else if (BuiltinID == Builtin::BIwork_group_reserve_write_pipe)
-      Name = "__work_group_reserve_write_pipe";
-    else if (BuiltinID == Builtin::BIsub_group_reserve_read_pipe)
-      Name = "__sub_group_reserve_read_pipe";
-    else
-      Name = "__sub_group_reserve_write_pipe";
-
-    Value *Arg0 = EmitScalarExpr(E->getArg(0)),
-          *Arg1 = EmitScalarExpr(E->getArg(1));
-    llvm::Type *ReservedIDTy = ConvertType(getContext().OCLReserveIDTy);
-
-    // Building the generic function prototype.
-    llvm::Type *ArgTys[] = {Arg0->getType(), Int32Ty};
-    llvm::FunctionType *FTy = llvm::FunctionType::get(
-        ReservedIDTy, llvm::ArrayRef<llvm::Type *>(ArgTys), false);
-    // We know the second argument is an integer type, but we may need to cast
-    // it to i32.
-    if (Arg1->getType() != Int32Ty)
-      Arg1 = Builder.CreateZExtOrTrunc(Arg1, Int32Ty);
-    return RValue::get(
-        Builder.CreateCall(CGM.CreateRuntimeFunction(FTy, Name), {Arg0, Arg1}));
-  }
-  // OpenCL v2.0 s6.13.16 ,s9.17.3.5 - Built-in pipe commit read and write
-  // functions
-  case Builtin::BIcommit_read_pipe:
-  case Builtin::BIcommit_write_pipe:
-  case Builtin::BIwork_group_commit_read_pipe:
-  case Builtin::BIwork_group_commit_write_pipe:
-  case Builtin::BIsub_group_commit_read_pipe:
-  case Builtin::BIsub_group_commit_write_pipe: {
-    const char *Name;
-    if (BuiltinID == Builtin::BIcommit_read_pipe)
-      Name = "__commit_read_pipe";
-    else if (BuiltinID == Builtin::BIcommit_write_pipe)
-      Name = "__commit_write_pipe";
-    else if (BuiltinID == Builtin::BIwork_group_commit_read_pipe)
-      Name = "__work_group_commit_read_pipe";
-    else if (BuiltinID == Builtin::BIwork_group_commit_write_pipe)
-      Name = "__work_group_commit_write_pipe";
-    else if (BuiltinID == Builtin::BIsub_group_commit_read_pipe)
-      Name = "__sub_group_commit_read_pipe";
-    else
-      Name = "__sub_group_commit_write_pipe";
-
-    Value *Arg0 = EmitScalarExpr(E->getArg(0)),
-          *Arg1 = EmitScalarExpr(E->getArg(1));
-
-    // Building the generic function prototype.
-    llvm::Type *ArgTys[] = {Arg0->getType(), Arg1->getType()};
-    llvm::FunctionType *FTy =
-        llvm::FunctionType::get(llvm::Type::getVoidTy(getLLVMContext()),
-                                llvm::ArrayRef<llvm::Type *>(ArgTys), false);
-
-    return RValue::get(
-        Builder.CreateCall(CGM.CreateRuntimeFunction(FTy, Name), {Arg0, Arg1}));
-  }
-  // OpenCL v2.0 s6.13.16.4 Built-in pipe query functions
-  case Builtin::BIget_pipe_num_packets:
-  case Builtin::BIget_pipe_max_packets: {
-    const char *Name;
-    if (BuiltinID == Builtin::BIget_pipe_num_packets)
-      Name = "__get_pipe_num_packets";
-    else
-      Name = "__get_pipe_max_packets";
-
-    // Building the generic function prototype.
-    Value *Arg0 = EmitScalarExpr(E->getArg(0));
-    llvm::Type *ArgTys[] = {Arg0->getType()};
-    llvm::FunctionType *FTy = llvm::FunctionType::get(
-        Int32Ty, llvm::ArrayRef<llvm::Type *>(ArgTys), false);
-
-    return RValue::get(
-        Builder.CreateCall(CGM.CreateRuntimeFunction(FTy, Name), {Arg0}));
-  }
-
-  case Builtin::BIprintf:
-    if (getLangOpts().CUDA && getLangOpts().CUDAIsDevice)
-      return EmitCUDADevicePrintfCallExpr(E, ReturnValue);
-    break;
-  case Builtin::BI__builtin_canonicalize:
-  case Builtin::BI__builtin_canonicalizef:
-  case Builtin::BI__builtin_canonicalizel:
-    return RValue::get(emitUnaryBuiltin(*this, E, Intrinsic::canonicalize));
   }
 
   // If this is an alias for a lib function (e.g. __builtin_sin), emit
@@ -2162,7 +1982,10 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   // This is down here to avoid non-target specific builtins, however, if
   // generic builtins start to require generic target features then we
   // can move this up to the beginning of the function.
-  checkTargetFeatures(E, FD);
+  if (!checkBuiltinTargetFeatures(FD))
+    CGM.getDiags().Report(E->getLocStart(), diag::err_builtin_needs_feature)
+        << FD->getDeclName()
+        << CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID);
 
   // See if we have a target specific intrinsic.
   const char *Name = getContext().BuiltinInfo.getName(BuiltinID);
@@ -2416,32 +2239,29 @@ enum {
 
 namespace {
 struct NeonIntrinsicInfo {
-  const char *NameHint;
   unsigned BuiltinID;
   unsigned LLVMIntrinsic;
   unsigned AltLLVMIntrinsic;
+  const char *NameHint;
   unsigned TypeModifier;
 
   bool operator<(unsigned RHSBuiltinID) const {
     return BuiltinID < RHSBuiltinID;
   }
-  bool operator<(const NeonIntrinsicInfo &TE) const {
-    return BuiltinID < TE.BuiltinID;
-  }
 };
 } // end anonymous namespace
 
 #define NEONMAP0(NameBase) \
-  { #NameBase, NEON::BI__builtin_neon_ ## NameBase, 0, 0, 0 }
+  { NEON::BI__builtin_neon_ ## NameBase, 0, 0, #NameBase, 0 }
 
 #define NEONMAP1(NameBase, LLVMIntrinsic, TypeModifier) \
-  { #NameBase, NEON:: BI__builtin_neon_ ## NameBase, \
-      Intrinsic::LLVMIntrinsic, 0, TypeModifier }
+  { NEON:: BI__builtin_neon_ ## NameBase, \
+      Intrinsic::LLVMIntrinsic, 0, #NameBase, TypeModifier }
 
 #define NEONMAP2(NameBase, LLVMIntrinsic, AltLLVMIntrinsic, TypeModifier) \
-  { #NameBase, NEON:: BI__builtin_neon_ ## NameBase, \
+  { NEON:: BI__builtin_neon_ ## NameBase, \
       Intrinsic::LLVMIntrinsic, Intrinsic::AltLLVMIntrinsic, \
-      TypeModifier }
+      #NameBase, TypeModifier }
 
 static const NeonIntrinsicInfo ARMSIMDIntrinsicMap [] = {
   NEONMAP2(vabd_v, arm_neon_vabdu, arm_neon_vabds, Add1ArgType | UnsignedAlts),
@@ -2986,7 +2806,9 @@ findNeonIntrinsicInMap(ArrayRef<NeonIntrinsicInfo> IntrinsicMap,
 
 #ifndef NDEBUG
   if (!MapProvenSorted) {
-    assert(std::is_sorted(std::begin(IntrinsicMap), std::end(IntrinsicMap)));
+    // FIXME: use std::is_sorted once C++11 is allowed
+    for (unsigned i = 0; i < IntrinsicMap.size() - 1; ++i)
+      assert(IntrinsicMap[i].BuiltinID <= IntrinsicMap[i + 1].BuiltinID);
     MapProvenSorted = true;
   }
 #endif
@@ -7031,11 +6853,44 @@ Value *CodeGenFunction::EmitPPCBuiltinExpr(unsigned BuiltinID,
   }
 }
 
+// Emit an intrinsic that has 1 float or double.
+static Value *emitUnaryFPBuiltin(CodeGenFunction &CGF,
+                                 const CallExpr *E,
+                                 unsigned IntrinsicID) {
+  llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
+
+  Value *F = CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
+  return CGF.Builder.CreateCall(F, Src0);
+}
+
+// Emit an intrinsic that has 3 float or double operands.
+static Value *emitTernaryFPBuiltin(CodeGenFunction &CGF,
+                                   const CallExpr *E,
+                                   unsigned IntrinsicID) {
+  llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
+  llvm::Value *Src1 = CGF.EmitScalarExpr(E->getArg(1));
+  llvm::Value *Src2 = CGF.EmitScalarExpr(E->getArg(2));
+
+  Value *F = CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
+  return CGF.Builder.CreateCall(F, {Src0, Src1, Src2});
+}
+
+// Emit an intrinsic that has 1 float or double operand, and 1 integer.
+static Value *emitFPIntBuiltin(CodeGenFunction &CGF,
+                               const CallExpr *E,
+                               unsigned IntrinsicID) {
+  llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
+  llvm::Value *Src1 = CGF.EmitScalarExpr(E->getArg(1));
+
+  Value *F = CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
+  return CGF.Builder.CreateCall(F, {Src0, Src1});
+}
+
 Value *CodeGenFunction::EmitAMDGPUBuiltinExpr(unsigned BuiltinID,
                                               const CallExpr *E) {
   switch (BuiltinID) {
-  case AMDGPU::BI__builtin_amdgcn_div_scale:
-  case AMDGPU::BI__builtin_amdgcn_div_scalef: {
+  case AMDGPU::BI__builtin_amdgpu_div_scale:
+  case AMDGPU::BI__builtin_amdgpu_div_scalef: {
     // Translate from the intrinsics's struct return to the builtin's out
     // argument.
 
@@ -7045,7 +6900,7 @@ Value *CodeGenFunction::EmitAMDGPUBuiltinExpr(unsigned BuiltinID,
     llvm::Value *Y = EmitScalarExpr(E->getArg(1));
     llvm::Value *Z = EmitScalarExpr(E->getArg(2));
 
-    llvm::Value *Callee = CGM.getIntrinsic(Intrinsic::amdgcn_div_scale,
+    llvm::Value *Callee = CGM.getIntrinsic(Intrinsic::AMDGPU_div_scale,
                                            X->getType());
 
     llvm::Value *Tmp = Builder.CreateCall(Callee, {X, Y, Z});
@@ -7060,60 +6915,40 @@ Value *CodeGenFunction::EmitAMDGPUBuiltinExpr(unsigned BuiltinID,
     Builder.CreateStore(FlagExt, FlagOutPtr);
     return Result;
   }
-  case AMDGPU::BI__builtin_amdgcn_div_fmas:
-  case AMDGPU::BI__builtin_amdgcn_div_fmasf: {
+  case AMDGPU::BI__builtin_amdgpu_div_fmas:
+  case AMDGPU::BI__builtin_amdgpu_div_fmasf: {
     llvm::Value *Src0 = EmitScalarExpr(E->getArg(0));
     llvm::Value *Src1 = EmitScalarExpr(E->getArg(1));
     llvm::Value *Src2 = EmitScalarExpr(E->getArg(2));
     llvm::Value *Src3 = EmitScalarExpr(E->getArg(3));
 
-    llvm::Value *F = CGM.getIntrinsic(Intrinsic::amdgcn_div_fmas,
+    llvm::Value *F = CGM.getIntrinsic(Intrinsic::AMDGPU_div_fmas,
                                       Src0->getType());
     llvm::Value *Src3ToBool = Builder.CreateIsNotNull(Src3);
     return Builder.CreateCall(F, {Src0, Src1, Src2, Src3ToBool});
   }
-  case AMDGPU::BI__builtin_amdgcn_div_fixup:
-  case AMDGPU::BI__builtin_amdgcn_div_fixupf:
-    return emitTernaryFPBuiltin(*this, E, Intrinsic::amdgcn_div_fixup);
-  case AMDGPU::BI__builtin_amdgcn_trig_preop:
-  case AMDGPU::BI__builtin_amdgcn_trig_preopf:
-    return emitFPIntBuiltin(*this, E, Intrinsic::amdgcn_trig_preop);
-  case AMDGPU::BI__builtin_amdgcn_rcp:
-  case AMDGPU::BI__builtin_amdgcn_rcpf:
-    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_rcp);
-  case AMDGPU::BI__builtin_amdgcn_rsq:
-  case AMDGPU::BI__builtin_amdgcn_rsqf:
-    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_rsq);
-  case AMDGPU::BI__builtin_amdgcn_rsq_clamp:
-  case AMDGPU::BI__builtin_amdgcn_rsq_clampf:
-    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_rsq_clamp);
-  case AMDGPU::BI__builtin_amdgcn_sinf:
-    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_sin);
-  case AMDGPU::BI__builtin_amdgcn_cosf:
-    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_cos);
-  case AMDGPU::BI__builtin_amdgcn_log_clampf:
-    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_log_clamp);
-  case AMDGPU::BI__builtin_amdgcn_ldexp:
-  case AMDGPU::BI__builtin_amdgcn_ldexpf:
-    return emitFPIntBuiltin(*this, E, Intrinsic::amdgcn_ldexp);
-  case AMDGPU::BI__builtin_amdgcn_class:
-  case AMDGPU::BI__builtin_amdgcn_classf:
-    return emitFPIntBuiltin(*this, E, Intrinsic::amdgcn_class);
-
-    // Legacy amdgpu prefix
+  case AMDGPU::BI__builtin_amdgpu_div_fixup:
+  case AMDGPU::BI__builtin_amdgpu_div_fixupf:
+    return emitTernaryFPBuiltin(*this, E, Intrinsic::AMDGPU_div_fixup);
+  case AMDGPU::BI__builtin_amdgpu_trig_preop:
+  case AMDGPU::BI__builtin_amdgpu_trig_preopf:
+    return emitFPIntBuiltin(*this, E, Intrinsic::AMDGPU_trig_preop);
+  case AMDGPU::BI__builtin_amdgpu_rcp:
+  case AMDGPU::BI__builtin_amdgpu_rcpf:
+    return emitUnaryFPBuiltin(*this, E, Intrinsic::AMDGPU_rcp);
   case AMDGPU::BI__builtin_amdgpu_rsq:
-  case AMDGPU::BI__builtin_amdgpu_rsqf: {
-    if (getTarget().getTriple().getArch() == Triple::amdgcn)
-      return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_rsq);
-    return emitUnaryBuiltin(*this, E, Intrinsic::r600_rsq);
-  }
+  case AMDGPU::BI__builtin_amdgpu_rsqf:
+    return emitUnaryFPBuiltin(*this, E, Intrinsic::AMDGPU_rsq);
+  case AMDGPU::BI__builtin_amdgpu_rsq_clamped:
+  case AMDGPU::BI__builtin_amdgpu_rsq_clampedf:
+    return emitUnaryFPBuiltin(*this, E, Intrinsic::AMDGPU_rsq_clamped);
   case AMDGPU::BI__builtin_amdgpu_ldexp:
-  case AMDGPU::BI__builtin_amdgpu_ldexpf: {
-    if (getTarget().getTriple().getArch() == Triple::amdgcn)
-      return emitFPIntBuiltin(*this, E, Intrinsic::amdgcn_ldexp);
+  case AMDGPU::BI__builtin_amdgpu_ldexpf:
     return emitFPIntBuiltin(*this, E, Intrinsic::AMDGPU_ldexp);
-  }
-  default:
+  case AMDGPU::BI__builtin_amdgpu_class:
+  case AMDGPU::BI__builtin_amdgpu_classf:
+    return emitFPIntBuiltin(*this, E, Intrinsic::AMDGPU_class);
+   default:
     return nullptr;
   }
 }

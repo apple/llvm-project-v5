@@ -28,6 +28,7 @@ public:
 
   FORWARD_SYMBOL_METHOD(getOemId)
   FORWARD_SYMBOL_METHOD(getOemSymbolId)
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
 };
 
 } // namespace llvm

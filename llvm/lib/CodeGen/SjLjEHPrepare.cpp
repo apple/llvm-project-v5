@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -23,11 +24,18 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include <set>
 using namespace llvm;
 
 #define DEBUG_TYPE "sjljehprepare"
@@ -47,6 +55,7 @@ class SjLjEHPrepare : public FunctionPass {
   Constant *StackAddrFn;
   Constant *StackRestoreFn;
   Constant *LSDAAddrFn;
+  Value *PersonalityFn;
   Constant *CallSiteFn;
   Constant *FuncCtxFn;
   AllocaInst *FuncCtx;
@@ -94,6 +103,21 @@ bool SjLjEHPrepare::doInitialization(Module &M) {
                                       VoidPtrTy,         // __lsda
                                       doubleUnderJBufTy, // __jbuf
                                       nullptr);
+  RegisterFn = M.getOrInsertFunction(
+      "_Unwind_SjLj_Register", Type::getVoidTy(M.getContext()),
+      PointerType::getUnqual(FunctionContextTy), (Type *)nullptr);
+  UnregisterFn = M.getOrInsertFunction(
+      "_Unwind_SjLj_Unregister", Type::getVoidTy(M.getContext()),
+      PointerType::getUnqual(FunctionContextTy), (Type *)nullptr);
+  FrameAddrFn = Intrinsic::getDeclaration(&M, Intrinsic::frameaddress);
+  StackAddrFn = Intrinsic::getDeclaration(&M, Intrinsic::stacksave);
+  StackRestoreFn = Intrinsic::getDeclaration(&M, Intrinsic::stackrestore);
+  BuiltinSetupDispatchFn =
+    Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_setup_dispatch);
+  LSDAAddrFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_lsda);
+  CallSiteFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_callsite);
+  FuncCtxFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_functioncontext);
+  PersonalityFn = nullptr;
 
   return true;
 }
@@ -117,15 +141,15 @@ void SjLjEHPrepare::insertCallSiteStore(Instruction *I, int Number) {
   Builder.CreateStore(CallSiteNoC, CallSite, true /*volatile*/);
 }
 
-/// MarkBlocksLiveIn - Insert BB and all of its predecessors into LiveBBs until
+/// MarkBlocksLiveIn - Insert BB and all of its predescessors into LiveBBs until
 /// we reach blocks we've already seen.
 static void MarkBlocksLiveIn(BasicBlock *BB,
                              SmallPtrSetImpl<BasicBlock *> &LiveBBs) {
   if (!LiveBBs.insert(BB).second)
     return; // already been here.
 
-  for (BasicBlock *PredBB : predecessors(BB))
-    MarkBlocksLiveIn(PredBB, LiveBBs);
+  for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI)
+    MarkBlocksLiveIn(*PI, LiveBBs);
 }
 
 /// substituteLPadValues - Substitute the values returned by the landingpad
@@ -135,7 +159,7 @@ void SjLjEHPrepare::substituteLPadValues(LandingPadInst *LPI, Value *ExnVal,
   SmallVector<Value *, 8> UseWorkList(LPI->user_begin(), LPI->user_end());
   while (!UseWorkList.empty()) {
     Value *Val = UseWorkList.pop_back_val();
-    auto *EVI = dyn_cast<ExtractValueInst>(Val);
+    ExtractValueInst *EVI = dyn_cast<ExtractValueInst>(Val);
     if (!EVI)
       continue;
     if (EVI->getNumIndices() != 1)
@@ -144,11 +168,11 @@ void SjLjEHPrepare::substituteLPadValues(LandingPadInst *LPI, Value *ExnVal,
       EVI->replaceAllUsesWith(ExnVal);
     else if (*EVI->idx_begin() == 1)
       EVI->replaceAllUsesWith(SelVal);
-    if (EVI->use_empty())
+    if (EVI->getNumUses() == 0)
       EVI->eraseFromParent();
   }
 
-  if (LPI->use_empty())
+  if (LPI->getNumUses() == 0)
     return;
 
   // There are still some uses of LPI. Construct an aggregate with the exception
@@ -178,7 +202,8 @@ Value *SjLjEHPrepare::setupFunctionContext(Function &F,
                            &EntryBB->front());
 
   // Fill in the function context structure.
-  for (LandingPadInst *LPI : LPads) {
+  for (unsigned I = 0, E = LPads.size(); I != E; ++I) {
+    LandingPadInst *LPI = LPads[I];
     IRBuilder<> Builder(LPI->getParent(),
                         LPI->getParent()->getFirstInsertionPt());
 
@@ -201,7 +226,8 @@ Value *SjLjEHPrepare::setupFunctionContext(Function &F,
 
   // Personality function
   IRBuilder<> Builder(EntryBB->getTerminator());
-  Value *PersonalityFn = F.getPersonalityFn();
+  if (!PersonalityFn)
+    PersonalityFn = F.getPersonalityFn();
   Value *PersonalityFieldPtr = Builder.CreateConstGEP2_32(
       FunctionContextTy, FuncCtx, 0, 3, "pers_fn_gep");
   Builder.CreateStore(
@@ -224,7 +250,7 @@ Value *SjLjEHPrepare::setupFunctionContext(Function &F,
 void SjLjEHPrepare::lowerIncomingArguments(Function &F) {
   BasicBlock::iterator AfterAllocaInsPt = F.begin()->begin();
   while (isa<AllocaInst>(AfterAllocaInsPt) &&
-         cast<AllocaInst>(AfterAllocaInsPt)->isStaticAlloca())
+         isa<ConstantInt>(cast<AllocaInst>(AfterAllocaInsPt)->getArraySize()))
     ++AfterAllocaInsPt;
   assert(AfterAllocaInsPt != F.front().end());
 
@@ -248,37 +274,40 @@ void SjLjEHPrepare::lowerIncomingArguments(Function &F) {
 void SjLjEHPrepare::lowerAcrossUnwindEdges(Function &F,
                                            ArrayRef<InvokeInst *> Invokes) {
   // Finally, scan the code looking for instructions with bad live ranges.
-  for (BasicBlock &BB : F) {
-    for (Instruction &Inst : BB) {
+  for (Function::iterator BB = F.begin(), BBE = F.end(); BB != BBE; ++BB) {
+    for (BasicBlock::iterator II = BB->begin(), IIE = BB->end(); II != IIE;
+         ++II) {
       // Ignore obvious cases we don't have to handle. In particular, most
       // instructions either have no uses or only have a single use inside the
       // current block. Ignore them quickly.
-      if (Inst.use_empty())
+      Instruction *Inst = &*II;
+      if (Inst->use_empty())
         continue;
-      if (Inst.hasOneUse() &&
-          cast<Instruction>(Inst.user_back())->getParent() == &BB &&
-          !isa<PHINode>(Inst.user_back()))
+      if (Inst->hasOneUse() &&
+          cast<Instruction>(Inst->user_back())->getParent() == BB &&
+          !isa<PHINode>(Inst->user_back()))
         continue;
 
       // If this is an alloca in the entry block, it's not a real register
       // value.
-      if (auto *AI = dyn_cast<AllocaInst>(&Inst))
-        if (AI->isStaticAlloca())
+      if (AllocaInst *AI = dyn_cast<AllocaInst>(Inst))
+        if (isa<ConstantInt>(AI->getArraySize()) && BB == F.begin())
           continue;
 
       // Avoid iterator invalidation by copying users to a temporary vector.
       SmallVector<Instruction *, 16> Users;
-      for (User *U : Inst.users()) {
+      for (User *U : Inst->users()) {
         Instruction *UI = cast<Instruction>(U);
-        if (UI->getParent() != &BB || isa<PHINode>(UI))
+        if (UI->getParent() != BB || isa<PHINode>(UI))
           Users.push_back(UI);
       }
 
       // Find all of the blocks that this value is live in.
-      SmallPtrSet<BasicBlock *, 32> LiveBBs;
-      LiveBBs.insert(&BB);
+      SmallPtrSet<BasicBlock *, 64> LiveBBs;
+      LiveBBs.insert(Inst->getParent());
       while (!Users.empty()) {
-        Instruction *U = Users.pop_back_val();
+        Instruction *U = Users.back();
+        Users.pop_back();
 
         if (!isa<PHINode>(U)) {
           MarkBlocksLiveIn(U->getParent(), LiveBBs);
@@ -286,7 +315,7 @@ void SjLjEHPrepare::lowerAcrossUnwindEdges(Function &F,
           // Uses for a PHI node occur in their predecessor block.
           PHINode *PN = cast<PHINode>(U);
           for (unsigned i = 0, e = PN->getNumIncomingValues(); i != e; ++i)
-            if (PN->getIncomingValue(i) == &Inst)
+            if (PN->getIncomingValue(i) == Inst)
               MarkBlocksLiveIn(PN->getIncomingBlock(i), LiveBBs);
         }
       }
@@ -294,10 +323,10 @@ void SjLjEHPrepare::lowerAcrossUnwindEdges(Function &F,
       // Now that we know all of the blocks that this thing is live in, see if
       // it includes any of the unwind locations.
       bool NeedsSpill = false;
-      for (InvokeInst *Invoke : Invokes) {
-        BasicBlock *UnwindBlock = Invoke->getUnwindDest();
-        if (UnwindBlock != &BB && LiveBBs.count(UnwindBlock)) {
-          DEBUG(dbgs() << "SJLJ Spill: " << Inst << " around "
+      for (unsigned i = 0, e = Invokes.size(); i != e; ++i) {
+        BasicBlock *UnwindBlock = Invokes[i]->getUnwindDest();
+        if (UnwindBlock != BB && LiveBBs.count(UnwindBlock)) {
+          DEBUG(dbgs() << "SJLJ Spill: " << *Inst << " around "
                        << UnwindBlock->getName() << "\n");
           NeedsSpill = true;
           break;
@@ -309,15 +338,15 @@ void SjLjEHPrepare::lowerAcrossUnwindEdges(Function &F,
       // the value to be reloaded from the stack slot, even those that aren't
       // in the unwind blocks. We should be more selective.
       if (NeedsSpill) {
-        DemoteRegToStack(Inst, true);
+        DemoteRegToStack(*Inst, true);
         ++NumSpilled;
       }
     }
   }
 
   // Go through the landing pads and remove any PHIs there.
-  for (InvokeInst *Invoke : Invokes) {
-    BasicBlock *UnwindBlock = Invoke->getUnwindDest();
+  for (unsigned i = 0, e = Invokes.size(); i != e; ++i) {
+    BasicBlock *UnwindBlock = Invokes[i]->getUnwindDest();
     LandingPadInst *LPI = UnwindBlock->getLandingPadInst();
 
     // Place PHIs into a set to avoid invalidating the iterator.
@@ -345,10 +374,11 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
   SmallSetVector<LandingPadInst *, 16> LPads;
 
   // Look through the terminators of the basic blocks to find invokes.
-  for (BasicBlock &BB : F)
-    if (auto *II = dyn_cast<InvokeInst>(BB.getTerminator())) {
+  for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
+    if (InvokeInst *II = dyn_cast<InvokeInst>(BB->getTerminator())) {
       if (Function *Callee = II->getCalledFunction())
-        if (Callee->getIntrinsicID() == Intrinsic::donothing) {
+        if (Callee->isIntrinsic() &&
+            Callee->getIntrinsicID() == Intrinsic::donothing) {
           // Remove the NOP invoke.
           BranchInst::Create(II->getNormalDest(), II);
           II->eraseFromParent();
@@ -357,7 +387,7 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
 
       Invokes.push_back(II);
       LPads.insert(II->getUnwindDest()->getLandingPadInst());
-    } else if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator())) {
+    } else if (ReturnInst *RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
       Returns.push_back(RI);
     }
 
@@ -418,13 +448,14 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
   // created for this function and any unexpected exceptions thrown will go
   // directly to the caller's context, which is what we want anyway, so no need
   // to do anything here.
-  for (BasicBlock &BB : F) {
-    if (&BB == &F.front())
-      continue;
-    for (Instruction &I : BB)
-      if (I.mayThrow())
-        insertCallSiteStore(&I, -1);
-  }
+  for (Function::iterator BB = F.begin(), E = F.end(); ++BB != E;)
+    for (BasicBlock::iterator I = BB->begin(), end = BB->end(); I != end; ++I)
+      if (CallInst *CI = dyn_cast<CallInst>(I)) {
+        if (!CI->doesNotThrow())
+          insertCallSiteStore(CI, -1);
+      } else if (ResumeInst *RI = dyn_cast<ResumeInst>(I)) {
+        insertCallSiteStore(RI, -1);
+      }
 
   // Register the function context and make sure it's known to not throw
   CallInst *Register =
@@ -433,18 +464,18 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
 
   // Following any allocas not in the entry block, update the saved SP in the
   // jmpbuf to the new value.
-  for (BasicBlock &BB : F) {
-    if (&BB == &F.front())
+  for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
+    if (BB == F.begin())
       continue;
-    for (Instruction &I : BB) {
-      if (auto *CI = dyn_cast<CallInst>(&I)) {
+    for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+      if (CallInst *CI = dyn_cast<CallInst>(I)) {
         if (CI->getCalledFunction() != StackRestoreFn)
           continue;
-      } else if (!isa<AllocaInst>(&I)) {
+      } else if (!isa<AllocaInst>(I)) {
         continue;
       }
       Instruction *StackAddr = CallInst::Create(StackAddrFn, "sp");
-      StackAddr->insertAfter(&I);
+      StackAddr->insertAfter(&*I);
       Instruction *StoreStackAddr = new StoreInst(StackAddr, StackPtr, true);
       StoreStackAddr->insertAfter(StackAddr);
     }
@@ -452,29 +483,13 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
 
   // Finally, for any returns from this function, if this function contains an
   // invoke, add a call to unregister the function context.
-  for (ReturnInst *Return : Returns)
-    CallInst::Create(UnregisterFn, FuncCtx, "", Return);
+  for (unsigned I = 0, E = Returns.size(); I != E; ++I)
+    CallInst::Create(UnregisterFn, FuncCtx, "", Returns[I]);
 
   return true;
 }
 
 bool SjLjEHPrepare::runOnFunction(Function &F) {
-  Module &M = *F.getParent();
-  RegisterFn = M.getOrInsertFunction(
-      "_Unwind_SjLj_Register", Type::getVoidTy(M.getContext()),
-      PointerType::getUnqual(FunctionContextTy), nullptr);
-  UnregisterFn = M.getOrInsertFunction(
-      "_Unwind_SjLj_Unregister", Type::getVoidTy(M.getContext()),
-      PointerType::getUnqual(FunctionContextTy), nullptr);
-  FrameAddrFn = Intrinsic::getDeclaration(&M, Intrinsic::frameaddress);
-  StackAddrFn = Intrinsic::getDeclaration(&M, Intrinsic::stacksave);
-  StackRestoreFn = Intrinsic::getDeclaration(&M, Intrinsic::stackrestore);
-  BuiltinSetupDispatchFn =
-    Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_setup_dispatch);
-  LSDAAddrFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_lsda);
-  CallSiteFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_callsite);
-  FuncCtxFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_functioncontext);
-
   bool Res = setupEntryBlockAndCallSites(F);
   return Res;
 }

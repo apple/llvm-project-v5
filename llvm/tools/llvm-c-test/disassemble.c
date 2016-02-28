@@ -83,12 +83,12 @@ static void handle_line(char **tokens, int ntokens) {
   do_disassemble(triple, features, disbuf, disbuflen);
 }
 
-int llvm_disassemble(void) {
+int disassemble(void) {
   LLVMInitializeAllTargetInfos();
   LLVMInitializeAllTargetMCs();
   LLVMInitializeAllDisassemblers();
 
-  llvm_tokenize_stdin(handle_line);
+  tokenize_stdin(handle_line);
 
   return 0;
 }

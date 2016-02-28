@@ -605,15 +605,6 @@ class AsmOperandClass {
   // match failure error message. By default, use a generic "invalid operand"
   // diagnostic. The target AsmParser maps these codes to text.
   string DiagnosticType = "";
-
-  /// Set to 1 if this operand is optional and not always required. Typically,
-  /// the AsmParser will emit an error when it finishes parsing an
-  /// instruction if it hasn't matched all the operands yet.  However, this
-  /// error will be suppressed if all of the remaining unmatched operands are
-  /// marked as IsOptional.
-  ///
-  /// Optional arguments must be at the end of the operand list.
-  bit IsOptional = 0;
 }
 
 def ImmAsmOperand : AsmOperandClass {
@@ -629,7 +620,6 @@ class Operand<ValueType ty> : DAGOperand {
   string EncoderMethod = "";
   string DecoderMethod = "";
   bit hasCompleteDecoder = 1;
-  string OperandNamespace = "MCOI";
   string OperandType = "OPERAND_UNKNOWN";
   dag MIOperandInfo = (ops);
 
@@ -922,10 +912,6 @@ def FAULTING_LOAD_OP : Instruction {
   let usesCustomInserter = 1;
   let mayLoad = 1;
 }
-
-// Generic opcodes used in GlobalISel.
-include "llvm/Target/GenericOpcodes.td"
-
 }
 
 //===----------------------------------------------------------------------===//
@@ -950,17 +936,8 @@ class AsmParser {
   // written register name matcher
   bit ShouldEmitMatchRegisterName = 1;
 
-  // Set to true if the target needs a generated 'alternative register name'
-  // matcher.
-  //
-  // This generates a function which can be used to lookup registers from
-  // their aliases. This function will fail when called on targets where
-  // several registers share the same alias (i.e. not a 1:1 mapping).
-  bit ShouldEmitMatchRegisterAltName = 0;
-
-  // HasMnemonicFirst - Set to false if target instructions don't always
-  // start with a mnemonic as the first token.
-  bit HasMnemonicFirst = 1;
+  /// Does the instruction mnemonic allow '.'
+  bit MnemonicContainsDot = 0;
 }
 def DefaultAsmParser : AsmParser;
 
@@ -988,15 +965,6 @@ class AsmParserVariant {
   // register tokens as constrained registers, instead of tokens, for the
   // purposes of matching.
   string RegisterPrefix = "";
-
-  // TokenizingCharacters - Characters that are standalone tokens
-  string TokenizingCharacters = "[]*!";
-
-  // SeparatorCharacters - Characters that are not tokens
-  string SeparatorCharacters = " \t,";
-
-  // BreakCharacters - Characters that start new identifiers
-  string BreakCharacters = "";
 }
 def DefaultAsmParserVariant : AsmParserVariant;
 

@@ -4,13 +4,11 @@
 # Run from the directory in which this file is located to update the docs.
 
 import collections
-import os
 import re
 import urllib2
 
-CLANG_DIR = os.path.join(os.path.dirname(__file__), '../..')
-FORMAT_STYLE_FILE = os.path.join(CLANG_DIR, 'include/clang/Format/Format.h')
-DOC_FILE = os.path.join(CLANG_DIR, 'docs/ClangFormatStyleOptions.rst')
+FORMAT_STYLE_FILE = '../../include/clang/Format/Format.h'
+DOC_FILE = '../ClangFormatStyleOptions.rst'
 
 
 def substitute(text, tag, contents):
@@ -79,7 +77,7 @@ class Enum:
 class EnumValue:
   def __init__(self, name, comment):
     self.name = name
-    self.comment = comment
+    self.comment = comment.strip()
 
   def __str__(self):
     return '* ``%s`` (in configuration: ``%s``)\n%s' % (
@@ -88,12 +86,8 @@ class EnumValue:
         doxygen2rst(indent(self.comment, 2)))
 
 def clean_comment_line(line):
-  match = re.match(r'^/// \\code(\{.(\w+)\})?$', line)
-  if match:
-    lang = match.groups()[1]
-    if not lang:
-      lang = 'c++'
-    return '\n.. code-block:: %s\n\n' % lang
+  if line == '/// \\code':
+    return '\n.. code-block:: c++\n\n'
   if line == '/// \\endcode':
     return ''
   return line[4:] + '\n'
@@ -194,6 +188,6 @@ contents = open(DOC_FILE).read()
 
 contents = substitute(contents, 'FORMAT_STYLE_OPTIONS', options_text)
 
-with open(DOC_FILE, 'wb') as output:
+with open(DOC_FILE, 'w') as output:
   output.write(contents)
 

@@ -53,14 +53,14 @@ define void @shl_v4i32(<4 x i32> addrspace(1)* %out, <4 x i32> addrspace(1)* %in
   ret void
 }
 
-;EG-LABEL: {{^}}shl_i64:
+;EG: {{^}}shl_i64:
 ;EG: SUB_INT {{\*? *}}[[COMPSH:T[0-9]+\.[XYZW]]], {{literal.[xy]}}, [[SHIFT:T[0-9]+\.[XYZW]]]
 ;EG: LSHR {{\* *}}[[TEMP:T[0-9]+\.[XYZW]]], [[OPLO:T[0-9]+\.[XYZW]]], {{[[COMPSH]]|PV.[XYZW]}}
-;EG-DAG: ADD_INT {{\*? *}}[[BIGSH:T[0-9]+\.[XYZW]]], [[SHIFT]], literal
-;EG-DAG: LSHR {{\*? *}}[[OVERF:T[0-9]+\.[XYZW]]], {{[[TEMP]]|PV.[XYZW]}}, 1
+;EG: LSHR {{\*? *}}[[OVERF:T[0-9]+\.[XYZW]]], {{[[TEMP]]|PV.[XYZW]}}, 1
+;EG_CHECK-DAG: ADD_INT {{\*? *}}[[BIGSH:T[0-9]+\.[XYZW]]], [[SHIFT]], literal
 ;EG-DAG: LSHL {{\*? *}}[[HISMTMP:T[0-9]+\.[XYZW]]], [[OPHI:T[0-9]+\.[XYZW]]], [[SHIFT]]
-;EG-DAG: OR_INT {{\*? *}}[[HISM:T[0-9]+\.[XYZW]]], {{[[HISMTMP]]|PV.[XYZW]|PS}}, {{[[OVERF]]|PV.[XYZW]}}
-;EG-DAG: LSHL {{\*? *}}[[LOSM:T[0-9]+\.[XYZW]]], [[OPLO]], {{PS|[[SHIFT]]|PV.[XYZW]}}
+;EG-DAG: OR_INT {{\*? *}}[[HISM:T[0-9]+\.[XYZW]]], {{[[HISMTMP]]|PV.[XYZW]}}, {{[[OVERF]]|PV.[XYZW]}}
+;EG-DAG: LSHL {{\*? *}}[[LOSM:T[0-9]+\.[XYZW]]], [[OPLO]], {{PS|[[SHIFT]]}}
 ;EG-DAG: SETGT_UINT {{\*? *}}[[RESC:T[0-9]+\.[XYZW]]], [[SHIFT]], literal
 ;EG-DAG: CNDE_INT {{\*? *}}[[RESLO:T[0-9]+\.[XYZW]]], {{T[0-9]+\.[XYZW]}}
 ;EG-DAG: CNDE_INT {{\*? *}}[[RESHI:T[0-9]+\.[XYZW]]], {{T[0-9]+\.[XYZW], .*}}, 0.0
@@ -80,7 +80,7 @@ define void @shl_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %in) {
   ret void
 }
 
-;EG-LABEL: {{^}}shl_v2i64:
+;EG: {{^}}shl_v2i64:
 ;EG-DAG: SUB_INT {{\*? *}}[[COMPSHA:T[0-9]+\.[XYZW]]], {{literal.[xy]}}, [[SHA:T[0-9]+\.[XYZW]]]
 ;EG-DAG: SUB_INT {{\*? *}}[[COMPSHB:T[0-9]+\.[XYZW]]], {{literal.[xy]}}, [[SHB:T[0-9]+\.[XYZW]]]
 ;EG-DAG: LSHR {{\*? *}}[[COMPSHA]]
@@ -205,175 +205,6 @@ define void @v_shl_32_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %in) {
   %a = load i64, i64 addrspace(1)* %gep.in
   %result = shl i64 %a, 32
   store i64 %result, i64 addrspace(1)* %gep.out
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_constant_i64
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, s{{\[[0-9]+:[0-9]+\]}}, s{{[0-9]+}}
-define void @s_shl_constant_i64(i64 addrspace(1)* %out, i64 %a) {
-  %shl = shl i64 281474976710655, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}v_shl_constant_i64:
-; SI-DAG: buffer_load_dword [[VAL:v[0-9]+]]
-; SI-DAG: s_mov_b32 s[[KLO:[0-9]+]], 0xab19b207
-; SI-DAG: s_movk_i32 s[[KHI:[0-9]+]], 0x11e{{$}}
-; SI: v_lshl_b64 {{v\[[0-9]+:[0-9]+\]}}, s{{\[}}[[KLO]]:[[KHI]]{{\]}}, [[VAL]]
-; SI: buffer_store_dwordx2
-define void @v_shl_constant_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr) {
-  %a = load i64, i64 addrspace(1)* %aptr, align 8
-  %shl = shl i64 1231231234567, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}v_shl_i64_32_bit_constant:
-; SI-DAG: buffer_load_dword [[VAL:v[0-9]+]]
-; SI-DAG: s_mov_b32 s[[KLO:[0-9]+]], 0x12d687{{$}}
-; SI-DAG: s_mov_b32 s[[KHI:[0-9]+]], 0{{$}}
-; SI: v_lshl_b64 {{v\[[0-9]+:[0-9]+\]}}, s{{\[}}[[KLO]]:[[KHI]]{{\]}}, [[VAL]]
-define void @v_shl_i64_32_bit_constant(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr) {
-  %a = load i64, i64 addrspace(1)* %aptr, align 8
-  %shl = shl i64 1234567, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}v_shl_inline_imm_64_i64:
-; SI: v_lshl_b64 {{v\[[0-9]+:[0-9]+\]}}, 64, {{v[0-9]+}}
-define void @v_shl_inline_imm_64_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr) {
-  %a = load i64, i64 addrspace(1)* %aptr, align 8
-  %shl = shl i64 64, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_64_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, 64, s{{[0-9]+}}
-define void @s_shl_inline_imm_64_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 64, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_1_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, 1, s{{[0-9]+}}
-define void @s_shl_inline_imm_1_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 1, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_1.0_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, 1.0, s{{[0-9]+}}
-define void @s_shl_inline_imm_1.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 4607182418800017408, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_neg_1.0_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, -1.0, s{{[0-9]+}}
-define void @s_shl_inline_imm_neg_1.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 13830554455654793216, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_0.5_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, 0.5, s{{[0-9]+}}
-define void @s_shl_inline_imm_0.5_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 4602678819172646912, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_neg_0.5_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, -0.5, s{{[0-9]+}}
-define void @s_shl_inline_imm_neg_0.5_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 13826050856027422720, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_2.0_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, 2.0, s{{[0-9]+}}
-define void @s_shl_inline_imm_2.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 4611686018427387904, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_neg_2.0_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, -2.0, s{{[0-9]+}}
-define void @s_shl_inline_imm_neg_2.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 13835058055282163712, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_4.0_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, 4.0, s{{[0-9]+}}
-define void @s_shl_inline_imm_4.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 4616189618054758400, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_neg_4.0_i64:
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, -4.0, s{{[0-9]+}}
-define void @s_shl_inline_imm_neg_4.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 13839561654909534208, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-
-; Test with the 64-bit integer bitpattern for a 32-bit float in the
-; low 32-bits, which is not a valid 64-bit inline immmediate.
-
-; FUNC-LABEL: {{^}}s_shl_inline_imm_f32_4.0_i64:
-; SI-DAG: s_mov_b32 s[[K_LO:[0-9]+]], 4.0
-; SI-DAG: s_mov_b32 s[[K_HI:[0-9]+]], 0{{$}}
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, s{{\[}}[[K_LO]]:[[K_HI]]{{\]}}, s{{[0-9]+}}
-define void @s_shl_inline_imm_f32_4.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 1082130432, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FIXME: Copy of -1 register
-; FUNC-LABEL: {{^}}s_shl_inline_imm_f32_neg_4.0_i64:
-; SI-DAG: s_mov_b32 s[[K_LO:[0-9]+]], -4.0
-; SI-DAG: s_mov_b32 s[[K_HI:[0-9]+]], -1{{$}}
-; SI-DAG: s_mov_b32 s[[K_HI_COPY:[0-9]+]], s[[K_HI]]
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, s{{\[}}[[K_LO]]:[[K_HI_COPY]]{{\]}}, s{{[0-9]+}}
-define void @s_shl_inline_imm_f32_neg_4.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 -1065353216, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; Shift into upper 32-bits
-; FUNC-LABEL: {{^}}s_shl_inline_high_imm_f32_4.0_i64:
-; SI-DAG: s_mov_b32 s[[K_HI:[0-9]+]], 4.0
-; SI-DAG: s_mov_b32 s[[K_LO:[0-9]+]], 0{{$}}
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, s{{\[}}[[K_LO]]:[[K_HI]]{{\]}}, s{{[0-9]+}}
-define void @s_shl_inline_high_imm_f32_4.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 4647714815446351872, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
-  ret void
-}
-
-; FUNC-LABEL: {{^}}s_shl_inline_high_imm_f32_neg_4.0_i64:
-; SI-DAG: s_mov_b32 s[[K_HI:[0-9]+]], -4.0
-; SI-DAG: s_mov_b32 s[[K_LO:[0-9]+]], 0{{$}}
-; SI: s_lshl_b64 s{{\[[0-9]+:[0-9]+\]}}, s{{\[}}[[K_LO]]:[[K_HI]]{{\]}}, s{{[0-9]+}}
-define void @s_shl_inline_high_imm_f32_neg_4.0_i64(i64 addrspace(1)* %out, i64 addrspace(1)* %aptr, i64 %a) {
-  %shl = shl i64 13871086852301127680, %a
-  store i64 %shl, i64 addrspace(1)* %out, align 8
   ret void
 }
 

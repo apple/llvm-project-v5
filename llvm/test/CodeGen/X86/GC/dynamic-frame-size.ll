@@ -15,7 +15,7 @@ define void @test(i8* %ptr) gc "erlang" {
 }
 
 ; CHECK: .note.gc
-; CHECK-NEXT: .p2align 3
+; CHECK-NEXT: .align 8
 ; safe point count
 ; CHECK: .short	1
 ; CHECK: .long	.Ltmp0

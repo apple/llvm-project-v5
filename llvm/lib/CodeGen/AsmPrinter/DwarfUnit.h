@@ -67,6 +67,9 @@ public:
 /// source file.
 class DwarfUnit {
 protected:
+  /// A numeric ID unique among all CUs in the module
+  unsigned UniqueID;
+
   /// MDNode for the compile unit.
   const DICompileUnit *CUNode;
 
@@ -75,6 +78,9 @@ protected:
 
   /// Unit debug information entry.
   DIE &UnitDie;
+
+  /// Offset of the UnitDie from beginning of debug info section.
+  unsigned DebugInfoOffset;
 
   /// Target of Dwarf emission.
   AsmPrinter *Asm;
@@ -104,8 +110,8 @@ protected:
   /// The section this unit will be emitted in.
   MCSection *Section;
 
-  DwarfUnit(dwarf::Tag, const DICompileUnit *CU, AsmPrinter *A, DwarfDebug *DW,
-            DwarfFile *DWU);
+  DwarfUnit(unsigned UID, dwarf::Tag, const DICompileUnit *CU, AsmPrinter *A,
+            DwarfDebug *DW, DwarfFile *DWU);
 
   bool applySubprogramDefinitionAttributes(const DISubprogram *SP, DIE &SPDie);
 
@@ -121,9 +127,13 @@ public:
 
   // Accessors.
   AsmPrinter* getAsmPrinter() const { return Asm; }
+  unsigned getUniqueID() const { return UniqueID; }
   uint16_t getLanguage() const { return CUNode->getSourceLanguage(); }
   const DICompileUnit *getCUNode() const { return CUNode; }
   DIE &getUnitDie() { return UnitDie; }
+
+  unsigned getDebugInfoOffset() const { return DebugInfoOffset; }
+  void setDebugInfoOffset(unsigned DbgInfoOff) { DebugInfoOffset = DbgInfoOff; }
 
   /// Return true if this compile unit has something to write out.
   bool hasContent() const { return UnitDie.hasChildren(); }
@@ -211,7 +221,7 @@ public:
   void addDIEEntry(DIE &Die, dwarf::Attribute Attribute, DIEEntry Entry);
 
   /// Add a type's DW_AT_signature and set the  declaration flag.
-  void addDIETypeSignature(DIE &Die, uint64_t Signature);
+  void addDIETypeSignature(DIE &Die, const DwarfTypeUnit &Type);
   /// Add an attribute containing the type signature for a unique identifier.
   void addDIETypeSignature(DIE &Die, dwarf::Attribute Attribute,
                            StringRef Identifier);
@@ -373,10 +383,12 @@ class DwarfTypeUnit : public DwarfUnit {
   bool isDwoUnit() const override;
 
 public:
-  DwarfTypeUnit(DwarfCompileUnit &CU, AsmPrinter *A, DwarfDebug *DW,
-                DwarfFile *DWU, MCDwarfDwoLineTable *SplitLineTable = nullptr);
+  DwarfTypeUnit(unsigned UID, DwarfCompileUnit &CU, AsmPrinter *A,
+                DwarfDebug *DW, DwarfFile *DWU,
+                MCDwarfDwoLineTable *SplitLineTable = nullptr);
 
   void setTypeSignature(uint64_t Signature) { TypeSignature = Signature; }
+  uint64_t getTypeSignature() const { return TypeSignature; }
   void setType(const DIE *Ty) { this->Ty = Ty; }
 
   /// Emit the header for this unit, not including the initial length field.

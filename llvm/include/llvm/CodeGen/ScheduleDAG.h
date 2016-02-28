@@ -122,7 +122,18 @@ namespace llvm {
     }
 
     /// Return true if the specified SDep is equivalent except for latency.
-    bool overlaps(const SDep &Other) const;
+    bool overlaps(const SDep &Other) const {
+      if (Dep != Other.Dep) return false;
+      switch (Dep.getInt()) {
+      case Data:
+      case Anti:
+      case Output:
+        return Contents.Reg == Other.Contents.Reg;
+      case Order:
+        return Contents.OrdKind == Other.Contents.OrdKind;
+      }
+      llvm_unreachable("Invalid dependency kind!");
+    }
 
     bool operator==(const SDep &Other) const {
       return overlaps(Other) && Latency == Other.Latency;
@@ -146,13 +157,19 @@ namespace llvm {
     }
 
     //// getSUnit - Return the SUnit to which this edge points.
-    SUnit *getSUnit() const;
+    SUnit *getSUnit() const {
+      return Dep.getPointer();
+    }
 
     //// setSUnit - Assign the SUnit to which this edge points.
-    void setSUnit(SUnit *SU);
+    void setSUnit(SUnit *SU) {
+      Dep.setPointer(SU);
+    }
 
     /// getKind - Return an enum value representing the kind of the dependence.
-    Kind getKind() const;
+    Kind getKind() const {
+      return Dep.getInt();
+    }
 
     /// isCtrl - Shorthand for getKind() != SDep::Data.
     bool isCtrl() const {
@@ -396,17 +413,6 @@ namespace llvm {
     /// specified node.
     bool addPred(const SDep &D, bool Required = true);
 
-    /// addPredBarrier - This adds a barrier edge to SU by calling
-    /// addPred(), with latency 0 generally or latency 1 for a store
-    /// followed by a load.
-    bool addPredBarrier(SUnit *SU) {
-      SDep Dep(SU, SDep::Barrier);
-      unsigned TrueMemOrderLatency =
-        ((SU->getInstr()->mayStore() && this->getInstr()->mayLoad()) ? 1 : 0);
-      Dep.setLatency(TrueMemOrderLatency);
-      return addPred(Dep);
-    }
-
     /// removePred - This removes the specified edge as a pred of the current
     /// node if it exists.  It also removes the current node as a successor of
     /// the specified node.
@@ -483,30 +489,6 @@ namespace llvm {
     void ComputeDepth();
     void ComputeHeight();
   };
-
-  /// Return true if the specified SDep is equivalent except for latency.
-  inline bool SDep::overlaps(const SDep &Other) const {
-    if (Dep != Other.Dep)
-      return false;
-    switch (Dep.getInt()) {
-    case Data:
-    case Anti:
-    case Output:
-      return Contents.Reg == Other.Contents.Reg;
-    case Order:
-      return Contents.OrdKind == Other.Contents.OrdKind;
-    }
-    llvm_unreachable("Invalid dependency kind!");
-  }
-
-  //// getSUnit - Return the SUnit to which this edge points.
-  inline SUnit *SDep::getSUnit() const { return Dep.getPointer(); }
-
-  //// setSUnit - Assign the SUnit to which this edge points.
-  inline void SDep::setSUnit(SUnit *SU) { Dep.setPointer(SU); }
-
-  /// getKind - Return an enum value representing the kind of the dependence.
-  inline SDep::Kind SDep::getKind() const { return Dep.getInt(); }
 
   //===--------------------------------------------------------------------===//
   /// SchedulingPriorityQueue - This interface is used to plug different

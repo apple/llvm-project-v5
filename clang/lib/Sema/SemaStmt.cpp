@@ -488,20 +488,6 @@ StmtResult Sema::ActOnAttributedStmt(SourceLocation AttrLoc,
   return LS;
 }
 
-namespace {
-class CommaVisitor : public EvaluatedExprVisitor<CommaVisitor> {
-  typedef EvaluatedExprVisitor<CommaVisitor> Inherited;
-  Sema &SemaRef;
-public:
-  CommaVisitor(Sema &SemaRef) : Inherited(SemaRef.Context), SemaRef(SemaRef) {}
-  void VisitBinaryOperator(BinaryOperator *E) {
-    if (E->getOpcode() == BO_Comma)
-      SemaRef.DiagnoseCommaOperator(E->getLHS(), E->getExprLoc());
-    EvaluatedExprVisitor<CommaVisitor>::VisitBinaryOperator(E);
-  }
-};
-}
-
 StmtResult
 Sema::ActOnIfStmt(SourceLocation IfLoc, FullExprArg CondVal, Decl *CondVar,
                   Stmt *thenStmt, SourceLocation ElseLoc,
@@ -516,11 +502,6 @@ Sema::ActOnIfStmt(SourceLocation IfLoc, FullExprArg CondVal, Decl *CondVar,
   }
   Expr *ConditionExpr = CondResult.getAs<Expr>();
   if (ConditionExpr) {
-
-    if (!Diags.isIgnored(diag::warn_comma_operator,
-                         ConditionExpr->getExprLoc()))
-      CommaVisitor(*this).Visit(ConditionExpr);
-
     DiagnoseUnusedExprResult(thenStmt);
 
     if (!elseStmt) {
@@ -999,8 +980,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
             << SourceRange(CR->getLHS()->getLocStart(),
                            Hi->getLocEnd());
           CaseRanges.erase(CaseRanges.begin()+i);
-          --i;
-          --e;
+          --i, --e;
           continue;
         }
 
@@ -1258,10 +1238,6 @@ Sema::ActOnWhileStmt(SourceLocation WhileLoc, FullExprArg Cond,
   if (!ConditionExpr)
     return StmtError();
   CheckBreakContinueBinding(ConditionExpr);
-
-  if (ConditionExpr &&
-      !Diags.isIgnored(diag::warn_comma_operator, ConditionExpr->getExprLoc()))
-    CommaVisitor(*this).Visit(ConditionExpr);
 
   DiagnoseUnusedExprResult(Body);
 
@@ -1665,11 +1641,6 @@ Sema::ActOnForStmt(SourceLocation ForLoc, SourceLocation LParenLoc,
       return StmtError();
   }
 
-  if (SecondResult.get() &&
-      !Diags.isIgnored(diag::warn_comma_operator,
-                       SecondResult.get()->getExprLoc()))
-    CommaVisitor(*this).Visit(SecondResult.get());
-
   Expr *Third  = third.release().getAs<Expr>();
 
   DiagnoseUnusedExprResult(First);
@@ -1735,10 +1706,11 @@ Sema::CheckObjCForCollectionOperand(SourceLocation forLoc, Expr *collection) {
   // If we have a forward-declared type, we can't do this check.
   // Under ARC, it is an error not to have a forward-declared class.
   if (iface &&
-      (getLangOpts().ObjCAutoRefCount
-           ? RequireCompleteType(forLoc, QualType(objectType, 0),
-                                 diag::err_arc_collection_forward, collection)
-           : !isCompleteType(forLoc, QualType(objectType, 0)))) {
+      RequireCompleteType(forLoc, QualType(objectType, 0),
+                          getLangOpts().ObjCAutoRefCount
+                            ? diag::err_arc_collection_forward
+                            : 0,
+                          collection)) {
     // Otherwise, if we have any useful type information, check that
     // the type declares the appropriate method.
   } else if (iface || !objectType->qual_empty()) {
@@ -3095,28 +3067,22 @@ bool Sema::DeduceFunctionTypeFromReturnExpr(FunctionDecl *FD,
   //  has multiple return statements, the return type is deduced for each return
   //  statement. [...] if the type deduced is not the same in each deduction,
   //  the program is ill-formed.
-  QualType DeducedT = AT->getDeducedType();
-  if (!DeducedT.isNull() && !FD->isInvalidDecl()) {
+  if (AT->isDeduced() && !FD->isInvalidDecl()) {
     AutoType *NewAT = Deduced->getContainedAutoType();
-    // It is possible that NewAT->getDeducedType() is null. When that happens,
-    // we should not crash, instead we ignore this deduction.
-    if (NewAT->getDeducedType().isNull())
-      return false;
-
     CanQualType OldDeducedType = Context.getCanonicalFunctionResultType(
-                                   DeducedT);
+                                   AT->getDeducedType());
     CanQualType NewDeducedType = Context.getCanonicalFunctionResultType(
                                    NewAT->getDeducedType());
     if (!FD->isDependentContext() && OldDeducedType != NewDeducedType) {
       const LambdaScopeInfo *LambdaSI = getCurLambda();
       if (LambdaSI && LambdaSI->HasImplicitReturnType) {
         Diag(ReturnLoc, diag::err_typecheck_missing_return_type_incompatible)
-          << NewAT->getDeducedType() << DeducedT
+          << NewAT->getDeducedType() << AT->getDeducedType()
           << true /*IsLambda*/;
       } else {
         Diag(ReturnLoc, diag::err_auto_fn_different_deductions)
           << (AT->isDecltypeAuto() ? 1 : 0)
-          << NewAT->getDeducedType() << DeducedT;
+          << NewAT->getDeducedType() << AT->getDeducedType();
       }
       return true;
     }
@@ -3250,7 +3216,7 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
         }
         // return (some void expression); is legal in C++.
         else if (D != diag::ext_return_has_void_expr ||
-                 !getLangOpts().CPlusPlus) {
+            !getLangOpts().CPlusPlus) {
           NamedDecl *CurDecl = getCurFunctionOrMethodDecl();
 
           int FunctionKind = 0;
@@ -3560,6 +3526,11 @@ template <> struct DenseMapInfo<CatchHandlerType> {
     return LHS == RHS;
   }
 };
+
+// It's OK to treat CatchHandlerType as a POD type.
+template <> struct isPodLike<CatchHandlerType> {
+  static const bool value = true;
+};
 }
 
 namespace {
@@ -3584,7 +3555,7 @@ public:
   bool operator()(const CXXBaseSpecifier *S, CXXBasePath &) {
     if (S->getAccessSpecifier() == AccessSpecifier::AS_public) {
       CatchHandlerType Check(S->getType(), CheckAgainstPointer);
-      const auto &M = TypesToCheck;
+      auto M = TypesToCheck;
       auto I = M.find(Check);
       if (I != M.end()) {
         FoundHandler = I->second;
@@ -3832,10 +3803,11 @@ static void buildCapturedStmtCaptureList(
       continue;
     }
 
+    assert(Cap->isReferenceCapture() &&
+           "non-reference capture not yet implemented");
+
     Captures.push_back(CapturedStmt::Capture(Cap->getLocation(),
-                                             Cap->isReferenceCapture()
-                                                 ? CapturedStmt::VCK_ByRef
-                                                 : CapturedStmt::VCK_ByCopy,
+                                             CapturedStmt::VCK_ByRef,
                                              Cap->getVariable()));
     CaptureInits.push_back(Cap->getInitExpr());
   }

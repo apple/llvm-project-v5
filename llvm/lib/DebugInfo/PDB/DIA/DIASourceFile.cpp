@@ -7,11 +7,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/DebugInfo/PDB/DIA/DIASourceFile.h"
-#include "llvm/DebugInfo/PDB/ConcreteSymbolEnumerator.h"
 #include "llvm/DebugInfo/PDB/DIA/DIAEnumSymbols.h"
 #include "llvm/DebugInfo/PDB/DIA/DIASession.h"
-#include "llvm/DebugInfo/PDB/PDBSymbolCompiland.h"
+#include "llvm/DebugInfo/PDB/DIA/DIASourceFile.h"
 #include "llvm/Support/ConvertUTF.h"
 
 using namespace llvm;
@@ -58,15 +56,12 @@ PDB_Checksum DIASourceFile::getChecksumType() const {
   return static_cast<PDB_Checksum>(Type);
 }
 
-std::unique_ptr<IPDBEnumChildren<PDBSymbolCompiland>>
-DIASourceFile::getCompilands() const {
+std::unique_ptr<IPDBEnumSymbols> DIASourceFile::getCompilands() const {
   CComPtr<IDiaEnumSymbols> DiaEnumerator;
   HRESULT Result = SourceFile->get_compilands(&DiaEnumerator);
   if (S_OK != Result)
     return nullptr;
 
-  auto Enumerator = std::unique_ptr<IPDBEnumSymbols>(
+  return std::unique_ptr<IPDBEnumSymbols>(
       new DIAEnumSymbols(Session, DiaEnumerator));
-  return std::unique_ptr<IPDBEnumChildren<PDBSymbolCompiland>>(
-      new ConcreteSymbolEnumerator<PDBSymbolCompiland>(std::move(Enumerator)));
 }

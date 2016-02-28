@@ -48,23 +48,18 @@ namespace llvm {
 ///
 namespace {
 class HexagonDAGToDAGISel : public SelectionDAGISel {
-  const HexagonTargetMachine &HTM;
+  const HexagonTargetMachine& HTM;
   const HexagonSubtarget *HST;
-  const HexagonInstrInfo *HII;
-  const HexagonRegisterInfo *HRI;
 public:
   explicit HexagonDAGToDAGISel(HexagonTargetMachine &tm,
                                CodeGenOpt::Level OptLevel)
-      : SelectionDAGISel(tm, OptLevel), HTM(tm), HST(nullptr), HII(nullptr),
-        HRI(nullptr) {
+      : SelectionDAGISel(tm, OptLevel), HTM(tm) {
     initializeHexagonDAGToDAGISelPass(*PassRegistry::getPassRegistry());
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override {
     // Reset the subtarget each time through.
     HST = &MF.getSubtarget<HexagonSubtarget>();
-    HII = HST->getInstrInfo();
-    HRI = HST->getRegisterInfo();
     SelectionDAGISel::runOnMachineFunction(MF);
     return true;
   }
@@ -84,21 +79,12 @@ public:
     return "Hexagon DAG->DAG Pattern Instruction Selection";
   }
 
-  // Generate a machine instruction node corresponding to the circ/brev
-  // load intrinsic.
-  MachineSDNode *LoadInstrForLoadIntrinsic(SDNode *IntN);
-  // Given the circ/brev load intrinsic and the already generated machine
-  // instruction, generate the appropriate store (that is a part of the
-  // intrinsic's functionality).
-  SDNode *StoreInstrForLoadIntrinsic(MachineSDNode *LoadN, SDNode *IntN);
-
   SDNode *SelectFrameIndex(SDNode *N);
   /// SelectInlineAsmMemoryOperand - Implement addressing mode selection for
   /// inline asm expressions.
   bool SelectInlineAsmMemoryOperand(const SDValue &Op,
                                     unsigned ConstraintID,
                                     std::vector<SDValue> &OutOps) override;
-  SDNode *SelectLoadOfLoadIntrinsic(LoadSDNode *N);
   SDNode *SelectLoad(SDNode *N);
   SDNode *SelectBaseOffsetLoad(LoadSDNode *LD, SDLoc dl);
   SDNode *SelectIndexedLoad(LoadSDNode *LD, SDLoc dl);
@@ -152,8 +138,8 @@ public:
   // type i32 where the negative literal is transformed into a positive literal
   // for use in -= memops.
   inline SDValue XformM5ToU5Imm(signed Imm, SDLoc DL) {
-     assert((Imm >= -31 && Imm <= -1)  && "Constant out of range for Memops");
-     return CurDAG->getTargetConstant(-Imm, DL, MVT::i32);
+     assert( (Imm >= -31 && Imm <= -1)  && "Constant out of range for Memops");
+     return CurDAG->getTargetConstant( - Imm, DL, MVT::i32);
   }
 
   // XformU7ToU7M1Imm - Return a target constant decremented by 1, in range
@@ -216,10 +202,11 @@ void llvm::initializeHexagonDAGToDAGISelPass(PassRegistry &Registry) {
 
 
 // Intrinsics that return a a predicate.
-static bool doesIntrinsicReturnPredicate(unsigned ID) {
+static unsigned doesIntrinsicReturnPredicate(unsigned ID)
+{
   switch (ID) {
     default:
-      return false;
+      return 0;
     case Intrinsic::hexagon_C2_cmpeq:
     case Intrinsic::hexagon_C2_cmpgt:
     case Intrinsic::hexagon_C2_cmpgtu:
@@ -256,7 +243,7 @@ static bool doesIntrinsicReturnPredicate(unsigned ID) {
     case Intrinsic::hexagon_C2_tfrrp:
     case Intrinsic::hexagon_S2_tstbit_i:
     case Intrinsic::hexagon_S2_tstbit_r:
-      return true;
+      return 1;
   }
 }
 
@@ -270,7 +257,8 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoadSignExtend64(LoadSDNode *LD,
   SDNode *OffsetNode = Offset.getNode();
   int32_t Val = cast<ConstantSDNode>(OffsetNode)->getSExtValue();
 
-  if (HII->isValidAutoIncImm(LoadedVT, Val)) {
+  const HexagonInstrInfo &TII = *HST->getInstrInfo();
+  if (TII.isValidAutoIncImm(LoadedVT, Val)) {
     SDValue TargetConst = CurDAG->getTargetConstant(Val, dl, MVT::i32);
     SDNode *Result_1 = CurDAG->getMachineNode(Opcode, dl, MVT::i32, MVT::i32,
                                               MVT::Other, Base, TargetConst,
@@ -323,7 +311,8 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoadZeroExtend64(LoadSDNode *LD,
   SDNode *OffsetNode = Offset.getNode();
   int32_t Val = cast<ConstantSDNode>(OffsetNode)->getSExtValue();
 
-  if (HII->isValidAutoIncImm(LoadedVT, Val)) {
+  const HexagonInstrInfo &TII = *HST->getInstrInfo();
+  if (TII.isValidAutoIncImm(LoadedVT, Val)) {
     SDValue TargetConstVal = CurDAG->getTargetConstant(Val, dl, MVT::i32);
     SDValue TargetConst0 = CurDAG->getTargetConstant(0, dl, MVT::i32);
     SDNode *Result_1 = CurDAG->getMachineNode(Opcode, dl, MVT::i32,
@@ -388,46 +377,29 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoad(LoadSDNode *LD, SDLoc dl) {
   // loads.
   ISD::LoadExtType ExtType = LD->getExtensionType();
   bool IsZeroExt = (ExtType == ISD::ZEXTLOAD || ExtType == ISD::EXTLOAD);
-  bool HasVecOffset = false;
 
   // Figure out the opcode.
+  const HexagonInstrInfo &TII = *HST->getInstrInfo();
   if (LoadedVT == MVT::i64) {
-    if (HII->isValidAutoIncImm(LoadedVT, Val))
+    if (TII.isValidAutoIncImm(LoadedVT, Val))
       Opcode = Hexagon::L2_loadrd_pi;
     else
       Opcode = Hexagon::L2_loadrd_io;
   } else if (LoadedVT == MVT::i32) {
-    if (HII->isValidAutoIncImm(LoadedVT, Val))
+    if (TII.isValidAutoIncImm(LoadedVT, Val))
       Opcode = Hexagon::L2_loadri_pi;
     else
       Opcode = Hexagon::L2_loadri_io;
   } else if (LoadedVT == MVT::i16) {
-    if (HII->isValidAutoIncImm(LoadedVT, Val))
+    if (TII.isValidAutoIncImm(LoadedVT, Val))
       Opcode = IsZeroExt ? Hexagon::L2_loadruh_pi : Hexagon::L2_loadrh_pi;
     else
       Opcode = IsZeroExt ? Hexagon::L2_loadruh_io : Hexagon::L2_loadrh_io;
   } else if (LoadedVT == MVT::i8) {
-    if (HII->isValidAutoIncImm(LoadedVT, Val))
+    if (TII.isValidAutoIncImm(LoadedVT, Val))
       Opcode = IsZeroExt ? Hexagon::L2_loadrub_pi : Hexagon::L2_loadrb_pi;
     else
       Opcode = IsZeroExt ? Hexagon::L2_loadrub_io : Hexagon::L2_loadrb_io;
-  } else if (LoadedVT == MVT::v16i32 || LoadedVT == MVT::v8i64 ||
-             LoadedVT == MVT::v32i16 || LoadedVT == MVT::v64i8) {
-    HasVecOffset = true;
-    if (HII->isValidAutoIncImm(LoadedVT, Val)) {
-      Opcode = Hexagon::V6_vL32b_pi;
-    }
-    else
-      Opcode = Hexagon::V6_vL32b_ai;
-  // 128B
-  } else if (LoadedVT == MVT::v32i32 || LoadedVT == MVT::v16i64 ||
-             LoadedVT == MVT::v64i16 || LoadedVT == MVT::v128i8) {
-    HasVecOffset = true;
-    if (HII->isValidAutoIncImm(LoadedVT, Val)) {
-      Opcode = Hexagon::V6_vL32b_pi_128B;
-    }
-    else
-      Opcode = Hexagon::V6_vL32b_ai_128B;
   } else
     llvm_unreachable("unknown memory type");
 
@@ -438,7 +410,7 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoad(LoadSDNode *LD, SDLoc dl) {
   if (LD->getValueType(0) == MVT::i64 && ExtType == ISD::SEXTLOAD)
     return SelectIndexedLoadSignExtend64(LD, Opcode, dl);
 
-  if (HII->isValidAutoIncImm(LoadedVT, Val)) {
+  if (TII.isValidAutoIncImm(LoadedVT, Val)) {
     SDValue TargetConstVal = CurDAG->getTargetConstant(Val, dl, MVT::i32);
     SDNode* Result = CurDAG->getMachineNode(Opcode, dl,
                                             LD->getValueType(0),
@@ -447,25 +419,15 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoad(LoadSDNode *LD, SDLoc dl) {
     MachineSDNode::mmo_iterator MemOp = MF->allocateMemRefsArray(1);
     MemOp[0] = LD->getMemOperand();
     cast<MachineSDNode>(Result)->setMemRefs(MemOp, MemOp + 1);
-    if (HasVecOffset) {
-      const SDValue Froms[] = { SDValue(LD, 0),
-                                SDValue(LD, 2)
-      };
-      const SDValue Tos[]   = { SDValue(Result, 0),
-                                SDValue(Result, 2)
-      };
-      ReplaceUses(Froms, Tos, 2);
-    } else {
-      const SDValue Froms[] = { SDValue(LD, 0),
-                                SDValue(LD, 1),
-                                SDValue(LD, 2)
-      };
-      const SDValue Tos[]   = { SDValue(Result, 0),
-                                SDValue(Result, 1),
-                                SDValue(Result, 2)
-      };
-      ReplaceUses(Froms, Tos, 3);
-    }
+    const SDValue Froms[] = { SDValue(LD, 0),
+                              SDValue(LD, 1),
+                              SDValue(LD, 2)
+    };
+    const SDValue Tos[]   = { SDValue(Result, 0),
+                              SDValue(Result, 1),
+                              SDValue(Result, 2)
+    };
+    ReplaceUses(Froms, Tos, 3);
     return Result;
   } else {
     SDValue TargetConst0 = CurDAG->getTargetConstant(0, dl, MVT::i32);
@@ -494,173 +456,20 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoad(LoadSDNode *LD, SDLoc dl) {
 }
 
 
-MachineSDNode *HexagonDAGToDAGISel::LoadInstrForLoadIntrinsic(SDNode *IntN) {
-  if (IntN->getOpcode() != ISD::INTRINSIC_W_CHAIN)
-    return nullptr;
-
-  SDLoc dl(IntN);
-  unsigned IntNo = cast<ConstantSDNode>(IntN->getOperand(1))->getZExtValue();
-
-  static std::map<unsigned,unsigned> LoadPciMap = {
-    { Intrinsic::hexagon_circ_ldb,  Hexagon::L2_loadrb_pci  },
-    { Intrinsic::hexagon_circ_ldub, Hexagon::L2_loadrub_pci },
-    { Intrinsic::hexagon_circ_ldh,  Hexagon::L2_loadrh_pci  },
-    { Intrinsic::hexagon_circ_lduh, Hexagon::L2_loadruh_pci },
-    { Intrinsic::hexagon_circ_ldw,  Hexagon::L2_loadri_pci  },
-    { Intrinsic::hexagon_circ_ldd,  Hexagon::L2_loadrd_pci  },
-  };
-  auto FLC = LoadPciMap.find(IntNo);
-  if (FLC != LoadPciMap.end()) {
-    SDNode *Mod = CurDAG->getMachineNode(Hexagon::A2_tfrrcr, dl, MVT::i32,
-          IntN->getOperand(4));
-    EVT ValTy = (IntNo == Intrinsic::hexagon_circ_ldd) ? MVT::i64 : MVT::i32;
-    EVT RTys[] = { ValTy, MVT::i32, MVT::Other };
-    // Operands: { Base, Increment, Modifier, Chain }
-    auto Inc = cast<ConstantSDNode>(IntN->getOperand(5));
-    SDValue I = CurDAG->getTargetConstant(Inc->getSExtValue(), dl, MVT::i32);
-    MachineSDNode *Res = CurDAG->getMachineNode(FLC->second, dl, RTys,
-          { IntN->getOperand(2), I, SDValue(Mod,0), IntN->getOperand(0) });
-    return Res;
-  }
-
-  static std::map<unsigned,unsigned> LoadPbrMap = {
-    { Intrinsic::hexagon_brev_ldb,  Hexagon::L2_loadrb_pbr  },
-    { Intrinsic::hexagon_brev_ldub, Hexagon::L2_loadrub_pbr },
-    { Intrinsic::hexagon_brev_ldh,  Hexagon::L2_loadrh_pbr  },
-    { Intrinsic::hexagon_brev_lduh, Hexagon::L2_loadruh_pbr },
-    { Intrinsic::hexagon_brev_ldw,  Hexagon::L2_loadri_pbr  },
-    { Intrinsic::hexagon_brev_ldd,  Hexagon::L2_loadrd_pbr  },
-  };
-  auto FLB = LoadPbrMap.find(IntNo);
-  if (FLB != LoadPbrMap.end()) {
-    SDNode *Mod = CurDAG->getMachineNode(Hexagon::A2_tfrrcr, dl, MVT::i32,
-            IntN->getOperand(4));
-    EVT ValTy = (IntNo == Intrinsic::hexagon_brev_ldd) ? MVT::i64 : MVT::i32;
-    EVT RTys[] = { ValTy, MVT::i32, MVT::Other };
-    // Operands: { Base, Modifier, Chain }
-    MachineSDNode *Res = CurDAG->getMachineNode(FLB->second, dl, RTys,
-          { IntN->getOperand(2), SDValue(Mod,0), IntN->getOperand(0) });
-    return Res;
-  }
-
-  return nullptr;
-}
-
-SDNode *HexagonDAGToDAGISel::StoreInstrForLoadIntrinsic(MachineSDNode *LoadN,
-      SDNode *IntN) {
-  // The "LoadN" is just a machine load instruction. The intrinsic also
-  // involves storing it. Generate an appropriate store to the location
-  // given in the intrinsic's operand(3).
-  uint64_t F = HII->get(LoadN->getMachineOpcode()).TSFlags;
-  unsigned SizeBits = (F >> HexagonII::MemAccessSizePos) &
-                      HexagonII::MemAccesSizeMask;
-  unsigned Size = 1U << (SizeBits-1);
-
-  SDLoc dl(IntN);
-  MachinePointerInfo PI;
-  SDValue TS;
-  SDValue Loc = IntN->getOperand(3);
-
-  if (Size >= 4)
-    TS = CurDAG->getStore(SDValue(LoadN,2), dl, SDValue(LoadN, 0), Loc, PI,
-                          false, false, Size);
-  else
-    TS = CurDAG->getTruncStore(SDValue(LoadN,2), dl, SDValue(LoadN,0), Loc, PI,
-                               MVT::getIntegerVT(Size*8), false, false, Size);
-  SDNode *StoreN = SelectStore(TS.getNode());
-
-  // Load's results are { Loaded value, Updated pointer, Chain }
-  ReplaceUses(SDValue(IntN, 0), SDValue(LoadN, 1));
-  ReplaceUses(SDValue(IntN, 1), SDValue(StoreN, 0));
-  return StoreN;
-}
-
-SDNode *HexagonDAGToDAGISel::SelectLoadOfLoadIntrinsic(LoadSDNode *N) {
-  // The intrinsics for load circ/brev perform two operations:
-  // 1. Load a value V from the specified location, using the addressing
-  //    mode corresponding to the intrinsic.
-  // 2. Store V into a specified location. This location is typically a
-  //    local, temporary object.
-  // In many cases, the program using these intrinsics will immediately
-  // load V again from the local object. In those cases, when certain
-  // conditions are met, the last load can be removed.
-  // This function identifies and optimizes this pattern. If the pattern
-  // cannot be optimized, it returns nullptr, which will cause the load
-  // to be selected separately from the intrinsic (which will be handled
-  // in SelectIntrinsicWChain).
-
-  SDValue Ch = N->getOperand(0);
-  SDValue Loc = N->getOperand(1);
-
-  // Assume that the load and the intrinsic are connected directly with a
-  // chain:
-  //   t1: i32,ch = int.load ..., ..., ..., Loc, ...    // <-- C
-  //   t2: i32,ch = load t1:1, Loc, ...
-  SDNode *C = Ch.getNode();
-
-  if (C->getOpcode() != ISD::INTRINSIC_W_CHAIN)
-    return nullptr;
-
-  // The second load can only be eliminated if its extension type matches
-  // that of the load instruction corresponding to the intrinsic. The user
-  // can provide an address of an unsigned variable to store the result of
-  // a sign-extending intrinsic into (or the other way around).
-  ISD::LoadExtType IntExt;
-  switch (cast<ConstantSDNode>(C->getOperand(1))->getZExtValue()) {
-    case Intrinsic::hexagon_brev_ldub:
-    case Intrinsic::hexagon_brev_lduh:
-    case Intrinsic::hexagon_circ_ldub:
-    case Intrinsic::hexagon_circ_lduh:
-      IntExt = ISD::ZEXTLOAD;
-      break;
-    case Intrinsic::hexagon_brev_ldw:
-    case Intrinsic::hexagon_brev_ldd:
-    case Intrinsic::hexagon_circ_ldw:
-    case Intrinsic::hexagon_circ_ldd:
-      IntExt = ISD::NON_EXTLOAD;
-      break;
-    default:
-      IntExt = ISD::SEXTLOAD;
-      break;
-  }
-  if (N->getExtensionType() != IntExt)
-    return nullptr;
-
-  // Make sure the target location for the loaded value in the load intrinsic
-  // is the location from which LD (or N) is loading.
-  if (C->getNumOperands() < 4 || Loc.getNode() != C->getOperand(3).getNode())
-    return nullptr;
-
-  if (MachineSDNode *L = LoadInstrForLoadIntrinsic(C)) {
-    SDNode *S = StoreInstrForLoadIntrinsic(L, C);
-    SDValue F[] = { SDValue(N,0), SDValue(N,1), SDValue(C,0), SDValue(C,1) };
-    SDValue T[] = { SDValue(L,0), SDValue(S,0), SDValue(L,1), SDValue(S,0) };
-    ReplaceUses(F, T, array_lengthof(T));
-    // This transformation will leave the intrinsic dead. If it remains in
-    // the DAG, the selection code will see it again, but without the load,
-    // and it will generate a store that is normally required for it.
-    CurDAG->RemoveDeadNodes();
-    return L;
-  }
-
-  return nullptr;
-}
-
-
 SDNode *HexagonDAGToDAGISel::SelectLoad(SDNode *N) {
+  SDNode *result;
   SDLoc dl(N);
   LoadSDNode *LD = cast<LoadSDNode>(N);
   ISD::MemIndexedMode AM = LD->getAddressingMode();
 
   // Handle indexed loads.
-  if (AM != ISD::UNINDEXED)
-    return SelectIndexedLoad(LD, dl);
+  if (AM != ISD::UNINDEXED) {
+    result = SelectIndexedLoad(LD, dl);
+  } else {
+    result = SelectCode(LD);
+  }
 
-  // Handle patterns using circ/brev load intrinsics.
-  if (SDNode *LI = SelectLoadOfLoadIntrinsic(LD))
-    return LI;
-
-  return SelectCode(LD);
+  return result;
 }
 
 
@@ -677,7 +486,8 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedStore(StoreSDNode *ST, SDLoc dl) {
 
   // Offset value must be within representable range
   // and must have correct alignment properties.
-  if (HII->isValidAutoIncImm(StoredVT, Val)) {
+  const HexagonInstrInfo &TII = *HST->getInstrInfo();
+  if (TII.isValidAutoIncImm(StoredVT, Val)) {
     unsigned Opcode = 0;
 
     // Figure out the post inc version of opcode.
@@ -685,15 +495,7 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedStore(StoreSDNode *ST, SDLoc dl) {
     else if (StoredVT == MVT::i32) Opcode = Hexagon::S2_storeri_pi;
     else if (StoredVT == MVT::i16) Opcode = Hexagon::S2_storerh_pi;
     else if (StoredVT == MVT::i8) Opcode = Hexagon::S2_storerb_pi;
-    else if (StoredVT == MVT::v16i32 || StoredVT == MVT::v8i64 ||
-             StoredVT == MVT::v32i16 || StoredVT == MVT::v64i8) {
-      Opcode = Hexagon::V6_vS32b_pi;
-    }
-    // 128B
-    else if (StoredVT == MVT::v32i32 || StoredVT == MVT::v16i64 ||
-             StoredVT == MVT::v64i16 || StoredVT == MVT::v128i8) {
-      Opcode = Hexagon::V6_vS32b_pi_128B;
-    } else llvm_unreachable("unknown memory type");
+    else llvm_unreachable("unknown memory type");
 
     if (ST->isTruncatingStore() && ValueVT.getSizeInBits() == 64) {
       assert(StoredVT.getSizeInBits() < 64 && "Not a truncating store");
@@ -727,13 +529,6 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedStore(StoreSDNode *ST, SDLoc dl) {
   else if (StoredVT == MVT::i32) Opcode = Hexagon::S2_storeri_io;
   else if (StoredVT == MVT::i16) Opcode = Hexagon::S2_storerh_io;
   else if (StoredVT == MVT::i8) Opcode = Hexagon::S2_storerb_io;
-  else if (StoredVT == MVT::v16i32 || StoredVT == MVT::v8i64 ||
-           StoredVT == MVT::v32i16 || StoredVT == MVT::v64i8)
-     Opcode = Hexagon::V6_vS32b_ai;
-  // 128B
-  else if (StoredVT == MVT::v32i32 || StoredVT == MVT::v16i64 ||
-           StoredVT == MVT::v64i16 || StoredVT == MVT::v128i8)
-     Opcode = Hexagon::V6_vS32b_ai_128B;
   else llvm_unreachable("unknown memory type");
 
   // Build regular store.
@@ -995,16 +790,207 @@ SDNode *HexagonDAGToDAGISel::SelectZeroExtend(SDNode *N) {
   return SelectCode(N);
 }
 
-
 //
-// Handling intrinsics for circular load and bitreverse load.
+// Checking for intrinsics circular load/store, and bitreverse load/store
+// instrisics in order to select the correct lowered operation.
 //
 SDNode *HexagonDAGToDAGISel::SelectIntrinsicWChain(SDNode *N) {
-  if (MachineSDNode *L = LoadInstrForLoadIntrinsic(N))
-    return StoreInstrForLoadIntrinsic(L, N);
+  unsigned IntNo = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
+  if (IntNo == Intrinsic::hexagon_circ_ldd  ||
+      IntNo == Intrinsic::hexagon_circ_ldw  ||
+      IntNo == Intrinsic::hexagon_circ_lduh ||
+      IntNo == Intrinsic::hexagon_circ_ldh  ||
+      IntNo == Intrinsic::hexagon_circ_ldub ||
+      IntNo == Intrinsic::hexagon_circ_ldb) {
+    SDLoc dl(N);
+    SDValue Chain = N->getOperand(0);
+    SDValue Base = N->getOperand(2);
+    SDValue Load = N->getOperand(3);
+    SDValue ModifierExpr = N->getOperand(4);
+    SDValue Offset = N->getOperand(5);
+
+    // We need to add the rerurn type for the load.  This intrinsic has
+    // two return types, one for the load and one for the post-increment.
+    // Only the *_ld instructions push the extra return type, and bump the
+    // result node operand number correspondingly.
+    std::vector<EVT> ResTys;
+    unsigned opc;
+    unsigned memsize, align;
+    MVT MvtSize = MVT::i32;
+
+    if (IntNo == Intrinsic::hexagon_circ_ldd) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i64);
+      opc = Hexagon::L2_loadrd_pci_pseudo;
+      memsize = 8;
+      align = 8;
+    } else if (IntNo == Intrinsic::hexagon_circ_ldw) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadri_pci_pseudo;
+      memsize = 4;
+      align = 4;
+    } else if (IntNo == Intrinsic::hexagon_circ_ldh) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadrh_pci_pseudo;
+      memsize = 2;
+      align = 2;
+      MvtSize = MVT::i16;
+    } else if (IntNo == Intrinsic::hexagon_circ_lduh) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadruh_pci_pseudo;
+      memsize = 2;
+      align = 2;
+      MvtSize = MVT::i16;
+    } else if (IntNo == Intrinsic::hexagon_circ_ldb) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadrb_pci_pseudo;
+      memsize = 1;
+      align = 1;
+      MvtSize = MVT::i8;
+    } else if (IntNo == Intrinsic::hexagon_circ_ldub) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadrub_pci_pseudo;
+      memsize = 1;
+      align = 1;
+      MvtSize = MVT::i8;
+    } else
+      llvm_unreachable("no opc");
+
+    ResTys.push_back(MVT::Other);
+
+    // Copy over the arguments, which are the same mostly.
+    SmallVector<SDValue, 5> Ops;
+    Ops.push_back(Base);
+    Ops.push_back(Load);
+    Ops.push_back(ModifierExpr);
+    int32_t Val = cast<ConstantSDNode>(Offset.getNode())->getSExtValue();
+    Ops.push_back(CurDAG->getTargetConstant(Val, dl, MVT::i32));
+    Ops.push_back(Chain);
+    SDNode* Result = CurDAG->getMachineNode(opc, dl, ResTys, Ops);
+
+    SDValue ST;
+    MachineMemOperand *Mem =
+      MF->getMachineMemOperand(MachinePointerInfo(),
+                               MachineMemOperand::MOStore, memsize, align);
+    if (MvtSize != MVT::i32)
+      ST = CurDAG->getTruncStore(Chain, dl, SDValue(Result, 1), Load,
+                                 MvtSize, Mem);
+    else
+      ST = CurDAG->getStore(Chain, dl, SDValue(Result, 1), Load, Mem);
+
+    SDNode* Store = SelectStore(ST.getNode());
+
+    const SDValue Froms[] = { SDValue(N, 0),
+                              SDValue(N, 1) };
+    const SDValue Tos[]   = { SDValue(Result, 0),
+                              SDValue(Store, 0) };
+    ReplaceUses(Froms, Tos, 2);
+    return Result;
+  }
+
+  if (IntNo == Intrinsic::hexagon_brev_ldd  ||
+      IntNo == Intrinsic::hexagon_brev_ldw  ||
+      IntNo == Intrinsic::hexagon_brev_ldh  ||
+      IntNo == Intrinsic::hexagon_brev_lduh ||
+      IntNo == Intrinsic::hexagon_brev_ldb  ||
+      IntNo == Intrinsic::hexagon_brev_ldub) {
+    SDLoc dl(N);
+    SDValue Chain = N->getOperand(0);
+    SDValue Base = N->getOperand(2);
+    SDValue Load = N->getOperand(3);
+    SDValue ModifierExpr = N->getOperand(4);
+
+    // We need to add the rerurn type for the load.  This intrinsic has
+    // two return types, one for the load and one for the post-increment.
+    std::vector<EVT> ResTys;
+    unsigned opc;
+    unsigned memsize, align;
+    MVT MvtSize = MVT::i32;
+
+    if (IntNo == Intrinsic::hexagon_brev_ldd) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i64);
+      opc = Hexagon::L2_loadrd_pbr_pseudo;
+      memsize = 8;
+      align = 8;
+    } else if (IntNo == Intrinsic::hexagon_brev_ldw) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadri_pbr_pseudo;
+      memsize = 4;
+      align = 4;
+    } else if (IntNo == Intrinsic::hexagon_brev_ldh) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadrh_pbr_pseudo;
+      memsize = 2;
+      align = 2;
+      MvtSize = MVT::i16;
+    } else if (IntNo == Intrinsic::hexagon_brev_lduh) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadruh_pbr_pseudo;
+      memsize = 2;
+      align = 2;
+      MvtSize = MVT::i16;
+    } else if (IntNo == Intrinsic::hexagon_brev_ldb) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadrb_pbr_pseudo;
+      memsize = 1;
+      align = 1;
+      MvtSize = MVT::i8;
+    } else if (IntNo == Intrinsic::hexagon_brev_ldub) {
+      ResTys.push_back(MVT::i32);
+      ResTys.push_back(MVT::i32);
+      opc = Hexagon::L2_loadrub_pbr_pseudo;
+      memsize = 1;
+      align = 1;
+      MvtSize = MVT::i8;
+    } else
+      llvm_unreachable("no opc");
+
+    ResTys.push_back(MVT::Other);
+
+    // Copy over the arguments, which are the same mostly.
+    SmallVector<SDValue, 4> Ops;
+    Ops.push_back(Base);
+    Ops.push_back(Load);
+    Ops.push_back(ModifierExpr);
+    Ops.push_back(Chain);
+    SDNode* Result = CurDAG->getMachineNode(opc, dl, ResTys, Ops);
+    SDValue ST;
+    MachineMemOperand *Mem =
+      MF->getMachineMemOperand(MachinePointerInfo(),
+                               MachineMemOperand::MOStore, memsize, align);
+    if (MvtSize != MVT::i32)
+      ST = CurDAG->getTruncStore(Chain, dl, SDValue(Result, 1), Load,
+                                 MvtSize, Mem);
+    else
+      ST = CurDAG->getStore(Chain, dl, SDValue(Result, 1), Load, Mem);
+
+    SDNode* Store = SelectStore(ST.getNode());
+
+    const SDValue Froms[] = { SDValue(N, 0),
+                              SDValue(N, 1) };
+    const SDValue Tos[]   = { SDValue(Result, 0),
+                              SDValue(Store, 0) };
+    ReplaceUses(Froms, Tos, 2);
+    return Result;
+  }
+
   return SelectCode(N);
 }
 
+//
+// Checking for intrinsics which have predicate registers as operand(s)
+// and lowering to the actual intrinsic.
+//
 SDNode *HexagonDAGToDAGISel::SelectIntrinsicWOChain(SDNode *N) {
   unsigned IID = cast<ConstantSDNode>(N->getOperand(0))->getZExtValue();
   unsigned Bits;
@@ -1126,12 +1112,14 @@ SDNode *HexagonDAGToDAGISel::SelectBitOp(SDNode *N) {
   }
 
   if (Opc == ISD::AND) {
-    // Check if this is a bit-clearing AND, if not select code the usual way.
-    if ((ValueVT == MVT::i32 && isPowerOf2_32(~Val)) ||
-        (ValueVT == MVT::i64 && isPowerOf2_64(~Val)))
-      Val = ~Val;
-    else
+    if (((ValueVT == MVT::i32) &&
+                  (!((Val & 0x80000000) || (Val & 0x7fffffff)))) ||
+        ((ValueVT == MVT::i64) &&
+                  (!((Val & 0x8000000000000000) || (Val & 0x7fffffff)))))
+      // If it's simple AND, do the normal op.
       return SelectCode(N);
+    else
+      Val = ~Val;
   }
 
   // If OR or AND is being fed by shl, srl and, sra don't do this change,
@@ -1139,8 +1127,7 @@ SDNode *HexagonDAGToDAGISel::SelectBitOp(SDNode *N) {
   // Traverse the DAG to see if there is shl, srl and sra.
   if (Opc == ISD::OR || Opc == ISD::AND) {
     switch (N->getOperand(0)->getOpcode()) {
-      default:
-        break;
+      default: break;
       case ISD::SRA:
       case ISD::SRL:
       case ISD::SHL:
@@ -1149,24 +1136,23 @@ SDNode *HexagonDAGToDAGISel::SelectBitOp(SDNode *N) {
   }
 
   // Make sure it's power of 2.
-  unsigned BitPos = 0;
+  unsigned bitpos = 0;
   if (Opc != ISD::FABS && Opc != ISD::FNEG) {
-    if ((ValueVT == MVT::i32 && !isPowerOf2_32(Val)) ||
-        (ValueVT == MVT::i64 && !isPowerOf2_64(Val)))
+    if (((ValueVT == MVT::i32) && !isPowerOf2_32(Val)) ||
+        ((ValueVT == MVT::i64) && !isPowerOf2_64(Val)))
       return SelectCode(N);
 
     // Get the bit position.
-    BitPos = countTrailingZeros(uint64_t(Val));
+    bitpos = countTrailingZeros(uint64_t(Val));
   } else {
     // For fabs and fneg, it's always the 31st bit.
-    BitPos = 31;
+    bitpos = 31;
   }
 
   unsigned BitOpc = 0;
   // Set the right opcode for bitwise operations.
-  switch (Opc) {
-    default:
-      llvm_unreachable("Only bit-wise/abs/neg operations are allowed.");
+  switch(Opc) {
+    default: llvm_unreachable("Only bit-wise/abs/neg operations are allowed.");
     case ISD::AND:
     case ISD::FABS:
       BitOpc = Hexagon::S2_clrbit_i;
@@ -1182,7 +1168,7 @@ SDNode *HexagonDAGToDAGISel::SelectBitOp(SDNode *N) {
 
   SDNode *Result;
   // Get the right SDVal for the opcode.
-  SDValue SDVal = CurDAG->getTargetConstant(BitPos, dl, MVT::i32);
+  SDValue SDVal = CurDAG->getTargetConstant(bitpos, dl, MVT::i32);
 
   if (ValueVT == MVT::i32 || ValueVT == MVT::f32) {
     Result = CurDAG->getMachineNode(BitOpc, dl, ValueVT,
@@ -1211,7 +1197,7 @@ SDNode *HexagonDAGToDAGISel::SelectBitOp(SDNode *N) {
                                                     MVT::i32, SDValue(Reg, 0));
 
     // Clear/set/toggle hi or lo registers depending on the bit position.
-    if (SubValueVT != MVT::f32 && BitPos < 32) {
+    if (SubValueVT != MVT::f32 && bitpos < 32) {
       SDNode *Result0 = CurDAG->getMachineNode(BitOpc, dl, SubValueVT,
                                                SubregLO, SDVal);
       const SDValue Ops[] = { RegClass, SubregHI, SubregHiIdx,
@@ -1220,7 +1206,7 @@ SDNode *HexagonDAGToDAGISel::SelectBitOp(SDNode *N) {
                                       dl, ValueVT, Ops);
     } else {
       if (Opc != ISD::FABS && Opc != ISD::FNEG)
-        SDVal = CurDAG->getTargetConstant(BitPos-32, dl, MVT::i32);
+        SDVal = CurDAG->getTargetConstant(bitpos - 32, dl, MVT::i32);
       SDNode *Result0 = CurDAG->getMachineNode(BitOpc, dl, SubValueVT,
                                                SubregHI, SDVal);
       const SDValue Ops[] = { RegClass, SDValue(Result0, 0), SubregHiIdx,
@@ -1363,7 +1349,7 @@ void HexagonDAGToDAGISel::PreprocessISelDAG() {
     auto IsSelect0 = [IsZero] (const SDValue &Op) -> bool {
       if (Op.getOpcode() != ISD::SELECT)
         return false;
-      return IsZero(Op.getOperand(1)) || IsZero(Op.getOperand(2));
+      return IsZero(Op.getOperand(1))  || IsZero(Op.getOperand(2));
     };
 
     SDValue N0 = I->getOperand(0), N1 = I->getOperand(1);
@@ -1400,7 +1386,8 @@ void HexagonDAGToDAGISel::EmitFunctionEntryCode() {
   MachineBasicBlock *EntryBB = &MF->front();
   unsigned AR = FuncInfo->CreateReg(MVT::i32);
   unsigned MaxA = MFI->getMaxAlignment();
-  BuildMI(EntryBB, DebugLoc(), HII->get(Hexagon::ALIGNA), AR)
+  auto &HII = *HST.getInstrInfo();
+  BuildMI(EntryBB, DebugLoc(), HII.get(Hexagon::ALIGNA), AR)
       .addImm(MaxA);
   MF->getInfo<HexagonMachineFunctionInfo>()->setStackAlignBaseVReg(AR);
 }

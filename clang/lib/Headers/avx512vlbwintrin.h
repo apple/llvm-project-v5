@@ -1,4 +1,4 @@
-/*===---- avx512vlbwintrin.h - AVX512VL and AVX512BW intrinsics ------------===
+/*===---- avx512vlbwintrin.h - AVX512VL and AVX512BW intrinsics ----------===
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,11 +30,6 @@
 
 /* Define the default attributes for the functions in this file. */
 #define __DEFAULT_FN_ATTRS __attribute__((__always_inline__, __nodebug__, __target__("avx512vl,avx512bw")))
-
-static  __inline __m128i __DEFAULT_FN_ATTRS
-_mm_setzero_hi(void){
-    return (__m128i){ 0LL, 0LL };
-}
 
 /* Integer compare */
 
@@ -2256,76 +2251,6 @@ _mm256_maskz_unpacklo_epi16 (__mmask16 __U, __m256i __A, __m256i __B) {
                (__mmask16) __U);
 }
 
-static __inline__ __m128i __DEFAULT_FN_ATTRS
-_mm_mask_cvtepi8_epi16 (__m128i __W, __mmask32 __U, __m128i __A)
-{
-  return (__m128i) __builtin_ia32_pmovsxbw128_mask ((__v16qi) __A,
-                (__v8hi) __W,
-                (__mmask8) __U);
-}
-
-static __inline__ __m128i __DEFAULT_FN_ATTRS
-_mm_maskz_cvtepi8_epi16 (__mmask8 __U, __m128i __A)
-{
-  return (__m128i) __builtin_ia32_pmovsxbw128_mask ((__v16qi) __A,
-                (__v8hi)
-                _mm_setzero_si128 (),
-                (__mmask8) __U);
-}
-
-static __inline__ __m256i __DEFAULT_FN_ATTRS
-_mm256_mask_cvtepi8_epi16 (__m256i __W, __mmask32 __U, __m128i __A)
-{
-  return (__m256i) __builtin_ia32_pmovsxbw256_mask ((__v16qi) __A,
-                (__v16hi) __W,
-                (__mmask16) __U);
-}
-
-static __inline__ __m256i __DEFAULT_FN_ATTRS
-_mm256_maskz_cvtepi8_epi16 (__mmask16 __U, __m128i __A)
-{
-  return (__m256i) __builtin_ia32_pmovsxbw256_mask ((__v16qi) __A,
-                (__v16hi)
-                _mm256_setzero_si256 (),
-                (__mmask16) __U);
-}
-
-
-static __inline__ __m128i __DEFAULT_FN_ATTRS
-_mm_mask_cvtepu8_epi16 (__m128i __W, __mmask32 __U, __m128i __A)
-{
-  return (__m128i) __builtin_ia32_pmovzxbw128_mask ((__v16qi) __A,
-                (__v8hi) __W,
-                (__mmask8) __U);
-}
-
-static __inline__ __m128i __DEFAULT_FN_ATTRS
-_mm_maskz_cvtepu8_epi16 (__mmask8 __U, __m128i __A)
-{
-  return (__m128i) __builtin_ia32_pmovzxbw128_mask ((__v16qi) __A,
-                (__v8hi)
-                _mm_setzero_si128 (),
-                (__mmask8) __U);
-}
-
-static __inline__ __m256i __DEFAULT_FN_ATTRS
-_mm256_mask_cvtepu8_epi16 (__m256i __W, __mmask32 __U, __m128i __A)
-{
-  return (__m256i) __builtin_ia32_pmovzxbw256_mask ((__v16qi) __A,
-                (__v16hi) __W,
-                (__mmask16) __U);
-}
-
-static __inline__ __m256i __DEFAULT_FN_ATTRS
-_mm256_maskz_cvtepu8_epi16 (__mmask16 __U, __m128i __A)
-{
-  return (__m256i) __builtin_ia32_pmovzxbw256_mask ((__v16qi) __A,
-                (__v16hi)
-                _mm256_setzero_si256 (),
-                (__mmask16) __U);
-}
-
-
 #define _mm_cmp_epi8_mask(a, b, p) __extension__ ({ \
   (__mmask16)__builtin_ia32_cmpb128_mask((__v16qi)(__m128i)(a), \
                                          (__v16qi)(__m128i)(b), \
@@ -2405,67 +2330,6 @@ _mm256_maskz_cvtepu8_epi16 (__mmask16 __U, __m128i __A)
   (__mmask16)__builtin_ia32_ucmpw256_mask((__v16hi)(__m256i)(a), \
                                           (__v16hi)(__m256i)(b), \
                                           (p), (__mmask16)(m)); })
-
-#define _mm_mask_shufflehi_epi16( __W, __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshufhw128_mask ((__v8hi) __A, (__imm),\
-               (__v8hi)( __W),\
-               (__mmask8)( __U));\
-})
-
-#define _mm_maskz_shufflehi_epi16( __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshufhw128_mask ((__v8hi)( __A),( __imm),\
-               (__v8hi)\
-               _mm_setzero_hi (),\
-               (__mmask8)( __U));\
-})
-
-
-#define _mm256_mask_shufflehi_epi16( __W, __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshufhw256_mask ((__v16hi) (__A),\
-               (__imm),\
-               (__v16hi)( __W),\
-               (__mmask16)( __U));\
-})
-
-
-#define _mm256_maskz_shufflehi_epi16( __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshufhw256_mask ((__v16hi) (__A),\
-               (__imm),\
-               (__v16hi)\
-               _mm256_setzero_si256 (),\
-               (__mmask16)( __U));\
-})
-
-
-#define _mm_mask_shufflelo_epi16( __W, __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshuflw128_mask ((__v8hi) __A, (__imm),\
-               (__v8hi)( __W),\
-               (__mmask8)( __U));\
-})
-
-#define _mm_maskz_shufflelo_epi16( __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshuflw128_mask ((__v8hi)( __A),( __imm),\
-               (__v8hi)\
-               _mm_setzero_hi (),\
-               (__mmask8)( __U));\
-})
-
-
-#define _mm256_mask_shufflelo_epi16( __W, __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshuflw256_mask ((__v16hi) (__A),\
-               (__imm),\
-               (__v16hi)( __W),\
-               (__mmask16)( __U));\
-})
-
-
-#define _mm256_maskz_shufflelo_epi16( __U, __A, __imm) __extension__ ({ \
-__builtin_ia32_pshuflw256_mask ((__v16hi) (__A),\
-               (__imm),\
-               (__v16hi)\
-               _mm256_setzero_si256 (),\
-               (__mmask16)( __U));\
-})
 
 #undef __DEFAULT_FN_ATTRS
 

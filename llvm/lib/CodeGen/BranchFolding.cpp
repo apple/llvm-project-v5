@@ -167,7 +167,7 @@ bool BranchFolder::OptimizeImpDefsBlock(MachineBasicBlock *MBB) {
 
   MachineBasicBlock::iterator FirstTerm = I;
   while (I != MBB->end()) {
-    if (!TII->isUnpredicatedTerminator(*I))
+    if (!TII->isUnpredicatedTerminator(I))
       return false;
     // See if it uses any of the implicitly defined registers.
     for (const MachineOperand &MO : I->operands()) {
@@ -271,10 +271,10 @@ bool BranchFolder::OptimizeFunction(MachineFunction &MF,
 //===----------------------------------------------------------------------===//
 
 /// HashMachineInstr - Compute a hash value for MI and its operands.
-static unsigned HashMachineInstr(const MachineInstr &MI) {
-  unsigned Hash = MI.getOpcode();
-  for (unsigned i = 0, e = MI.getNumOperands(); i != e; ++i) {
-    const MachineOperand &Op = MI.getOperand(i);
+static unsigned HashMachineInstr(const MachineInstr *MI) {
+  unsigned Hash = MI->getOpcode();
+  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
+    const MachineOperand &Op = MI->getOperand(i);
 
     // Merge in bits from the operand if easy. We can't use MachineOperand's
     // hash_code here because it's not deterministic and we sort by hash value
@@ -311,12 +311,12 @@ static unsigned HashMachineInstr(const MachineInstr &MI) {
 }
 
 /// HashEndOfMBB - Hash the last instruction in the MBB.
-static unsigned HashEndOfMBB(const MachineBasicBlock &MBB) {
-  MachineBasicBlock::const_iterator I = MBB.getLastNonDebugInstr();
-  if (I == MBB.end())
+static unsigned HashEndOfMBB(const MachineBasicBlock *MBB) {
+  MachineBasicBlock::const_iterator I = MBB->getLastNonDebugInstr();
+  if (I == MBB->end())
     return 0;
 
-  return HashMachineInstr(*I);
+  return HashMachineInstr(I);
 }
 
 /// ComputeCommonTailLength - Given two machine basic blocks, compute the number
@@ -357,7 +357,7 @@ static unsigned ComputeCommonTailLength(MachineBasicBlock *MBB1,
       --I2;
     }
     // I1, I2==first (untested) non-DBGs preceding known match
-    if (!I1->isIdenticalTo(*I2) ||
+    if (!I1->isIdenticalTo(I2) ||
         // FIXME: This check is dubious. It's used to get around a problem where
         // people incorrectly expect inline asm directives to remain in the same
         // relative order. This is untenable because normal compiler
@@ -371,7 +371,7 @@ static unsigned ComputeCommonTailLength(MachineBasicBlock *MBB1,
   }
   // Back past possible debugging pseudos at beginning of block.  This matters
   // when one block differs from the other only by whether debugging pseudos
-  // are present at the beginning. (This way, the various checks later for
+  // are present at the beginning.  (This way, the various checks later for
   // I1==MBB1->begin() work as expected.)
   if (I1 == MBB1->begin() && I2 != MBB2->begin()) {
     --I2;
@@ -744,6 +744,18 @@ bool BranchFolder::CreateCommonTailOnlyBlock(MachineBasicBlock *&PredBB,
   return true;
 }
 
+static bool hasIdenticalMMOs(const MachineInstr *MI1, const MachineInstr *MI2) {
+  auto I1 = MI1->memoperands_begin(), E1 = MI1->memoperands_end();
+  auto I2 = MI2->memoperands_begin(), E2 = MI2->memoperands_end();
+  if ((E1 - I1) != (E2 - I2))
+    return false;
+  for (; I1 != E1; ++I1, ++I2) {
+    if (**I1 != **I2)
+      return false;
+  }
+  return true;
+}
+
 static void
 removeMMOsFromMemoryOperations(MachineBasicBlock::iterator MBBIStartPos,
                                MachineBasicBlock &MBBCommon) {
@@ -777,10 +789,11 @@ removeMMOsFromMemoryOperations(MachineBasicBlock::iterator MBBIStartPos,
 
     assert(MBBICommon != MBBIECommon &&
            "Reached BB end within common tail length!");
-    assert(MBBICommon->isIdenticalTo(*MBBI) && "Expected matching MIIs!");
+    assert(MBBICommon->isIdenticalTo(&*MBBI) && "Expected matching MIIs!");
 
     if (MBBICommon->mayLoad() || MBBICommon->mayStore())
-      MBBICommon->setMemRefs(MBBICommon->mergeMemRefsWith(*MBBI));
+      if (!hasIdenticalMMOs(&*MBBI, &*MBBICommon))
+        MBBICommon->clearMemRefs();
 
     ++MBBI;
     ++MBBICommon;
@@ -925,7 +938,7 @@ bool BranchFolder::TailMergeBlocks(MachineFunction &MF) {
     if (MergePotentials.size() == TailMergeThreshold)
       break;
     if (!TriedMerging.count(&MBB) && MBB.succ_empty())
-      MergePotentials.push_back(MergePotentialsElt(HashEndOfMBB(MBB), &MBB));
+      MergePotentials.push_back(MergePotentialsElt(HashEndOfMBB(&MBB), &MBB));
   }
 
   // If this is a large problem, avoid visiting the same basic blocks
@@ -1033,7 +1046,7 @@ bool BranchFolder::TailMergeBlocks(MachineFunction &MF) {
                               NewCond, dl);
         }
 
-        MergePotentials.push_back(MergePotentialsElt(HashEndOfMBB(*PBB), PBB));
+        MergePotentials.push_back(MergePotentialsElt(HashEndOfMBB(PBB), PBB));
       }
     }
 
@@ -1086,19 +1099,13 @@ void BranchFolder::setCommonTailEdgeWeights(MachineBasicBlock &TailMBB) {
   if (TailMBB.succ_size() <= 1)
     return;
 
-  auto SumEdgeFreq =
-      std::accumulate(EdgeFreqLs.begin(), EdgeFreqLs.end(), BlockFrequency(0))
-          .getFrequency();
+  auto MaxEdgeFreq = *std::max_element(EdgeFreqLs.begin(), EdgeFreqLs.end());
+  uint64_t Scale = MaxEdgeFreq.getFrequency() / UINT32_MAX + 1;
   auto EdgeFreq = EdgeFreqLs.begin();
 
-  if (SumEdgeFreq > 0) {
-    for (auto SuccI = TailMBB.succ_begin(), SuccE = TailMBB.succ_end();
-         SuccI != SuccE; ++SuccI, ++EdgeFreq) {
-      auto Prob = BranchProbability::getBranchProbability(
-          EdgeFreq->getFrequency(), SumEdgeFreq);
-      TailMBB.setSuccProbability(SuccI, Prob);
-    }
-  }
+  for (auto SuccI = TailMBB.succ_begin(), SuccE = TailMBB.succ_end();
+       SuccI != SuccE; ++SuccI, ++EdgeFreq)
+    TailMBB.setSuccWeight(SuccI, EdgeFreq->getFrequency() / Scale);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1275,11 +1282,11 @@ ReoptimizeBlock:
         // DBG_VALUE at the beginning of MBB.
         while (PrevBBIter != PrevBB.begin() && MBBIter != MBB->end()
                && PrevBBIter->isDebugValue() && MBBIter->isDebugValue()) {
-          if (!MBBIter->isIdenticalTo(*PrevBBIter))
+          if (!MBBIter->isIdenticalTo(PrevBBIter))
             break;
-          MachineInstr &DuplicateDbg = *MBBIter;
+          MachineInstr *DuplicateDbg = MBBIter;
           ++MBBIter; -- PrevBBIter;
-          DuplicateDbg.eraseFromParent();
+          DuplicateDbg->eraseFromParent();
         }
       }
       PrevBB.splice(PrevBB.end(), MBB, MBB->begin(), MBB->end());
@@ -1397,7 +1404,7 @@ ReoptimizeBlock:
     // other blocks across it.
     if (CurTBB && CurCond.empty() && !CurFBB &&
         IsBranchOnlyBlock(MBB) && CurTBB != MBB &&
-        !MBB->hasAddressTaken() && !MBB->isEHPad()) {
+        !MBB->hasAddressTaken()) {
       DebugLoc dl = getBranchDebugLoc(*MBB);
       // This block may contain just an unconditional branch.  Because there can
       // be 'non-branch terminators' in the block, try removing the branch and
@@ -1551,14 +1558,6 @@ ReoptimizeBlock:
       // removed, move this block to the end of the function.
       MachineBasicBlock *PrevTBB = nullptr, *PrevFBB = nullptr;
       SmallVector<MachineOperand, 4> PrevCond;
-      // We're looking for cases where PrevBB could possibly fall through to
-      // FallThrough, but if FallThrough is an EH pad that wouldn't be useful
-      // so here we skip over any EH pads so we might have a chance to find
-      // a branch target from PrevBB.
-      while (FallThrough != MF.end() && FallThrough->isEHPad())
-        ++FallThrough;
-      // Now check to see if the current block is sitting between PrevBB and
-      // a block to which it could fall through.
       if (FallThrough != MF.end() &&
           !TII->AnalyzeBranch(PrevBB, PrevTBB, PrevFBB, PrevCond, true) &&
           PrevBB.isSuccessor(&*FallThrough)) {
@@ -1623,7 +1622,7 @@ MachineBasicBlock::iterator findHoistingInsertPosAndDeps(MachineBasicBlock *MBB,
                                                   SmallSet<unsigned,4> &Uses,
                                                   SmallSet<unsigned,4> &Defs) {
   MachineBasicBlock::iterator Loc = MBB->getFirstTerminator();
-  if (!TII->isUnpredicatedTerminator(*Loc))
+  if (!TII->isUnpredicatedTerminator(Loc))
     return MBB->end();
 
   for (const MachineOperand &MO : Loc->operands()) {
@@ -1685,7 +1684,7 @@ MachineBasicBlock::iterator findHoistingInsertPosAndDeps(MachineBasicBlock *MBB,
   // Also avoid moving code above predicated instruction since it's hard to
   // reason about register liveness with predicated instruction.
   bool DontMoveAcrossStore = true;
-  if (!PI->isSafeToMove(nullptr, DontMoveAcrossStore) || TII->isPredicated(*PI))
+  if (!PI->isSafeToMove(nullptr, DontMoveAcrossStore) || TII->isPredicated(PI))
     return MBB->end();
 
 
@@ -1762,10 +1761,10 @@ bool BranchFolder::HoistCommonCodeInSuccs(MachineBasicBlock *MBB) {
       if (FIB == FIE)
         break;
     }
-    if (!TIB->isIdenticalTo(*FIB, MachineInstr::CheckKillDead))
+    if (!TIB->isIdenticalTo(FIB, MachineInstr::CheckKillDead))
       break;
 
-    if (TII->isPredicated(*TIB))
+    if (TII->isPredicated(TIB))
       // Hard to reason about register liveness with predicated instruction.
       break;
 

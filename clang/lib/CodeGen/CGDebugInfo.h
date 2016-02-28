@@ -16,7 +16,6 @@
 
 #include "CGBuilder.h"
 #include "clang/AST/Expr.h"
-#include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/CodeGenOptions.h"
@@ -53,12 +52,11 @@ class CGDebugInfo {
   friend class ApplyDebugLocation;
   friend class SaveAndRestoreLocation;
   CodeGenModule &CGM;
-  const codegenoptions::DebugInfoKind DebugKind;
+  const CodeGenOptions::DebugInfoKind DebugKind;
   bool DebugTypeExtRefs;
   llvm::DIBuilder DBuilder;
   llvm::DICompileUnit *TheCU = nullptr;
   ModuleMap *ClangModuleMap = nullptr;
-  ExternalASTSource::ASTSourceDescriptor PCHDescriptor;
   SourceLocation CurLoc;
   llvm::DIType *VTablePtrType = nullptr;
   llvm::DIType *ClassTy = nullptr;
@@ -109,7 +107,7 @@ class CGDebugInfo {
   /// compilation.
   std::vector<std::pair<const TagType *, llvm::TrackingMDRef>> ReplaceMap;
 
-  /// Cache of replaceable forward declarations (functions and
+  /// Cache of replaceable forward declarartions (functions and
   /// variables) to RAUW at the end of compilation.
   std::vector<std::pair<const DeclaratorDecl *, llvm::TrackingMDRef>>
       FwdDeclReplaceMap;
@@ -170,7 +168,6 @@ class CGDebugInfo {
   llvm::DIType *CreateType(const RValueReferenceType *Ty, llvm::DIFile *Unit);
   llvm::DIType *CreateType(const MemberPointerType *Ty, llvm::DIFile *F);
   llvm::DIType *CreateType(const AtomicType *Ty, llvm::DIFile *F);
-  llvm::DIType *CreateType(const PipeType *Ty, llvm::DIFile *F);
   /// Get enumeration type.
   llvm::DIType *CreateEnumType(const EnumType *Ty);
   llvm::DIType *CreateTypeDefinition(const EnumType *Ty);
@@ -277,8 +274,6 @@ public:
 
   void finalize();
 
-  /// Module debugging: Support for building PCMs.
-  /// @{
   /// Set the main CU's DwoId field to \p Signature.
   void setDwoId(uint64_t Signature);
 
@@ -286,14 +281,6 @@ public:
   /// precompiled header, this module map will be used to determine
   /// the module of origin of each Decl.
   void setModuleMap(ModuleMap &MMap) { ClangModuleMap = &MMap; }
-
-  /// When generating debug information for a clang module or
-  /// precompiled header, this module map will be used to determine
-  /// the module of origin of each Decl.
-  void setPCHDescriptor(ExternalASTSource::ASTSourceDescriptor PCH) {
-    PCHDescriptor = PCH;
-  }
-  /// @}
 
   /// Update the current source location. If \arg loc is invalid it is
   /// ignored.
@@ -587,7 +574,7 @@ public:
   /// passing an empty SourceLocation to \a CGDebugInfo::setLocation()
   /// will result in the last valid location being reused.  Note that
   /// all instructions that do not have a location at the beginning of
-  /// a function are counted towards to function prologue.
+  /// a function are counted towards to funciton prologue.
   static ApplyDebugLocation CreateEmpty(CodeGenFunction &CGF) {
     return ApplyDebugLocation(CGF, true, SourceLocation());
   }

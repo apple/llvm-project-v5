@@ -41,12 +41,10 @@ void MipsTargetObjectFile::Initialize(MCContext &Ctx, const TargetMachine &TM){
   InitializeELF(TM.Options.UseInitArray);
 
   SmallDataSection = getContext().getELFSection(
-      ".sdata", ELF::SHT_PROGBITS,
-      ELF::SHF_WRITE | ELF::SHF_ALLOC | ELF::SHF_MIPS_GPREL);
+      ".sdata", ELF::SHT_PROGBITS, ELF::SHF_WRITE | ELF::SHF_ALLOC);
 
   SmallBSSSection = getContext().getELFSection(".sbss", ELF::SHT_NOBITS,
-                                               ELF::SHF_WRITE | ELF::SHF_ALLOC |
-                                                   ELF::SHF_MIPS_GPREL);
+                                               ELF::SHF_WRITE | ELF::SHF_ALLOC);
   this->TM = &static_cast<const MipsTargetMachine &>(TM);
 }
 
@@ -78,7 +76,7 @@ bool MipsTargetObjectFile::
 IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
                        SectionKind Kind) const {
   return (IsGlobalInSmallSectionImpl(GV, TM) &&
-          (Kind.isData() || Kind.isBSS() || Kind.isCommon()));
+          (Kind.isDataRel() || Kind.isBSS() || Kind.isCommon()));
 }
 
 /// Return true if this global address should be placed into small data/bss
@@ -108,7 +106,7 @@ IsGlobalInSmallSectionImpl(const GlobalValue *GV,
                        GV->hasCommonLinkage()))
     return false;
 
-  Type *Ty = GV->getValueType();
+  Type *Ty = GV->getType()->getElementType();
   return IsInSmallSection(
       GV->getParent()->getDataLayout().getTypeAllocSize(Ty));
 }
@@ -123,7 +121,7 @@ MipsTargetObjectFile::SelectSectionForGlobal(const GlobalValue *GV,
   // Handle Small Section classification here.
   if (Kind.isBSS() && IsGlobalInSmallSection(GV, TM, Kind))
     return SmallBSSSection;
-  if (Kind.isData() && IsGlobalInSmallSection(GV, TM, Kind))
+  if (Kind.isDataRel() && IsGlobalInSmallSection(GV, TM, Kind))
     return SmallDataSection;
 
   // Otherwise, we work the same as ELF.
@@ -140,13 +138,11 @@ bool MipsTargetObjectFile::IsConstantInSmallSection(
 }
 
 /// Return true if this constant should be placed into small data section.
-MCSection *MipsTargetObjectFile::getSectionForConstant(const DataLayout &DL,
-                                                       SectionKind Kind,
-                                                       const Constant *C,
-                                                       unsigned &Align) const {
+MCSection *MipsTargetObjectFile::getSectionForConstant(
+    const DataLayout &DL, SectionKind Kind, const Constant *C) const {
   if (IsConstantInSmallSection(DL, C, *TM))
     return SmallDataSection;
 
   // Otherwise, we work the same as ELF.
-  return TargetLoweringObjectFileELF::getSectionForConstant(DL, Kind, C, Align);
+  return TargetLoweringObjectFileELF::getSectionForConstant(DL, Kind, C);
 }

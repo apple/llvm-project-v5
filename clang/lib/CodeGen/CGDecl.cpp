@@ -29,9 +29,9 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Type.h"
-
 using namespace clang;
 using namespace CodeGen;
+
 
 void CodeGenFunction::EmitDecl(const Decl &D) {
   switch (D.getKind()) {
@@ -92,7 +92,6 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::Label:        // __label__ x;
   case Decl::Import:
   case Decl::OMPThreadPrivate:
-  case Decl::OMPCapturedExpr:
   case Decl::Empty:
     // None of these decls require codegen support.
     return;
@@ -395,7 +394,7 @@ void CodeGenFunction::EmitStaticVarDecl(const VarDecl &D,
   // Emit global variable debug descriptor for static vars.
   CGDebugInfo *DI = getDebugInfo();
   if (DI &&
-      CGM.getCodeGenOpts().getDebugInfo() >= codegenoptions::LimitedDebugInfo) {
+      CGM.getCodeGenOpts().getDebugInfo() >= CodeGenOptions::LimitedDebugInfo) {
     DI->setLocation(D.getLocation());
     DI->EmitGlobalVariable(var, &D);
   }
@@ -527,7 +526,7 @@ namespace {
       CGF.EmitLifetimeEnd(Size, Addr);
     }
   };
-} // end anonymous namespace
+}
 
 /// EmitAutoVarWithLifetime - Does the setup required for an automatic
 /// variable with lifetime.
@@ -601,15 +600,12 @@ static bool isAccessedBy(const ValueDecl *decl, const Expr *e) {
 
 static bool tryEmitARCCopyWeakInit(CodeGenFunction &CGF,
                                    const LValue &destLV, const Expr *init) {
-  bool needsCast = false;
-
   while (auto castExpr = dyn_cast<CastExpr>(init->IgnoreParens())) {
     switch (castExpr->getCastKind()) {
     // Look through casts that don't require representation changes.
     case CK_NoOp:
     case CK_BitCast:
     case CK_BlockPointerToObjCPointerCast:
-      needsCast = true;
       break;
 
     // If we find an l-value to r-value cast from a __weak variable,
@@ -622,19 +618,12 @@ static bool tryEmitARCCopyWeakInit(CodeGenFunction &CGF,
       // Emit the source l-value.
       LValue srcLV = CGF.EmitLValue(srcExpr);
 
-      // Handle a formal type change to avoid asserting.
-      auto srcAddr = srcLV.getAddress();
-      if (needsCast) {
-        srcAddr = CGF.Builder.CreateElementBitCast(srcAddr,
-                                         destLV.getAddress().getElementType());
-      }
-
       // If it was an l-value, use objc_copyWeak.
       if (srcExpr->getValueKind() == VK_LValue) {
-        CGF.EmitARCCopyWeak(destLV.getAddress(), srcAddr);
+        CGF.EmitARCCopyWeak(destLV.getAddress(), srcLV.getAddress());
       } else {
         assert(srcExpr->getValueKind() == VK_XValue);
-        CGF.EmitARCMoveWeak(destLV.getAddress(), srcAddr);
+        CGF.EmitARCMoveWeak(destLV.getAddress(), srcLV.getAddress());
       }
       return true;
     }
@@ -645,6 +634,7 @@ static bool tryEmitARCCopyWeakInit(CodeGenFunction &CGF,
     }
 
     init = castExpr->getSubExpr();
+    continue;
   }
   return false;
 }
@@ -715,7 +705,8 @@ void CodeGenFunction::EmitScalarInit(const Expr *init, const ValueDecl *D,
     llvm_unreachable("present but none");
 
   case Qualifiers::OCL_ExplicitNone:
-    value = EmitARCUnsafeUnretainedScalarExpr(init);
+    // nothing to do
+    value = EmitScalarExpr(init);
     break;
 
   case Qualifiers::OCL_Strong: {
@@ -875,6 +866,7 @@ static void emitStoresForInitAfterMemset(llvm::Constant *Init, llvm::Value *Loc,
           isVolatile, Builder);
   }
 }
+
 
 /// shouldUseMemSetPlusStoresToInitialize - Decide whether we should use memset
 /// plus some stores to initialize a local variable instead of using a memcpy
@@ -1084,8 +1076,8 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
   // Emit debug info for local var declaration.
   if (HaveInsertPoint())
     if (CGDebugInfo *DI = getDebugInfo()) {
-      if (CGM.getCodeGenOpts().getDebugInfo() >=
-          codegenoptions::LimitedDebugInfo) {
+      if (CGM.getCodeGenOpts().getDebugInfo()
+            >= CodeGenOptions::LimitedDebugInfo) {
         DI->setLocation(D.getLocation());
         DI->EmitDeclareOfAutoVariable(&D, address.getPointer(), Builder);
       }
@@ -1161,7 +1153,6 @@ bool CodeGenFunction::isTrivialInitializer(const Expr *Init) {
 
   return false;
 }
-
 void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
   assert(emission.Variable && "emission was not valid!");
 
@@ -1661,7 +1652,7 @@ namespace {
                               ElementType, ElementAlign, Destroyer);
     }
   };
-} // end anonymous namespace
+}
 
 /// pushIrregularPartialArrayCleanup - Push an EH cleanup to destroy
 /// already-constructed elements of the given array.  The cleanup
@@ -1730,7 +1721,7 @@ namespace {
       CGF.EmitARCRelease(Param, Precise);
     }
   };
-} // end anonymous namespace
+}
 
 /// Emit an alloca (or GlobalValue depending on target)
 /// for the specified parameter and set up LocalDeclMap.
@@ -1851,8 +1842,8 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, ParamValue Arg,
 
   // Emit debug info for param declaration.
   if (CGDebugInfo *DI = getDebugInfo()) {
-    if (CGM.getCodeGenOpts().getDebugInfo() >=
-        codegenoptions::LimitedDebugInfo) {
+    if (CGM.getCodeGenOpts().getDebugInfo()
+          >= CodeGenOptions::LimitedDebugInfo) {
       DI->EmitDeclareOfArgVariable(&D, DeclPtr.getPointer(), ArgNo, Builder);
     }
   }

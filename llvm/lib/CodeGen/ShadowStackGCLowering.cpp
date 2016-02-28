@@ -8,11 +8,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file contains the custom lowering code required by the shadow-stack GC
-// strategy.
-//
-// This pass implements the code transformation described in this paper:
-//   "Accurate Garbage Collection in an Uncooperative Environment"
-//   Fergus Henderson, ISMM, 2002
+// strategy.  
 //
 //===----------------------------------------------------------------------===//
 

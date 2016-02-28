@@ -15,8 +15,7 @@
 #ifndef LLVM_C_CORE_H
 #define LLVM_C_CORE_H
 
-#include "llvm-c/ErrorHandling.h"
-#include "llvm-c/Types.h"
+#include "llvm-c/Support.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +40,15 @@ extern "C" {
  * the LLVM intermediate representation as well as other related types
  * and utilities.
  *
+ * LLVM uses a polymorphic type hierarchy which C cannot represent, therefore
+ * parameters must be passed as base types. Despite the declared types, most
+ * of the functions provided operate only on branches of the type hierarchy.
+ * The declared parameter names are descriptive and specify which type is
+ * required. Additionally, each type hierarchy is documented along with the
+ * functions that operate upon it. For more detail, refer to LLVM's C++ code.
+ * If in doubt, refer to Core.cpp, which performs parameter downcasts in the
+ * form unwrap<RequiredType>(Param).
+ *
  * Many exotic languages can interoperate with C code but have a harder time
  * with C++ due to name mangling. So in addition to C, this interface enables
  * tools written in such languages.
@@ -53,6 +61,74 @@ extern "C" {
  *
  * @{
  */
+
+/* Opaque types. */
+
+/**
+ * The top-level container for all LLVM global data. See the LLVMContext class.
+ */
+typedef struct LLVMOpaqueContext *LLVMContextRef;
+
+/**
+ * The top-level container for all other LLVM Intermediate Representation (IR)
+ * objects.
+ *
+ * @see llvm::Module
+ */
+typedef struct LLVMOpaqueModule *LLVMModuleRef;
+
+/**
+ * Each value in the LLVM IR has a type, an LLVMTypeRef.
+ *
+ * @see llvm::Type
+ */
+typedef struct LLVMOpaqueType *LLVMTypeRef;
+
+/**
+ * Represents an individual value in LLVM IR.
+ *
+ * This models llvm::Value.
+ */
+typedef struct LLVMOpaqueValue *LLVMValueRef;
+
+/**
+ * Represents a basic block of instructions in LLVM IR.
+ *
+ * This models llvm::BasicBlock.
+ */
+typedef struct LLVMOpaqueBasicBlock *LLVMBasicBlockRef;
+
+/**
+ * Represents an LLVM basic block builder.
+ *
+ * This models llvm::IRBuilder.
+ */
+typedef struct LLVMOpaqueBuilder *LLVMBuilderRef;
+
+/**
+ * Interface used to provide a module to JIT or interpreter.
+ * This is now just a synonym for llvm::Module, but we have to keep using the
+ * different type to keep binary compatibility.
+ */
+typedef struct LLVMOpaqueModuleProvider *LLVMModuleProviderRef;
+
+/** @see llvm::PassManagerBase */
+typedef struct LLVMOpaquePassManager *LLVMPassManagerRef;
+
+/** @see llvm::PassRegistry */
+typedef struct LLVMOpaquePassRegistry *LLVMPassRegistryRef;
+
+/**
+ * Used to get the users and usees of a Value.
+ *
+ * @see llvm::Use */
+typedef struct LLVMOpaqueUse *LLVMUseRef;
+
+
+/**
+ * @see llvm::DiagnosticInfo
+ */
+typedef struct LLVMOpaqueDiagnosticInfo *LLVMDiagnosticInfoRef;
 
 typedef enum {
     LLVMZExtAttribute       = 1<<0,
@@ -176,8 +252,10 @@ typedef enum {
   LLVMCleanupRet     = 61,
   LLVMCatchRet       = 62,
   LLVMCatchPad       = 63,
-  LLVMCleanupPad     = 64,
-  LLVMCatchSwitch    = 65
+  LLVMTerminatePad   = 64,
+  LLVMCleanupPad     = 65,
+  LLVMCatchEndPad    = 66,
+  LLVMCleanupEndPad  = 67
 } LLVMOpcode;
 
 typedef enum {
@@ -362,6 +440,30 @@ void LLVMShutdown(void);
 char *LLVMCreateMessage(const char *Message);
 void LLVMDisposeMessage(char *Message);
 
+typedef void (*LLVMFatalErrorHandler)(const char *Reason);
+
+/**
+ * Install a fatal error handler. By default, if LLVM detects a fatal error, it
+ * will call exit(1). This may not be appropriate in many contexts. For example,
+ * doing exit(1) will bypass many crash reporting/tracing system tools. This
+ * function allows you to install a callback that will be invoked prior to the
+ * call to exit(1).
+ */
+void LLVMInstallFatalErrorHandler(LLVMFatalErrorHandler Handler);
+
+/**
+ * Reset the fatal error handler. This resets LLVM's fatal error handling
+ * behavior to the default.
+ */
+void LLVMResetFatalErrorHandler(void);
+
+/**
+ * Enable LLVM's built-in stack trace code. This intercepts the OS's crash
+ * signals and prints which component of LLVM you were in at the time if the
+ * crash.
+ */
+void LLVMEnablePrettyStackTrace(void);
+
 /**
  * @defgroup LLVMCCoreContext Contexts
  *
@@ -481,13 +583,8 @@ void LLVMDisposeModule(LLVMModuleRef M);
 /**
  * Obtain the data layout for a module.
  *
- * @see Module::getDataLayoutStr()
- *
- * LLVMGetDataLayout is DEPRECATED, as the name is not only incorrect,
- * but match the name of another method on the module. Prefer the use
- * of LLVMGetDataLayoutStr, which is not ambiguous.
+ * @see Module::getDataLayout()
  */
-const char *LLVMGetDataLayoutStr(LLVMModuleRef M);
 const char *LLVMGetDataLayout(LLVMModuleRef M);
 
 /**
@@ -495,7 +592,7 @@ const char *LLVMGetDataLayout(LLVMModuleRef M);
  *
  * @see Module::setDataLayout()
  */
-void LLVMSetDataLayout(LLVMModuleRef M, const char *DataLayoutStr);
+void LLVMSetDataLayout(LLVMModuleRef M, const char *Triple);
 
 /**
  * Obtain the target triple for a module.
@@ -1088,7 +1185,6 @@ LLVMTypeRef LLVMX86MMXType(void);
       macro(ConstantInt)                    \
       macro(ConstantPointerNull)            \
       macro(ConstantStruct)                 \
-      macro(ConstantTokenNone)              \
       macro(ConstantVector)                 \
       macro(GlobalValue)                    \
         macro(GlobalAlias)                  \
@@ -1114,6 +1210,7 @@ LLVMTypeRef LLVMX86MMXType(void);
       macro(InsertElementInst)              \
       macro(InsertValueInst)                \
       macro(LandingPadInst)                 \
+      macro(CleanupPadInst)                 \
       macro(PHINode)                        \
       macro(SelectInst)                     \
       macro(ShuffleVectorInst)              \
@@ -1128,9 +1225,10 @@ LLVMTypeRef LLVMX86MMXType(void);
         macro(ResumeInst)                   \
         macro(CleanupReturnInst)            \
         macro(CatchReturnInst)              \
-      macro(FuncletPadInst)                 \
         macro(CatchPadInst)                 \
-        macro(CleanupPadInst)               \
+        macro(TerminatePadInst)             \
+        macro(CatchEndPadInst)              \
+        macro(CleanupEndPadInst)            \
       macro(UnaryInstruction)               \
         macro(AllocaInst)                   \
         macro(CastInst)                     \
@@ -1205,7 +1303,7 @@ char *LLVMPrintValueToString(LLVMValueRef Val);
 void LLVMReplaceAllUsesWith(LLVMValueRef OldVal, LLVMValueRef NewVal);
 
 /**
- * Determine whether the specified value instance is constant.
+ * Determine whether the specified constant instance is constant.
  */
 LLVMBool LLVMIsConstant(LLVMValueRef Val);
 
@@ -1732,8 +1830,8 @@ unsigned LLVMGetAlignment(LLVMValueRef V);
 void LLVMSetAlignment(LLVMValueRef V, unsigned Bytes);
 
 /**
- * @}
- */
+  * @}
+  */
 
 /**
  * @defgroup LLVMCoreValueConstantGlobalVariable Global Variables
@@ -1802,13 +1900,6 @@ LLVMValueRef LLVMAddAlias(LLVMModuleRef M, LLVMTypeRef Ty, LLVMValueRef Aliasee,
  * @see llvm::Function::eraseFromParent()
  */
 void LLVMDeleteFunction(LLVMValueRef Fn);
-
-/**
- * Check whether the given function has a personality function.
- *
- * @see llvm::Function::hasPersonalityFn()
- */
-LLVMBool LLVMHasPersonalityFn(LLVMValueRef Fn);
 
 /**
  * Obtain the personality function attached to the function.
@@ -2118,11 +2209,6 @@ LLVMBool LLVMValueIsBasicBlock(LLVMValueRef Val);
 LLVMBasicBlockRef LLVMValueAsBasicBlock(LLVMValueRef Val);
 
 /**
- * Obtain the string name of a basic block.
- */
-const char *LLVMGetBasicBlockName(LLVMBasicBlockRef BB);
-
-/**
  * Obtain the function to which a basic block belongs.
  *
  * @see llvm::BasicBlock::getParent()
@@ -2344,16 +2430,6 @@ LLVMValueRef LLVMGetPreviousInstruction(LLVMValueRef Inst);
  * Remove and delete an instruction.
  *
  * The instruction specified is removed from its containing building
- * block but is kept alive.
- *
- * @see llvm::Instruction::removeFromParent()
- */
-void LLVMInstructionRemoveFromParent(LLVMValueRef Inst);
-
-/**
- * Remove and delete an instruction.
- *
- * The instruction specified is removed from its containing building
  * block and then deleted.
  *
  * @see llvm::Instruction::eraseFromParent()
@@ -2365,7 +2441,7 @@ void LLVMInstructionEraseFromParent(LLVMValueRef Inst);
  *
  * @see llvm::Instruction::getOpCode()
  */
-LLVMOpcode LLVMGetInstructionOpcode(LLVMValueRef Inst);
+LLVMOpcode   LLVMGetInstructionOpcode(LLVMValueRef Inst);
 
 /**
  * Obtain the predicate of an instruction.
@@ -2408,17 +2484,6 @@ LLVMValueRef LLVMInstructionClone(LLVMValueRef Inst);
  */
 
 /**
- * Obtain the argument count for a call instruction.
- *
- * This expects an LLVMValueRef that corresponds to a llvm::CallInst or
- * llvm::InvokeInst.
- *
- * @see llvm::CallInst::getNumArgOperands()
- * @see llvm::InvokeInst::getNumArgOperands()
- */
-unsigned LLVMGetNumArgOperands(LLVMValueRef Instr);
-
-/**
  * Set the calling convention for a call instruction.
  *
  * This expects an LLVMValueRef that corresponds to a llvm::CallInst or
@@ -2447,17 +2512,6 @@ void LLVMSetInstrParamAlignment(LLVMValueRef Instr, unsigned index,
                                 unsigned align);
 
 /**
- * Obtain the pointer to the function invoked by this instruction.
- *
- * This expects an LLVMValueRef that corresponds to a llvm::CallInst or
- * llvm::InvokeInst.
- *
- * @see llvm::CallInst::getCalledValue()
- * @see llvm::InvokeInst::getCalledValue()
- */
-LLVMValueRef LLVMGetCalledValue(LLVMValueRef Instr);
-
-/**
  * Obtain whether a call instruction is a tail call.
  *
  * This only works on llvm::CallInst instructions.
@@ -2474,42 +2528,6 @@ LLVMBool LLVMIsTailCall(LLVMValueRef CallInst);
  * @see llvm::CallInst::setTailCall()
  */
 void LLVMSetTailCall(LLVMValueRef CallInst, LLVMBool IsTailCall);
-
-/**
- * Return the normal destination basic block.
- *
- * This only works on llvm::InvokeInst instructions.
- *
- * @see llvm::InvokeInst::getNormalDest()
- */
-LLVMBasicBlockRef LLVMGetNormalDest(LLVMValueRef InvokeInst);
-
-/**
- * Return the unwind destination basic block.
- *
- * This only works on llvm::InvokeInst instructions.
- *
- * @see llvm::InvokeInst::getUnwindDest()
- */
-LLVMBasicBlockRef LLVMGetUnwindDest(LLVMValueRef InvokeInst);
-
-/**
- * Set the normal destination basic block.
- *
- * This only works on llvm::InvokeInst instructions.
- *
- * @see llvm::InvokeInst::setNormalDest()
- */
-void LLVMSetNormalDest(LLVMValueRef InvokeInst, LLVMBasicBlockRef B);
-
-/**
- * Set the unwind destination basic block.
- *
- * This only works on llvm::InvokeInst instructions.
- *
- * @see llvm::InvokeInst::setUnwindDest()
- */
-void LLVMSetUnwindDest(LLVMValueRef InvokeInst, LLVMBasicBlockRef B);
 
 /**
  * @}
@@ -2586,47 +2604,6 @@ LLVMBasicBlockRef LLVMGetSwitchDefaultDest(LLVMValueRef SwitchInstr);
  */
 
 /**
- * @defgroup LLVMCCoreValueInstructionAlloca Allocas
- *
- * Functions in this group only apply to instructions that map to
- * llvm::AllocaInst instances.
- *
- * @{
- */
-
-/**
- * Obtain the type that is being allocated by the alloca instruction.
- */
-LLVMTypeRef LLVMGetAllocatedType(LLVMValueRef Alloca);
-
-/**
- * @}
- */
-
-/**
- * @defgroup LLVMCCoreValueInstructionGetElementPointer GEPs
- *
- * Functions in this group only apply to instructions that map to
- * llvm::GetElementPtrInst instances.
- *
- * @{
- */
-
-/**
- * Check whether the given GEP instruction is inbounds.
- */
-LLVMBool LLVMIsInBounds(LLVMValueRef GEP);
-
-/**
- * Set the given GEP instruction to be inbounds or not.
- */
-void LLVMSetIsInBounds(LLVMValueRef GEP, LLVMBool b);
-
-/**
- * @}
- */
-
-/**
  * @defgroup LLVMCCoreValueInstructionPHINode PHI Nodes
  *
  * Functions in this group only apply to instructions that map to
@@ -2655,31 +2632,6 @@ LLVMValueRef LLVMGetIncomingValue(LLVMValueRef PhiNode, unsigned Index);
  * Obtain an incoming value to a PHI node as an LLVMBasicBlockRef.
  */
 LLVMBasicBlockRef LLVMGetIncomingBlock(LLVMValueRef PhiNode, unsigned Index);
-
-/**
- * @}
- */
-
-/**
- * @defgroup LLVMCCoreValueInstructionExtractValue ExtractValue
- * @defgroup LLVMCCoreValueInstructionInsertValue InsertValue
- *
- * Functions in this group only apply to instructions that map to
- * llvm::ExtractValue and llvm::InsertValue instances.
- *
- * @{
- */
-
-/**
- * Obtain the number of indices.
- * NB: This also works on GEP.
- */
-unsigned LLVMGetNumIndices(LLVMValueRef Inst);
-
-/**
- * Obtain the indices as an array.
- */
-const unsigned *LLVMGetIndices(LLVMValueRef Inst);
 
 /**
  * @}
@@ -2749,17 +2701,8 @@ void LLVMAddCase(LLVMValueRef Switch, LLVMValueRef OnVal,
 /* Add a destination to the indirectbr instruction */
 void LLVMAddDestination(LLVMValueRef IndirectBr, LLVMBasicBlockRef Dest);
 
-/* Get the number of clauses on the landingpad instruction */
-unsigned LLVMGetNumClauses(LLVMValueRef LandingPad);
-
-/* Get the value of the clause at idnex Idx on the landingpad instruction */
-LLVMValueRef LLVMGetClause(LLVMValueRef LandingPad, unsigned Idx);
-
 /* Add a catch or filter clause to the landingpad instruction */
 void LLVMAddClause(LLVMValueRef LandingPad, LLVMValueRef ClauseVal);
-
-/* Get the 'cleanup' flag in the landingpad instruction */
-LLVMBool LLVMIsCleanup(LLVMValueRef LandingPad);
 
 /* Set the 'cleanup' flag in the landingpad instruction */
 void LLVMSetCleanup(LLVMValueRef LandingPad, LLVMBool Val);

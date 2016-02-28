@@ -14,7 +14,7 @@
 #ifndef LLVM_C_LINKER_H
 #define LLVM_C_LINKER_H
 
-#include "llvm-c/Types.h"
+#include "llvm-c/Core.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,12 +27,16 @@ typedef enum {
                                           should not be used. */
 } LLVMLinkerMode;
 
-/* Links the source module into the destination module. The source module is
- * destroyed.
- * The return value is true if an error occurred, false otherwise.
- * Use the diagnostic handler to get any diagnostic message.
-*/
-LLVMBool LLVMLinkModules2(LLVMModuleRef Dest, LLVMModuleRef Src);
+/* Links the source module into the destination module, taking ownership
+ * of the source module away from the caller. Optionally returns a
+ * human-readable description of any errors that occurred in linking.
+ * OutMessage must be disposed with LLVMDisposeMessage. The return value
+ * is true if an error occurred, false otherwise.
+ *
+ * Note that the linker mode parameter \p Unused is no longer used, and has
+ * no effect. */
+LLVMBool LLVMLinkModules(LLVMModuleRef Dest, LLVMModuleRef Src,
+                         LLVMLinkerMode Unused, char **OutMessage);
 
 #ifdef __cplusplus
 }

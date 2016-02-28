@@ -23,14 +23,6 @@ class AMDGPUInst <dag outs, dag ins, string asm, list<dag> pattern> : Instructio
   let Pattern = pattern;
   let Itinerary = NullALU;
 
-  // SoftFail is a field the disassembler can use to provide a way for
-  // instructions to not match without killing the whole decode process. It is
-  // mainly used for ARM, but Tablegen expects this field to exist or it fails
-  // to build the decode table.
-  field bits<64> SoftFail = 0;
-
-  let DecoderNamespace = Namespace;
-  
   let TSFlags{63} = isRegisterLoad;
   let TSFlags{62} = isRegisterStore;
 }
@@ -212,6 +204,14 @@ def sextloadi8_global : PatFrag<(ops node:$ptr), (sextloadi8 node:$ptr), [{
     return isGlobalLoad(dyn_cast<LoadSDNode>(N));
 }]>;
 
+def az_extloadi8_flat : PatFrag<(ops node:$ptr), (az_extloadi8 node:$ptr), [{
+    return isFlatLoad(dyn_cast<LoadSDNode>(N));
+}]>;
+
+def sextloadi8_flat : PatFrag<(ops node:$ptr), (sextloadi8 node:$ptr), [{
+    return isFlatLoad(dyn_cast<LoadSDNode>(N));
+}]>;
+
 def az_extloadi8_constant : PatFrag<(ops node:$ptr), (az_extloadi8 node:$ptr), [{
     return isConstantLoad(dyn_cast<LoadSDNode>(N), -1);
 }]>;
@@ -241,6 +241,14 @@ def az_extloadi16_global : PatFrag<(ops node:$ptr), (az_extloadi16 node:$ptr), [
 
 def sextloadi16_global : PatFrag<(ops node:$ptr), (sextloadi16 node:$ptr), [{
     return isGlobalLoad(dyn_cast<LoadSDNode>(N));
+}]>;
+
+def az_extloadi16_flat : PatFrag<(ops node:$ptr), (az_extloadi16 node:$ptr), [{
+    return isFlatLoad(dyn_cast<LoadSDNode>(N));
+}]>;
+
+def sextloadi16_flat : PatFrag<(ops node:$ptr), (sextloadi16 node:$ptr), [{
+    return isFlatLoad(dyn_cast<LoadSDNode>(N));
 }]>;
 
 def az_extloadi16_constant : PatFrag<(ops node:$ptr), (az_extloadi16 node:$ptr), [{
@@ -289,6 +297,16 @@ def truncstorei8_global : PatFrag<(ops node:$val, node:$ptr),
 def truncstorei16_global : PatFrag<(ops node:$val, node:$ptr),
                                   (truncstorei16 node:$val, node:$ptr), [{
   return isGlobalStore(dyn_cast<StoreSDNode>(N));
+}]>;
+
+def truncstorei8_flat : PatFrag<(ops node:$val, node:$ptr),
+                                  (truncstorei8 node:$val, node:$ptr), [{
+  return isFlatStore(dyn_cast<StoreSDNode>(N));
+}]>;
+
+def truncstorei16_flat : PatFrag<(ops node:$val, node:$ptr),
+                                  (truncstorei16 node:$val, node:$ptr), [{
+  return isFlatStore(dyn_cast<StoreSDNode>(N));
 }]>;
 
 def local_store : PatFrag<(ops node:$val, node:$ptr),
@@ -366,6 +384,15 @@ multiclass AtomicCmpSwapLocal <SDNode cmp_swap_node> {
 }
 
 defm atomic_cmp_swap : AtomicCmpSwapLocal <atomic_cmp_swap>;
+
+def flat_load : PatFrag<(ops node:$ptr), (load node:$ptr), [{
+    return isFlatLoad(dyn_cast<LoadSDNode>(N));
+}]>;
+
+def flat_store : PatFrag<(ops node:$val, node:$ptr),
+                         (store node:$val, node:$ptr), [{
+  return isFlatStore(dyn_cast<StoreSDNode>(N));
+}]>;
 
 def mskor_flat : PatFrag<(ops node:$val, node:$ptr),
                             (AMDGPUstore_mskor node:$val, node:$ptr), [{
@@ -487,7 +514,7 @@ class POW_Common <AMDGPUInst log_ieee, AMDGPUInst exp_ieee, AMDGPUInst mul>
 class Extract_Element <ValueType sub_type, ValueType vec_type, int sub_idx,
                        SubRegIndex sub_reg>
   : Pat<
-  (sub_type (extractelt vec_type:$src, sub_idx)),
+  (sub_type (vector_extract vec_type:$src, sub_idx)),
   (EXTRACT_SUBREG $src, sub_reg)
 >;
 
@@ -495,7 +522,7 @@ class Extract_Element <ValueType sub_type, ValueType vec_type, int sub_idx,
 class Insert_Element <ValueType elem_type, ValueType vec_type,
                       int sub_idx, SubRegIndex sub_reg>
   : Pat <
-  (insertelt vec_type:$vec, elem_type:$elem, sub_idx),
+  (vector_insert vec_type:$vec, elem_type:$elem, sub_idx),
   (INSERT_SUBREG $vec, $elem, sub_reg)
 >;
 
@@ -595,6 +622,13 @@ def cvt_flr_i32_f32 : PatFrag <
   [{ (void)N; return TM.Options.NoNaNsFPMath; }]
 >;
 
+/*
+class UMUL24Pattern <Instruction UMUL24> : Pat <
+  (mul U24:$x, U24:$y),
+  (UMUL24 $x, $y)
+>;
+*/
+
 class IMad24Pat<Instruction Inst> : Pat <
   (add (AMDGPUmul_i24 i32:$src0, i32:$src1), i32:$src2),
   (Inst $src0, $src1, $src2)
@@ -604,6 +638,30 @@ class UMad24Pat<Instruction Inst> : Pat <
   (add (AMDGPUmul_u24 i32:$src0, i32:$src1), i32:$src2),
   (Inst $src0, $src1, $src2)
 >;
+
+multiclass Expand24IBitOps<Instruction MulInst, Instruction AddInst> {
+  def _expand_imad24 : Pat <
+    (AMDGPUmad_i24 i32:$src0, i32:$src1, i32:$src2),
+    (AddInst (MulInst $src0, $src1), $src2)
+  >;
+
+  def _expand_imul24 : Pat <
+    (AMDGPUmul_i24 i32:$src0, i32:$src1),
+    (MulInst $src0, $src1)
+  >;
+}
+
+multiclass Expand24UBitOps<Instruction MulInst, Instruction AddInst> {
+  def _expand_umad24 : Pat <
+    (AMDGPUmad_u24 i32:$src0, i32:$src1, i32:$src2),
+    (AddInst (MulInst $src0, $src1), $src2)
+  >;
+
+  def _expand_umul24 : Pat <
+    (AMDGPUmul_u24 i32:$src0, i32:$src1),
+    (MulInst $src0, $src1)
+  >;
+}
 
 class RcpPat<Instruction RcpInst, ValueType vt> : Pat <
   (fdiv FP_ONE, vt:$src),

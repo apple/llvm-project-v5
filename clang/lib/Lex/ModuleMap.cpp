@@ -89,7 +89,7 @@ ModuleMap::ModuleMap(SourceManager &SourceMgr, DiagnosticsEngine &Diags,
                      HeaderSearch &HeaderInfo)
     : SourceMgr(SourceMgr), Diags(Diags), LangOpts(LangOpts), Target(Target),
       HeaderInfo(HeaderInfo), BuiltinIncludeDir(nullptr),
-      SourceModule(nullptr), NumCreatedModules(0) {
+      CompilingModule(nullptr), SourceModule(nullptr), NumCreatedModules(0) {
   MMapLangOpts.LineComment = true;
 }
 
@@ -343,8 +343,8 @@ ModuleMap::KnownHeader ModuleMap::findModuleForHeader(const FileEntry *File) {
     ModuleMap::KnownHeader Result;
     // Iterate over all modules that 'File' is part of to find the best fit.
     for (KnownHeader &H : Known->second) {
-      // Prefer a header from the source module over all others.
-      if (H.getModule()->getTopLevelModule() == SourceModule)
+      // Prefer a header from the current module over all others.
+      if (H.getModule()->getTopLevelModule() == CompilingModule)
         return MakeResult(H);
       if (!Result || isBetterKnownHeader(H, Result))
         Result = H;
@@ -556,10 +556,16 @@ ModuleMap::findOrCreateModule(StringRef Name, Module *Parent, bool IsFramework,
   // Create a new module with this name.
   Module *Result = new Module(Name, SourceLocation(), Parent,
                               IsFramework, IsExplicit, NumCreatedModules++);
+  if (LangOpts.CurrentModule == Name) {
+    SourceModule = Result;
+    SourceModuleName = Name;
+  }
   if (!Parent) {
-    if (LangOpts.CurrentModule == Name)
-      SourceModule = Result;
     Modules[Name] = Result;
+    if (!LangOpts.CurrentModule.empty() && !CompilingModule &&
+        Name == LangOpts.CurrentModule) {
+      CompilingModule = Result;
+    }
   }
   return std::make_pair(Result, true);
 }
@@ -575,18 +581,9 @@ static void inferFrameworkLink(Module *Mod, const DirectoryEntry *FrameworkDir,
   SmallString<128> LibName;
   LibName += FrameworkDir->getName();
   llvm::sys::path::append(LibName, Mod->Name);
-
-  // The library name of a framework has more than one possible extension since
-  // the introduction of the text-based dynamic library format. We need to check
-  // for both before we give up.
-  static const char *frameworkExtensions[] = {"", ".tbd"};
-  for (const auto *extension : frameworkExtensions) {
-    llvm::sys::path::replace_extension(LibName, extension);
-    if (FileMgr.getFile(LibName)) {
-      Mod->LinkLibraries.push_back(Module::LinkLibrary(Mod->Name,
-                                                       /*IsFramework=*/true));
-      return;
-    }
+  if (FileMgr.getFile(LibName)) {
+    Mod->LinkLibraries.push_back(Module::LinkLibrary(Mod->Name,
+                                                     /*IsFramework=*/true));
   }
 }
 
@@ -687,10 +684,9 @@ Module *ModuleMap::inferFrameworkModule(const DirectoryEntry *FrameworkDir,
                               NumCreatedModules++);
   InferredModuleAllowedBy[Result] = ModuleMapFile;
   Result->IsInferred = true;
-  if (!Parent) {
-    if (LangOpts.CurrentModule == ModuleName)
-      SourceModule = Result;
-    Modules[ModuleName] = Result;
+  if (LangOpts.CurrentModule == ModuleName) {
+    SourceModule = Result;
+    SourceModuleName = ModuleName;
   }
 
   Result->IsSystem |= Attrs.IsSystem;
@@ -698,6 +694,9 @@ Module *ModuleMap::inferFrameworkModule(const DirectoryEntry *FrameworkDir,
   Result->ConfigMacrosExhaustive |= Attrs.IsExhaustive;
   Result->Directory = FrameworkDir;
 
+  if (!Parent)
+    Modules[ModuleName] = Result;
+  
   // umbrella header "umbrella-header-name"
   //
   // The "Headers/" component of the name is implied because this is
@@ -804,8 +803,7 @@ void ModuleMap::addHeader(Module *Mod, Module::Header Header,
   HeaderList.push_back(KH);
   Mod->Headers[headerRoleToKind(Role)].push_back(std::move(Header));
 
-  bool isCompilingModuleHeader =
-      LangOpts.CompilingModule && Mod->getTopLevelModule() == SourceModule;
+  bool isCompilingModuleHeader = Mod->getTopLevelModule() == CompilingModule;
   if (!Imported || isCompilingModuleHeader) {
     // When we import HeaderFileInfo, the external source is expected to
     // set the isModuleHeader flag itself.
@@ -846,7 +844,7 @@ void ModuleMap::setInferredModuleAllowedBy(Module *M, const FileEntry *ModMap) {
   InferredModuleAllowedBy[M] = ModMap;
 }
 
-LLVM_DUMP_METHOD void ModuleMap::dump() {
+void ModuleMap::dump() {
   llvm::errs() << "Modules:";
   for (llvm::StringMap<Module *>::iterator M = Modules.begin(), 
                                         MEnd = Modules.end(); 

@@ -2,7 +2,8 @@
 
 target triple = "x86_64-unknown-unknown"
 
-; Nothing to sink and convert here.
+; Nothing to sink here, but this gets converted to a branch to
+; avoid stalling an out-of-order CPU on a predictable branch.
 
 define i32 @no_sink(double %a, double* %b, i32 %x, i32 %y)  {
 entry:
@@ -14,7 +15,11 @@ entry:
 ; CHECK-LABEL: @no_sink(
 ; CHECK:    %load = load double, double* %b, align 8
 ; CHECK:    %cmp = fcmp olt double %load, %a
-; CHECK:    %sel = select i1 %cmp, i32 %x, i32 %y
+; CHECK:    br i1 %cmp, label %select.end, label %select.false
+; CHECK:  select.false:
+; CHECK:    br label %select.end
+; CHECK:  select.end:
+; CHECK:    %sel = phi i32 [ %x, %entry ], [ %y, %select.false ] 
 ; CHECK:    ret i32 %sel
 }
 

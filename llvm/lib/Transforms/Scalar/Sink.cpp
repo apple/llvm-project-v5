@@ -145,10 +145,8 @@ bool Sinking::ProcessBlock(BasicBlock &BB) {
     if (isa<DbgInfoIntrinsic>(Inst))
       continue;
 
-    if (SinkInstruction(Inst, Stores)) {
-      ++NumSunk;
-      MadeChange = true;
-    }
+    if (SinkInstruction(Inst, Stores))
+      ++NumSunk, MadeChange = true;
 
     // If we just processed the first instruction in the block, we're done.
   } while (!ProcessedBegin);
@@ -171,8 +169,7 @@ static bool isSafeToMove(Instruction *Inst, AliasAnalysis *AA,
         return false;
   }
 
-  if (isa<TerminatorInst>(Inst) || isa<PHINode>(Inst) || Inst->isEHPad() ||
-      Inst->mayThrow())
+  if (isa<TerminatorInst>(Inst) || isa<PHINode>(Inst))
     return false;
 
   // Convergent operations cannot be made control-dependent on additional
@@ -195,11 +192,6 @@ bool Sinking::IsAcceptableTarget(Instruction *Inst,
   // It is not possible to sink an instruction into its own block.  This can
   // happen with loops.
   if (Inst->getParent() == SuccToSinkTo)
-    return false;
-
-  // It's never legal to sink an instruction into a block which terminates in an
-  // EH-pad.
-  if (SuccToSinkTo->getTerminator()->isExceptional())
     return false;
 
   // If the block has multiple predecessors, this would introduce computation

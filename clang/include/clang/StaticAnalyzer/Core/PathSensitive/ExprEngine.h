@@ -253,14 +253,8 @@ public:
   ///  nodes by processing the 'effects' of a switch statement.
   void processSwitch(SwitchNodeBuilder& builder) override;
 
-  /// Called by CoreEngine.  Used to notify checkers that processing a
-  /// function has begun. Called for both inlined and and top-level functions.
-  void processBeginOfFunction(NodeBuilderContext &BC,
-                              ExplodedNode *Pred, ExplodedNodeSet &Dst,
-                              const BlockEdge &L) override;
-
-  /// Called by CoreEngine.  Used to notify checkers that processing a
-  /// function has ended. Called for both inlined and and top-level functions.
+  /// Called by CoreEngine.  Used to generate end-of-path
+  /// nodes when the control reaches the end of a function.
   void processEndOfFunction(NodeBuilderContext& BC,
                             ExplodedNode *Pred) override;
 
@@ -270,8 +264,7 @@ public:
                                  ExplodedNodeSet &Dst);
 
   /// Generate the entry node of the callee.
-  void processCallEnter(NodeBuilderContext& BC, CallEnter CE,
-                        ExplodedNode *Pred) override;
+  void processCallEnter(CallEnter CE, ExplodedNode *Pred) override;
 
   /// Generate the sequence of nodes that simulate the call exit and the post
   /// visit for CallExpr.
@@ -611,28 +604,6 @@ private:
                                                 const LocationContext *LC,
                                                 const Expr *E,
                                                 const Expr *ResultE = nullptr);
-
-  /// For a DeclStmt or CXXInitCtorInitializer, walk backward in the current CFG
-  /// block to find the constructor expression that directly constructed into
-  /// the storage for this statement. Returns null if the constructor for this
-  /// statement created a temporary object region rather than directly
-  /// constructing into an existing region.
-  const CXXConstructExpr *findDirectConstructorForCurrentCFGElement();
-
-  /// For a CXXConstructExpr, walk forward in the current CFG block to find the
-  /// CFGElement for the DeclStmt or CXXInitCtorInitializer for which is
-  /// directly constructed by this constructor. Returns None if the current
-  /// constructor expression did not directly construct into an existing
-  /// region.
-  Optional<CFGElement> findElementDirectlyInitializedByCurrentConstructor();
-
-  /// For a given constructor, look forward in the current CFG block to
-  /// determine the region into which an object will be constructed by \p CE.
-  /// Returns either a field or local variable region if the object will be
-  /// directly constructed in an existing region or a temporary object region
-  /// if not.
-  const MemRegion *getRegionForConstructedObject(const CXXConstructExpr *CE,
-                                                 ExplodedNode *Pred);
 };
 
 /// Traits for storing the call processing policy inside GDM.

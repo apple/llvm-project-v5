@@ -80,11 +80,12 @@ namespace {
       if (BB == BeforeHere->getParent()) {
         // 'I' dominates 'BeforeHere' => not safe to prune.
         //
-        // The value defined by an invoke dominates an instruction only
+        // The value defined by an invoke/catchpad dominates an instruction only
         // if it dominates every instruction in UseBB. A PHI is dominated only
         // if the instruction dominates every possible use in the UseBB. Since
         // UseBB == BB, avoid pruning.
-        if (isa<InvokeInst>(BeforeHere) || isa<PHINode>(I) || I == BeforeHere)
+        if (isa<InvokeInst>(BeforeHere) || isa<CatchPadInst>(BeforeHere) ||
+            isa<PHINode>(I) || I == BeforeHere)
           return false;
         if (!OrderedBB->dominates(BeforeHere, I))
           return false;
@@ -270,17 +271,6 @@ void llvm::PointerMayBeCaptured(const Value *V, CaptureTracker *Tracker) {
         if (Tracker->captured(U))
           return;
       // Storing to the pointee does not cause the pointer to be captured.
-      break;
-    case Instruction::AtomicRMW:
-    case Instruction::AtomicCmpXchg:
-      // atomicrmw and cmpxchg conceptually include both a load and store from
-      // the same location.  As with a store, the location being accessed is
-      // not captured, but the value being stored is.  (For cmpxchg, we
-      // probably don't need to capture the original comparison value, but for
-      // the moment, let's be conservative.)
-      if (V != I->getOperand(0))
-        if (Tracker->captured(U))
-          return;
       break;
     case Instruction::BitCast:
     case Instruction::GetElementPtr:

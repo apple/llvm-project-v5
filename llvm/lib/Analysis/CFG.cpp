@@ -69,9 +69,8 @@ void llvm::FindFunctionBackedges(const Function &F,
 /// and return its position in the terminator instruction's list of
 /// successors.  It is an error to call this with a block that is not a
 /// successor.
-unsigned llvm::GetSuccessorNumber(const BasicBlock *BB,
-    const BasicBlock *Succ) {
-  const TerminatorInst *Term = BB->getTerminator();
+unsigned llvm::GetSuccessorNumber(BasicBlock *BB, BasicBlock *Succ) {
+  TerminatorInst *Term = BB->getTerminator();
 #ifndef NDEBUG
   unsigned e = Term->getNumSuccessors();
 #endif
@@ -138,7 +137,7 @@ bool llvm::isPotentiallyReachableFromMany(
   // Limit the number of blocks we visit. The goal is to avoid run-away compile
   // times on large CFGs without hampering sensible code. Arbitrarily chosen.
   unsigned Limit = 32;
-  SmallPtrSet<const BasicBlock*, 32> Visited;
+  SmallSet<const BasicBlock*, 64> Visited;
   do {
     BasicBlock *BB = Worklist.pop_back_val();
     if (!Visited.insert(BB).second)

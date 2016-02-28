@@ -6,7 +6,7 @@
 
 ; CHECK:	.bss
 ; CHECK:	.globl	GlobalA
-; CHECK:	.p2align	3
+; CHECK:	.align	8
 ; CHECK: GlobalA:
 ; CHECK:	.zero	384
 
@@ -29,7 +29,7 @@
 @GlobalAS = global { [384 x i8] } zeroinitializer, align 8, section "foo"
 
 ; CHECK:	.globl	GlobalAS
-; CHECK:	.p2align	3
+; CHECK:	.align	8
 ; CHECK: GlobalAS:
 ; CHECK:	.zero	384
 

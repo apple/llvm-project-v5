@@ -27,7 +27,6 @@
 #include "llvm/IR/GlobalObject.h"
 #include "llvm/IR/OperandTraits.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/MD5.h"
 
 namespace llvm {
 
@@ -57,6 +56,7 @@ private:
   mutable ArgumentListType ArgumentList;  ///< The formal arguments
   ValueSymbolTable *SymTab;               ///< Symbol table of args/instructions
   AttributeSet AttributeSets;             ///< Parameter attributes
+  FunctionType *Ty;
 
   /*
    * Value::SubclassData
@@ -64,10 +64,9 @@ private:
    * bit 0      : HasLazyArguments
    * bit 1      : HasPrefixData
    * bit 2      : HasPrologueData
-   * bit 3      : HasPersonalityFn
+   * bit 3      : [reserved]
    * bits 4-13  : CallingConvention
-   * bits 14    : HasGC
-   * bits 15 : [reserved]
+   * bits 14-15 : [reserved]
    */
 
   /// Bits from GlobalObject::GlobalObjectSubclassData.
@@ -111,13 +110,21 @@ private:
 public:
   static Function *Create(FunctionType *Ty, LinkageTypes Linkage,
                           const Twine &N = "", Module *M = nullptr) {
-    return new Function(Ty, Linkage, N, M);
+    return new(1) Function(Ty, Linkage, N, M);
   }
 
   ~Function() override;
 
   /// \brief Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
+  /// \brief Get the personality function associated with this function.
+  bool hasPersonalityFn() const { return getNumOperands() != 0; }
+  Constant *getPersonalityFn() const {
+    assert(hasPersonalityFn());
+    return cast<Constant>(Op<0>());
+  }
+  void setPersonalityFn(Constant *C);
 
   Type *getReturnType() const;           // Return the type of the ret val
   FunctionType *getFunctionType() const; // Return the FunctionType for me
@@ -200,7 +207,7 @@ public:
 
   /// @brief Return true if the function has the attribute.
   bool hasFnAttribute(Attribute::AttrKind Kind) const {
-    return AttributeSets.hasFnAttribute(Kind);
+    return AttributeSets.hasAttribute(AttributeSet::FunctionIndex, Kind);
   }
   bool hasFnAttribute(StringRef Kind) const {
     return AttributeSets.hasAttribute(AttributeSet::FunctionIndex, Kind);
@@ -208,8 +215,6 @@ public:
 
   /// @brief Return the attribute for the given attribute kind.
   Attribute getFnAttribute(Attribute::AttrKind Kind) const {
-    if (!hasFnAttribute(Kind))
-      return Attribute();
     return AttributeSets.getAttribute(AttributeSet::FunctionIndex, Kind);
   }
   Attribute getFnAttribute(StringRef Kind) const {
@@ -218,18 +223,14 @@ public:
 
   /// \brief Return the stack alignment for the function.
   unsigned getFnStackAlignment() const {
-    if (!hasFnAttribute(Attribute::StackAlignment))
-      return 0;
     return AttributeSets.getStackAlignment(AttributeSet::FunctionIndex);
   }
 
   /// hasGC/getGC/setGC/clearGC - The name of the garbage collection algorithm
   ///                             to use during code generation.
-  bool hasGC() const {
-    return getSubclassDataFromValue() & (1<<14);
-  }
-  const std::string &getGC() const;
-  void setGC(const std::string Str);
+  bool hasGC() const;
+  const char *getGC() const;
+  void setGC(const char *Str);
   void clearGC();
 
   /// @brief adds the attribute to the list of attributes.
@@ -267,7 +268,8 @@ public:
 
   /// @brief Determine if the function does not access memory.
   bool doesNotAccessMemory() const {
-    return hasFnAttribute(Attribute::ReadNone);
+    return AttributeSets.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::ReadNone);
   }
   void setDoesNotAccessMemory() {
     addFnAttr(Attribute::ReadNone);
@@ -275,7 +277,9 @@ public:
 
   /// @brief Determine if the function does not access or only reads memory.
   bool onlyReadsMemory() const {
-    return doesNotAccessMemory() || hasFnAttribute(Attribute::ReadOnly);
+    return doesNotAccessMemory() ||
+      AttributeSets.hasAttribute(AttributeSet::FunctionIndex,
+                                 Attribute::ReadOnly);
   }
   void setOnlyReadsMemory() {
     addFnAttr(Attribute::ReadOnly);
@@ -284,31 +288,15 @@ public:
   /// @brief Determine if the call can access memmory only using pointers based
   /// on its arguments.
   bool onlyAccessesArgMemory() const {
-    return hasFnAttribute(Attribute::ArgMemOnly);
+    return AttributeSets.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::ArgMemOnly);
   }
   void setOnlyAccessesArgMemory() { addFnAttr(Attribute::ArgMemOnly); }
 
-  /// @brief Determine if the function may only access memory that is 
-  ///  inaccessible from the IR.
-  bool onlyAccessesInaccessibleMemory() const {
-    return hasFnAttribute(Attribute::InaccessibleMemOnly);
-  }
-  void setOnlyAccessesInaccessibleMemory() {
-    addFnAttr(Attribute::InaccessibleMemOnly);
-  }
-
-  /// @brief Determine if the function may only access memory that is
-  //  either inaccessible from the IR or pointed to by its arguments.
-  bool onlyAccessesInaccessibleMemOrArgMem() const {
-    return hasFnAttribute(Attribute::InaccessibleMemOrArgMemOnly);
-  }
-  void setOnlyAccessesInaccessibleMemOrArgMem() {
-    addFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
-  }
-
   /// @brief Determine if the function cannot return.
   bool doesNotReturn() const {
-    return hasFnAttribute(Attribute::NoReturn);
+    return AttributeSets.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::NoReturn);
   }
   void setDoesNotReturn() {
     addFnAttr(Attribute::NoReturn);
@@ -340,19 +328,7 @@ public:
   void setConvergent() {
     addFnAttr(Attribute::Convergent);
   }
-  void setNotConvergent() {
-    removeFnAttr(Attribute::Convergent);
-  }
 
-  /// Determine if the function is known not to recurse, directly or
-  /// indirectly.
-  bool doesNotRecurse() const {
-    return AttributeSets.hasAttribute(AttributeSet::FunctionIndex,
-                                      Attribute::NoRecurse);
-  }
-  void setDoesNotRecurse() {
-    addFnAttr(Attribute::NoRecurse);
-  }  
 
   /// @brief True if the ABI mandates (or the user requested) that this
   /// function be in a unwind table.
@@ -508,11 +484,11 @@ public:
   }
 
   iterator_range<arg_iterator> args() {
-    return make_range(arg_begin(), arg_end());
+    return iterator_range<arg_iterator>(arg_begin(), arg_end());
   }
 
   iterator_range<const_arg_iterator> args() const {
-    return make_range(arg_begin(), arg_end());
+    return iterator_range<const_arg_iterator>(arg_begin(), arg_end());
   }
 
 /// @}
@@ -520,38 +496,19 @@ public:
   size_t arg_size() const;
   bool arg_empty() const;
 
-  /// \brief Check whether this function has a personality function.
-  bool hasPersonalityFn() const {
-    return getSubclassDataFromValue() & (1<<3);
-  }
-
-  /// \brief Get the personality function associated with this function.
-  Constant *getPersonalityFn() const;
-  void setPersonalityFn(Constant *Fn);
-
-  /// \brief Check whether this function has prefix data.
   bool hasPrefixData() const {
     return getSubclassDataFromValue() & (1<<1);
   }
 
-  /// \brief Get the prefix data associated with this function.
   Constant *getPrefixData() const;
   void setPrefixData(Constant *PrefixData);
 
-  /// \brief Check whether this function has prologue data.
   bool hasPrologueData() const {
     return getSubclassDataFromValue() & (1<<2);
   }
 
-  /// \brief Get the prologue data associated with this function.
   Constant *getPrologueData() const;
   void setPrologueData(Constant *PrologueData);
-
-  /// Print the function to an output stream with an optional
-  /// AssemblyAnnotationWriter.
-  void print(raw_ostream &OS, AssemblyAnnotationWriter *AAW = nullptr,
-             bool ShouldPreserveUseListOrder = false,
-             bool IsForDebug = false) const;
 
   /// viewCFG - This function is meant for use from the debugger.  You can just
   /// say 'call F->viewCFG()' and a ghostview window should pop up from the
@@ -643,30 +600,12 @@ public:
   /// to \a DISubprogram.
   DISubprogram *getSubprogram() const;
 
-  /// Return the modified name for a function suitable to be
-  /// used as the key for a global lookup (e.g. profile or ThinLTO).
-  /// The function's original name is \c FuncName and has linkage of type
-  /// \c Linkage. The function is defined in module \c FileName.
-  static std::string getGlobalIdentifier(StringRef FuncName,
-                                         GlobalValue::LinkageTypes Linkage,
-                                         StringRef FileName);
-
-  /// Return a 64-bit global unique ID constructed from global function name
-  /// (i.e. returned by getGlobalIdentifier).
-  static uint64_t getGUID(StringRef GlobalFuncName) {
-    return MD5Hash(GlobalFuncName);
-  }
-
 private:
-  void allocHungoffUselist();
-  template<int Idx> void setHungoffOperand(Constant *C);
-
   // Shadow Value::setValueSubclassData with a private forwarding method so that
   // subclasses cannot accidentally use it.
   void setValueSubclassData(unsigned short D) {
     Value::setValueSubclassData(D);
   }
-  void setValueSubclassDataBit(unsigned Bit, bool On);
 
   bool hasMetadataHashEntry() const {
     return getGlobalObjectSubClassData() & HasMetadataHashEntryBit;
@@ -679,7 +618,7 @@ private:
 };
 
 template <>
-struct OperandTraits<Function> : public HungoffOperandTraits<3> {};
+struct OperandTraits<Function> : public OptionalOperandTraits<Function> {};
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(Function, Value)
 

@@ -14,10 +14,8 @@
 #ifndef LLVM_CLANG_FRONTEND_CODEGENOPTIONS_H
 #define LLVM_CLANG_FRONTEND_CODEGENOPTIONS_H
 
-#include "clang/Basic/DebugInfoOptions.h"
 #include "clang/Basic/Sanitizers.h"
 #include "llvm/Support/Regex.h"
-#include "llvm/Target/TargetOptions.h"
 #include <map>
 #include <memory>
 #include <string>
@@ -60,6 +58,30 @@ public:
     Mixed = 2
   };
 
+  enum DebugInfoKind {
+    NoDebugInfo,          /// Don't generate debug info.
+
+    LocTrackingOnly,      /// Emit location information but do not generate
+                          /// debug info in the output. This is useful in
+                          /// cases where the backend wants to track source
+                          /// locations for instructions without actually
+                          /// emitting debug info for them (e.g., when -Rpass
+                          /// is used).
+
+    DebugLineTablesOnly,  /// Emit only debug info necessary for generating
+                          /// line number tables (-gline-tables-only).
+
+    LimitedDebugInfo,     /// Limit generated debug info to reduce size
+                          /// (-fno-standalone-debug). This emits
+                          /// forward decls for types that could be
+                          /// replaced with forward decls in the source
+                          /// code. For dynamic C++ classes type info
+                          /// is only emitted int the module that
+                          /// contains the classe's vtable.
+
+    FullDebugInfo         /// Generate complete debug info.
+  };
+
   enum TLSModel {
     GeneralDynamicTLSModel,
     LocalDynamicTLSModel,
@@ -77,12 +99,6 @@ public:
     SRCK_Default,  // No special option was passed.
     SRCK_OnStack,  // Small structs on the stack (-fpcc-struct-return).
     SRCK_InRegs    // Small structs in registers (-freg-struct-return).
-  };
-
-  enum ProfileInstrKind {
-    ProfileNoInstr,    // No instrumentation.
-    ProfileClangInstr  // Clang instrumentation to generate execution counts
-                       // to use with PGO.
   };
 
   /// The code model to use (-mcmodel).
@@ -141,9 +157,6 @@ public:
   /// A list of dependent libraries.
   std::vector<std::string> DependentLibraries;
 
-  /// A list of linker options to embed in the object file.
-  std::vector<std::string> LinkerOptions;
-
   /// Name of the profile file to use as output for -fprofile-instr-generate
   /// and -fprofile-generate.
   std::string InstrProfileOutput;
@@ -153,13 +166,6 @@ public:
 
   /// Name of the profile file to use as input for -fprofile-instr-use
   std::string InstrProfileInput;
-
-  /// Name of the function summary index file to use for ThinLTO function
-  /// importing.
-  std::string ThinLTOIndexFile;
-
-  /// The EABI version to use
-  std::string EABIVersion;
 
   /// A list of file names passed with -fcuda-include-gpubinary options to
   /// forward to CUDA runtime back-end for incorporating them into host-side
@@ -198,12 +204,6 @@ public:
   /// Set of sanitizer checks that trap rather than diagnose.
   SanitizerSet SanitizeTrap;
 
-  /// \brief A list of all -fno-builtin-* function names (e.g., memset).
-  std::vector<std::string> NoBuiltinFuncs;
-
-  /// List of blacklist files for the whole-program vtable optimization feature.
-  std::vector<std::string> WholeProgramVTablesBlacklistFiles;
-
 public:
   // Define accessors/mutators for code generation options of enumeration type.
 #define CODEGENOPT(Name, Bits, Default)
@@ -213,19 +213,6 @@ public:
 #include "clang/Frontend/CodeGenOptions.def"
 
   CodeGenOptions();
-
-  /// \brief Is this a libc/libm function that is no longer recognized as a
-  /// builtin because a -fno-builtin-* option has been specified?
-  bool isNoBuiltinFunc(const char *Name) const;
-
-  const std::vector<std::string> &getNoBuiltinFuncs() const {
-    return NoBuiltinFuncs;
-  }
-
-  /// \brief Check if Clang profile instrumenation is on.
-  bool hasProfileClangInstr() const {
-    return getProfileInstr() == ProfileClangInstr;
-  }
 };
 
 }  // end namespace clang

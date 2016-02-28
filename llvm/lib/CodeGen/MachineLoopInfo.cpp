@@ -50,12 +50,11 @@ void MachineLoopInfo::getAnalysisUsage(AnalysisUsage &AU) const {
 MachineBasicBlock *MachineLoop::getTopBlock() {
   MachineBasicBlock *TopMBB = getHeader();
   MachineFunction::iterator Begin = TopMBB->getParent()->begin();
-  if (TopMBB->getIterator() != Begin) {
+  if (TopMBB != Begin) {
     MachineBasicBlock *PriorMBB = &*std::prev(TopMBB->getIterator());
     while (contains(PriorMBB)) {
       TopMBB = PriorMBB;
-      if (TopMBB->getIterator() == Begin)
-        break;
+      if (TopMBB == Begin) break;
       PriorMBB = &*std::prev(TopMBB->getIterator());
     }
   }
@@ -65,7 +64,7 @@ MachineBasicBlock *MachineLoop::getTopBlock() {
 MachineBasicBlock *MachineLoop::getBottomBlock() {
   MachineBasicBlock *BotMBB = getHeader();
   MachineFunction::iterator End = BotMBB->getParent()->end();
-  if (BotMBB->getIterator() != std::prev(End)) {
+  if (BotMBB != std::prev(End)) {
     MachineBasicBlock *NextMBB = &*std::next(BotMBB->getIterator());
     while (contains(NextMBB)) {
       BotMBB = NextMBB;
@@ -78,7 +77,7 @@ MachineBasicBlock *MachineLoop::getBottomBlock() {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void MachineLoop::dump() const {
+void MachineLoop::dump() const {
   print(dbgs());
 }
 #endif

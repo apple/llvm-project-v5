@@ -22,13 +22,11 @@
 #include "llvm/CodeGen/RegAllocRegistry.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/FunctionInfo.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Object/FunctionIndexObjectFile.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -97,7 +95,7 @@ private:
     return PerFunctionPasses;
   }
 
-  void CreatePasses(FunctionInfoIndex *FunctionIndex);
+  void CreatePasses();
 
   /// Generates the TargetMachine.
   /// Returns Null if it is unable to create the target machine.
@@ -115,13 +113,15 @@ private:
   bool AddEmitPasses(BackendAction Action, raw_pwrite_stream &OS);
 
 public:
-  EmitAssemblyHelper(DiagnosticsEngine &_Diags, const CodeGenOptions &CGOpts,
+  EmitAssemblyHelper(DiagnosticsEngine &_Diags,
+                     const CodeGenOptions &CGOpts,
                      const clang::TargetOptions &TOpts,
-                     const LangOptions &LOpts, Module *M)
-      : Diags(_Diags), CodeGenOpts(CGOpts), TargetOpts(TOpts), LangOpts(LOpts),
-        TheModule(M), CodeGenerationTime("Code Generation Time"),
-        CodeGenPasses(nullptr), PerModulePasses(nullptr),
-        PerFunctionPasses(nullptr) {}
+                     const LangOptions &LOpts,
+                     Module *M)
+    : Diags(_Diags), CodeGenOpts(CGOpts), TargetOpts(TOpts), LangOpts(LOpts),
+      TheModule(M), CodeGenerationTime("Code Generation Time"),
+      CodeGenPasses(nullptr), PerModulePasses(nullptr),
+      PerFunctionPasses(nullptr) {}
 
   ~EmitAssemblyHelper() {
     delete CodeGenPasses;
@@ -189,26 +189,19 @@ static void addSanitizerCoveragePass(const PassManagerBuilder &Builder,
   Opts.TraceBB = CGOpts.SanitizeCoverageTraceBB;
   Opts.TraceCmp = CGOpts.SanitizeCoverageTraceCmp;
   Opts.Use8bitCounters = CGOpts.SanitizeCoverage8bitCounters;
-  Opts.TracePC = CGOpts.SanitizeCoverageTracePC;
   PM.add(createSanitizerCoverageModulePass(Opts));
 }
 
 static void addAddressSanitizerPasses(const PassManagerBuilder &Builder,
                                       legacy::PassManagerBase &PM) {
-  const PassManagerBuilderWrapper &BuilderWrapper =
-      static_cast<const PassManagerBuilderWrapper&>(Builder);
-  const CodeGenOptions &CGOpts = BuilderWrapper.getCGOpts();
-  bool Recover = CGOpts.SanitizeRecover.has(SanitizerKind::Address);
-  PM.add(createAddressSanitizerFunctionPass(/*CompileKernel*/false, Recover));
-  PM.add(createAddressSanitizerModulePass(/*CompileKernel*/false, Recover));
+  PM.add(createAddressSanitizerFunctionPass(/*CompileKernel*/false));
+  PM.add(createAddressSanitizerModulePass(/*CompileKernel*/false));
 }
 
 static void addKernelAddressSanitizerPasses(const PassManagerBuilder &Builder,
                                             legacy::PassManagerBase &PM) {
-  PM.add(createAddressSanitizerFunctionPass(/*CompileKernel*/true,
-                                            /*Recover*/true));
-  PM.add(createAddressSanitizerModulePass(/*CompileKernel*/true,
-                                          /*Recover*/true));
+  PM.add(createAddressSanitizerFunctionPass(/*CompileKernel*/true));
+  PM.add(createAddressSanitizerModulePass(/*CompileKernel*/true));
 }
 
 static void addMemorySanitizerPass(const PassManagerBuilder &Builder,
@@ -249,13 +242,6 @@ static TargetLibraryInfoImpl *createTLII(llvm::Triple &TargetTriple,
   TargetLibraryInfoImpl *TLII = new TargetLibraryInfoImpl(TargetTriple);
   if (!CodeGenOpts.SimplifyLibCalls)
     TLII->disableAllFunctions();
-  else {
-    // Disable individual libc/libm calls in TargetLibraryInfo.
-    LibFunc::Func F;
-    for (auto &FuncName : CodeGenOpts.getNoBuiltinFuncs())
-      if (TLII->getLibFunc(FuncName, F))
-        TLII->setUnavailable(F);
-  }
 
   switch (CodeGenOpts.getVecLib()) {
   case CodeGenOptions::Accelerate:
@@ -278,7 +264,7 @@ static void addSymbolRewriterPass(const CodeGenOptions &Opts,
   MPM->add(createRewriteSymbolsPass(DL));
 }
 
-void EmitAssemblyHelper::CreatePasses(FunctionInfoIndex *FunctionIndex) {
+void EmitAssemblyHelper::CreatePasses() {
   if (CodeGenOpts.DisableLLVMPasses)
     return;
 
@@ -293,29 +279,6 @@ void EmitAssemblyHelper::CreatePasses(FunctionInfoIndex *FunctionIndex) {
   }
 
   PassManagerBuilderWrapper PMBuilder(CodeGenOpts, LangOpts);
-
-  // Figure out TargetLibraryInfo.
-  Triple TargetTriple(TheModule->getTargetTriple());
-  PMBuilder.LibraryInfo = createTLII(TargetTriple, CodeGenOpts);
-
-  switch (Inlining) {
-  case CodeGenOptions::NoInlining:
-    break;
-  case CodeGenOptions::NormalInlining: {
-    PMBuilder.Inliner =
-        createFunctionInliningPass(OptLevel, CodeGenOpts.OptimizeSize);
-    break;
-  }
-  case CodeGenOptions::OnlyAlwaysInlining:
-    // Respect always_inline.
-    if (OptLevel == 0)
-      // Do not insert lifetime intrinsics at -O0.
-      PMBuilder.Inliner = createAlwaysInlinerPass(false);
-    else
-      PMBuilder.Inliner = createAlwaysInlinerPass();
-    break;
-  }
-
   PMBuilder.OptLevel = OptLevel;
   PMBuilder.SizeLevel = CodeGenOpts.OptimizeSize;
   PMBuilder.BBVectorize = CodeGenOpts.VectorizeBB;
@@ -325,19 +288,8 @@ void EmitAssemblyHelper::CreatePasses(FunctionInfoIndex *FunctionIndex) {
   PMBuilder.DisableUnitAtATime = !CodeGenOpts.UnitAtATime;
   PMBuilder.DisableUnrollLoops = !CodeGenOpts.UnrollLoops;
   PMBuilder.MergeFunctions = CodeGenOpts.MergeFunctions;
-  PMBuilder.PrepareForThinLTO = CodeGenOpts.EmitFunctionSummary;
   PMBuilder.PrepareForLTO = CodeGenOpts.PrepareForLTO;
   PMBuilder.RerollLoops = CodeGenOpts.RerollLoops;
-
-  legacy::PassManager *MPM = getPerModulePasses();
-
-  // If we are performing a ThinLTO importing compile, invoke the LTO
-  // pipeline and pass down the in-memory function index.
-  if (FunctionIndex) {
-    PMBuilder.FunctionIndex = FunctionIndex;
-    PMBuilder.populateThinLTOPassManager(*MPM);
-    return;
-  }
 
   PMBuilder.addExtension(PassManagerBuilder::EP_EarlyAsPossible,
                          addAddDiscriminatorsPass);
@@ -403,6 +355,27 @@ void EmitAssemblyHelper::CreatePasses(FunctionInfoIndex *FunctionIndex) {
                            addDataFlowSanitizerPass);
   }
 
+  // Figure out TargetLibraryInfo.
+  Triple TargetTriple(TheModule->getTargetTriple());
+  PMBuilder.LibraryInfo = createTLII(TargetTriple, CodeGenOpts);
+
+  switch (Inlining) {
+  case CodeGenOptions::NoInlining: break;
+  case CodeGenOptions::NormalInlining: {
+    PMBuilder.Inliner =
+        createFunctionInliningPass(OptLevel, CodeGenOpts.OptimizeSize);
+    break;
+  }
+  case CodeGenOptions::OnlyAlwaysInlining:
+    // Respect always_inline.
+    if (OptLevel == 0)
+      // Do not insert lifetime intrinsics at -O0.
+      PMBuilder.Inliner = createAlwaysInlinerPass(false);
+    else
+      PMBuilder.Inliner = createAlwaysInlinerPass();
+    break;
+  }
+
   // Set up the per-function pass manager.
   legacy::FunctionPassManager *FPM = getPerFunctionPasses();
   if (CodeGenOpts.VerifyModule)
@@ -410,6 +383,7 @@ void EmitAssemblyHelper::CreatePasses(FunctionInfoIndex *FunctionIndex) {
   PMBuilder.populateFunctionPassManager(*FPM);
 
   // Set up the per-module pass manager.
+  legacy::PassManager *MPM = getPerModulePasses();
   if (!CodeGenOpts.RewriteMapFiles.empty())
     addSymbolRewriterPass(CodeGenOpts, MPM);
 
@@ -427,11 +401,11 @@ void EmitAssemblyHelper::CreatePasses(FunctionInfoIndex *FunctionIndex) {
         !CodeGenOpts.CoverageNoFunctionNamesInData;
     Options.ExitBlockBeforeBody = CodeGenOpts.CoverageExitBlockBeforeBody;
     MPM->add(createGCOVProfilerPass(Options));
-    if (CodeGenOpts.getDebugInfo() == codegenoptions::NoDebugInfo)
+    if (CodeGenOpts.getDebugInfo() == CodeGenOptions::NoDebugInfo)
       MPM->add(createStripSymbolsPass(true));
   }
 
-  if (CodeGenOpts.hasProfileClangInstr()) {
+  if (CodeGenOpts.ProfileInstrGenerate) {
     InstrProfOptions Options;
     Options.NoRedZone = CodeGenOpts.DisableRedZone;
     Options.InstrProfileOutput = CodeGenOpts.InstrProfileOutput;
@@ -541,14 +515,6 @@ TargetMachine *EmitAssemblyHelper::CreateTargetMachine(bool MustCreateTM) {
   Options.UseInitArray = CodeGenOpts.UseInitArray;
   Options.DisableIntegratedAS = CodeGenOpts.DisableIntegratedAS;
   Options.CompressDebugSections = CodeGenOpts.CompressDebugSections;
-
-  // Set EABI version.
-  Options.EABIVersion = llvm::StringSwitch<llvm::EABI>(CodeGenOpts.EABIVersion)
-                            .Case("4", llvm::EABI::EABI4)
-                            .Case("5", llvm::EABI::EABI5)
-                            .Case("gnu", llvm::EABI::GNU)
-                            .Default(llvm::EABI::Default);
-
   Options.LessPreciseFPMADOption = CodeGenOpts.LessPreciseFPMAD;
   Options.NoInfsFPMath = CodeGenOpts.NoInfsFPMath;
   Options.NoNaNsFPMath = CodeGenOpts.NoNaNsFPMath;
@@ -560,14 +526,11 @@ TargetMachine *EmitAssemblyHelper::CreateTargetMachine(bool MustCreateTM) {
   Options.DataSections = CodeGenOpts.DataSections;
   Options.UniqueSectionNames = CodeGenOpts.UniqueSectionNames;
   Options.EmulatedTLS = CodeGenOpts.EmulatedTLS;
-  Options.DebuggerTuning = CodeGenOpts.getDebuggerTuning();
 
   Options.MCOptions.MCRelaxAll = CodeGenOpts.RelaxAll;
   Options.MCOptions.MCSaveTempLabels = CodeGenOpts.SaveTempLabels;
   Options.MCOptions.MCUseDwarfDirectory = !CodeGenOpts.NoDwarfDirectoryAsm;
   Options.MCOptions.MCNoExecStack = CodeGenOpts.NoExecStack;
-  Options.MCOptions.MCIncrementalLinkerCompatible =
-      CodeGenOpts.IncrementalLinkerCompatible;
   Options.MCOptions.MCFatalWarnings = CodeGenOpts.FatalWarnings;
   Options.MCOptions.AsmVerbose = CodeGenOpts.AsmVerbose;
   Options.MCOptions.ABIName = TargetOpts.ABI;
@@ -630,28 +593,7 @@ void EmitAssemblyHelper::EmitAssembly(BackendAction Action,
     return;
   if (TM)
     TheModule->setDataLayout(TM->createDataLayout());
-
-  // If we are performing a ThinLTO importing compile, load the function
-  // index into memory and pass it into CreatePasses, which will add it
-  // to the PassManagerBuilder and invoke LTO passes.
-  std::unique_ptr<FunctionInfoIndex> FunctionIndex;
-  if (!CodeGenOpts.ThinLTOIndexFile.empty()) {
-    ErrorOr<std::unique_ptr<FunctionInfoIndex>> IndexOrErr =
-        llvm::getFunctionIndexForFile(CodeGenOpts.ThinLTOIndexFile,
-                                      [&](const DiagnosticInfo &DI) {
-                                        TheModule->getContext().diagnose(DI);
-                                      });
-    if (std::error_code EC = IndexOrErr.getError()) {
-      std::string Error = EC.message();
-      errs() << "Error loading index file '" << CodeGenOpts.ThinLTOIndexFile
-             << "': " << Error << "\n";
-      return;
-    }
-    FunctionIndex = std::move(IndexOrErr.get());
-    assert(FunctionIndex && "Expected non-empty function index");
-  }
-
-  CreatePasses(FunctionIndex.get());
+  CreatePasses();
 
   switch (Action) {
   case Backend_EmitNothing:

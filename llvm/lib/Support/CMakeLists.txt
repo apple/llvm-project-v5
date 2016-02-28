@@ -1,32 +1,32 @@
 set(system_libs)
-if( MSVC OR MINGW )
-  # libuuid required for FOLDERID_Profile usage in lib/Support/Windows/Path.inc.
-  set(system_libs ${system_libs} psapi shell32 ole32 uuid)
-elseif( CMAKE_HOST_UNIX )
-  if( HAVE_LIBRT )
-    set(system_libs ${system_libs} rt)
-  endif()
-  if( HAVE_LIBDL )
-    set(system_libs ${system_libs} ${CMAKE_DL_LIBS})
-  endif()
-  if(LLVM_ENABLE_TERMINFO)
-    if(HAVE_TERMINFO)
-      set(system_libs ${system_libs} ${TERMINFO_LIBS})
+if( NOT MSVC )
+  if( MINGW )
+    # libuuid required for FOLDERID_Profile usage in lib/Support/Windows/Path.inc.
+    set(system_libs ${system_libs} psapi shell32 ole32 uuid)
+  elseif( CMAKE_HOST_UNIX )
+    if( HAVE_LIBRT )
+      set(system_libs ${system_libs} rt)
     endif()
-  endif()
-  if( LLVM_ENABLE_THREADS AND HAVE_LIBATOMIC )
-    set(system_libs ${system_libs} atomic)
-  endif()
-  if( LLVM_ENABLE_THREADS AND HAVE_LIBPTHREAD )
-    set(system_libs ${system_libs} pthread)
-  endif()
-  if ( LLVM_ENABLE_ZLIB AND HAVE_LIBZ )
-    set(system_libs ${system_libs} z)
-  endif()
-  if( UNIX AND NOT (BEOS OR HAIKU) )
+    if( HAVE_LIBDL )
+      set(system_libs ${system_libs} ${CMAKE_DL_LIBS})
+    endif()
+    if(LLVM_ENABLE_TERMINFO)
+      if(HAVE_TERMINFO)
+        set(system_libs ${system_libs} ${TERMINFO_LIBS})
+      endif()
+    endif()
+    if( LLVM_ENABLE_THREADS AND HAVE_LIBATOMIC )
+      set(system_libs ${system_libs} atomic)
+    endif()
+    if( LLVM_ENABLE_THREADS AND HAVE_LIBPTHREAD )
+      set(system_libs ${system_libs} pthread)
+    endif()
+    if ( LLVM_ENABLE_ZLIB AND HAVE_LIBZ )
+      set(system_libs ${system_libs} z)
+    endif()
     set(system_libs ${system_libs} m)
-  endif()
-endif( MSVC OR MINGW )
+  endif( MINGW )
+endif( NOT MSVC )
 
 add_llvm_library(LLVMSupport
   APFloat.cpp
@@ -89,7 +89,6 @@ add_llvm_library(LLVMSupport
   StringRef.cpp
   SystemUtils.cpp
   TargetParser.cpp
-  ThreadPool.cpp
   Timer.cpp
   ToolOutputFile.cpp
   Triple.cpp

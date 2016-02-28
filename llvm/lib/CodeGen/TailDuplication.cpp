@@ -429,30 +429,28 @@ void TailDuplicatePass::DuplicateInstruction(MachineInstr *MI,
                                      DenseMap<unsigned, unsigned> &LocalVRMap,
                                      const DenseSet<unsigned> &UsedByPhi) {
   MachineInstr *NewMI = TII->duplicate(MI, MF);
-  if (PreRegAlloc) {
-    for (unsigned i = 0, e = NewMI->getNumOperands(); i != e; ++i) {
-      MachineOperand &MO = NewMI->getOperand(i);
-      if (!MO.isReg())
-        continue;
-      unsigned Reg = MO.getReg();
-      if (!TargetRegisterInfo::isVirtualRegister(Reg))
-        continue;
-      if (MO.isDef()) {
-        const TargetRegisterClass *RC = MRI->getRegClass(Reg);
-        unsigned NewReg = MRI->createVirtualRegister(RC);
-        MO.setReg(NewReg);
-        LocalVRMap.insert(std::make_pair(Reg, NewReg));
-        if (isDefLiveOut(Reg, TailBB, MRI) || UsedByPhi.count(Reg))
-          AddSSAUpdateEntry(Reg, NewReg, PredBB);
-      } else {
-        DenseMap<unsigned, unsigned>::iterator VI = LocalVRMap.find(Reg);
-        if (VI != LocalVRMap.end()) {
-          MO.setReg(VI->second);
-          // Clear any kill flags from this operand.  The new register could have
-          // uses after this one, so kills are not valid here.
-          MO.setIsKill(false);
-          MRI->constrainRegClass(VI->second, MRI->getRegClass(Reg));
-        }
+  for (unsigned i = 0, e = NewMI->getNumOperands(); i != e; ++i) {
+    MachineOperand &MO = NewMI->getOperand(i);
+    if (!MO.isReg())
+      continue;
+    unsigned Reg = MO.getReg();
+    if (!TargetRegisterInfo::isVirtualRegister(Reg))
+      continue;
+    if (MO.isDef()) {
+      const TargetRegisterClass *RC = MRI->getRegClass(Reg);
+      unsigned NewReg = MRI->createVirtualRegister(RC);
+      MO.setReg(NewReg);
+      LocalVRMap.insert(std::make_pair(Reg, NewReg));
+      if (isDefLiveOut(Reg, TailBB, MRI) || UsedByPhi.count(Reg))
+        AddSSAUpdateEntry(Reg, NewReg, PredBB);
+    } else {
+      DenseMap<unsigned, unsigned>::iterator VI = LocalVRMap.find(Reg);
+      if (VI != LocalVRMap.end()) {
+        MO.setReg(VI->second);
+        // Clear any kill flags from this operand.  The new register could have
+        // uses after this one, so kills are not valid here.
+        MO.setIsKill(false);
+        MRI->constrainRegClass(VI->second, MRI->getRegClass(Reg));
       }
     }
   }
@@ -588,11 +586,6 @@ TailDuplicatePass::shouldTailDuplicate(const MachineFunction &MF,
   for (MachineInstr &MI : TailBB) {
     // Non-duplicable things shouldn't be tail-duplicated.
     if (MI.isNotDuplicable())
-      return false;
-
-    // Convergent instructions can be duplicated only if doing so doesn't add
-    // new control dependencies, which is what we're going to do here.
-    if (MI.isConvergent())
       return false;
 
     // Do not duplicate 'return' instructions if this is a pre-regalloc run.
@@ -752,12 +745,12 @@ TailDuplicatePass::duplicateSimpleBB(MachineBasicBlock *TailBB,
     if (PredTBB)
       TII->InsertBranch(*PredBB, PredTBB, PredFBB, PredCond, DebugLoc());
 
-    if (!PredBB->isSuccessor(NewTarget))
-      PredBB->replaceSuccessor(TailBB, NewTarget);
-    else {
-      PredBB->removeSuccessor(TailBB, true);
-      assert(PredBB->succ_size() <= 1);
-    }
+    uint32_t Weight = MBPI->getEdgeWeight(PredBB, TailBB);
+    PredBB->removeSuccessor(TailBB);
+    unsigned NumSuccessors = PredBB->succ_size();
+    assert(NumSuccessors <= 1);
+    if (NumSuccessors == 0 || *PredBB->succ_begin() != NewTarget)
+      PredBB->addSuccessor(NewTarget, Weight);
 
     TDBBs.push_back(PredBB);
   }
@@ -865,7 +858,7 @@ TailDuplicatePass::TailDuplicate(MachineBasicBlock *TailBB,
            "TailDuplicate called on block with multiple successors!");
     for (MachineBasicBlock::succ_iterator I = TailBB->succ_begin(),
            E = TailBB->succ_end(); I != E; ++I)
-      PredBB->addSuccessor(*I, MBPI->getEdgeProbability(TailBB, I));
+      PredBB->addSuccessor(*I, MBPI->getEdgeWeight(TailBB, I));
 
     Changed = true;
     ++NumTailDups;

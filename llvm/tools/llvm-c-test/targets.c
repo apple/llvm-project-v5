@@ -14,7 +14,7 @@
 #include "llvm-c/TargetMachine.h"
 #include <stdio.h>
 
-int llvm_targets_list(void) {
+int targets_list(void) {
   LLVMTargetRef t;
   LLVMInitializeAllTargetInfos();
   LLVMInitializeAllTargets();

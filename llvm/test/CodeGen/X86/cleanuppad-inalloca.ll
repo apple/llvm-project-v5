@@ -29,9 +29,9 @@ invoke.cont:                                      ; preds = %entry
   ret void
 
 ehcleanup:                                        ; preds = %entry
-  %2 = cleanuppad within none []
-  call x86_thiscallcc void @"\01??1A@@QAE@XZ"(%struct.A* %0) [ "funclet"(token %2) ]
-  cleanupret from %2 unwind to caller
+  %2 = cleanuppad []
+  call x86_thiscallcc void @"\01??1A@@QAE@XZ"(%struct.A* %0)
+  cleanupret %2 unwind to caller
 }
 
 ; CHECK: _passes_two:
@@ -51,7 +51,7 @@ ehcleanup:                                        ; preds = %entry
 ; CHECK: "?dtor$2@?0?passes_two@4HA":
 ; CHECK: pushl %ebp
 ; CHECK: subl $8, %esp
-; CHECK: addl $16, %ebp
+; CHECK: addl $12, %ebp
 ; CHECK: {{movl|leal}} -{{[0-9]+}}(%ebp), %ecx
 ; CHECK: calll "??1A@@QAE@XZ"
 ; CHECK: addl $8, %esp

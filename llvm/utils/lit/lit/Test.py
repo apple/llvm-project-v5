@@ -33,7 +33,6 @@ FAIL        = ResultCode('FAIL', True)
 XPASS       = ResultCode('XPASS', True)
 UNRESOLVED  = ResultCode('UNRESOLVED', True)
 UNSUPPORTED = ResultCode('UNSUPPORTED', False)
-TIMEOUT     = ResultCode('TIMEOUT', True)
 
 # Test metric values.
 
@@ -230,7 +229,7 @@ class Test:
                 return True
 
             # If this is a part of the target triple, it fails.
-            if item and item in self.suite.config.target_triple:
+            if item in self.suite.config.target_triple:
                 return True
 
         return False

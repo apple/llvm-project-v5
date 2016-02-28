@@ -39,6 +39,7 @@ public:
   FORWARD_SYMBOL_METHOD(getName)
   FORWARD_SYMBOL_METHOD(isPureVirtual)
   FORWARD_SYMBOL_METHOD(getRelativeVirtualAddress)
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
   FORWARD_SYMBOL_METHOD(getTargetOffset)
   FORWARD_SYMBOL_METHOD(getTargetRelativeVirtualAddress)
   FORWARD_SYMBOL_METHOD(getTargetVirtualAddress)

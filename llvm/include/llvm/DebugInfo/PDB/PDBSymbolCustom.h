@@ -31,6 +31,7 @@ public:
   void dump(PDBSymDumper &Dumper) const override;
 
   void getDataBytes(llvm::SmallVector<uint8_t, 32> &bytes);
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
 };
 
 } // namespace llvm

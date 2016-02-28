@@ -33,6 +33,12 @@ namespace llvm {
     generic_gep_type_iterator() {}
   public:
 
+    static generic_gep_type_iterator begin(Type *Ty, ItTy It) {
+      generic_gep_type_iterator I;
+      I.CurTy.setPointer(Ty);
+      I.OpIt = It;
+      return I;
+    }
     static generic_gep_type_iterator begin(Type *Ty, unsigned AddrSpace,
                                            ItTy It) {
       generic_gep_type_iterator I;
@@ -119,13 +125,13 @@ namespace llvm {
 
   template<typename T>
   inline generic_gep_type_iterator<const T *>
-  gep_type_begin(Type *Op0, unsigned AS, ArrayRef<T> A) {
-    return generic_gep_type_iterator<const T *>::begin(Op0, AS, A.begin());
+  gep_type_begin(Type *Op0, ArrayRef<T> A) {
+    return generic_gep_type_iterator<const T *>::begin(Op0, A.begin());
   }
 
   template<typename T>
   inline generic_gep_type_iterator<const T *>
-  gep_type_end(Type * /*Op0*/, unsigned /*AS*/, ArrayRef<T> A) {
+  gep_type_end(Type * /*Op0*/, ArrayRef<T> A) {
     return generic_gep_type_iterator<const T *>::end(A.end());
   }
 } // end namespace llvm

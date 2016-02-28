@@ -501,9 +501,7 @@ powerOf5(integerPart *dst, unsigned int power)
 
       /* Now result is in p1 with partsCount parts and p2 is scratch
          space.  */
-      tmp = p1;
-      p1 = p2;
-      p2 = tmp;
+      tmp = p1, p1 = p2, p2 = tmp;
     }
 
     pow5 += pc;
@@ -767,15 +765,6 @@ APFloat::isLargest() const {
   // number with maximum exponent and with significand that is all ones.
   return isFiniteNonZero() && exponent == semantics->maxExponent
     && isSignificandAllOnes();
-}
-
-bool
-APFloat::isInteger() const {
-  // This could be made more efficient; I'm going for obviously correct.
-  if (!isFinite()) return false;
-  APFloat truncated = *this;
-  truncated.roundToIntegral(rmTowardZero);
-  return compare(truncated) == cmpEqual;
 }
 
 bool

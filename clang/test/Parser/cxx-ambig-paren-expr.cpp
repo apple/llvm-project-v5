@@ -21,14 +21,8 @@ void f() {
   struct S{int operator()();};
   (S())();
 
-  // Special case: "++" is postfix here, not prefix
-  (S())++; // expected-error {{cannot increment value of type 'S'}}
-
-  struct X { int &operator++(int); X operator[](int); int &operator++(); };
-  int &postfix_incr = (X()[3])++;
-  (X())++ ++; // ok, not a C-style cast
-  (X())++ ++X(); // expected-error {{C-style cast from 'int' to 'X ()'}}
-  int q = (int)++(x);
+  // FIXME: Special case: "++" is postfix here, not prefix
+  // (S())++;
 }
 
 // Make sure we do tentative parsing correctly in conditions.

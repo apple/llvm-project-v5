@@ -199,8 +199,7 @@ public:
   //  case Expr::ChooseExprClass:
   void VisitCXXThrowExpr(const CXXThrowExpr *E) { CGF.EmitCXXThrowExpr(E); }
   void VisitAtomicExpr(AtomicExpr *E) {
-    RValue Res = CGF.EmitAtomicExpr(E);
-    EmitFinalDestCopy(E->getType(), Res);
+    CGF.EmitAtomicExpr(E, EnsureSlot(E->getType()).getAddress());
   }
 };
 }  // end anonymous namespace.
@@ -721,7 +720,6 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_ToVoid:
   case CK_VectorSplat:
   case CK_IntegralCast:
-  case CK_BooleanToSignedIntegral:
   case CK_IntegralToBoolean:
   case CK_IntegralToFloating:
   case CK_FloatingToIntegral:
@@ -967,9 +965,12 @@ void AggExprEmitter::VisitVAArgExpr(VAArgExpr *VE) {
   Address ArgValue = Address::invalid();
   Address ArgPtr = CGF.EmitVAArg(VE, ArgValue);
 
-  // If EmitVAArg fails, emit an error.
   if (!ArgPtr.isValid()) {
-    CGF.ErrorUnsupported(VE, "aggregate va_arg expression");
+    // If EmitVAArg fails, we fall back to the LLVM instruction.
+    llvm::Value *Val = Builder.CreateVAArg(ArgValue.getPointer(),
+                                           CGF.ConvertType(VE->getType()));
+    if (!Dest.isIgnored())
+      Builder.CreateStore(Val, Dest.getAddress());
     return;
   }
 

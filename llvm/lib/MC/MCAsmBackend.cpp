@@ -16,10 +16,6 @@ MCAsmBackend::MCAsmBackend() : HasDataInCodeSupport(false) {}
 
 MCAsmBackend::~MCAsmBackend() {}
 
-Optional<MCFixupKind> MCAsmBackend::getFixupKind(StringRef Name) const {
-  return None;
-}
-
 const MCFixupKindInfo &MCAsmBackend::getFixupKindInfo(MCFixupKind Kind) const {
   static const MCFixupKindInfo Builtins[] = {
       {"FK_Data_1", 0, 8, 0},

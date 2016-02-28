@@ -32,6 +32,10 @@ if (NOT LLVM_ENABLE_THREADS)
   add_definitions( -DGTEST_HAS_PTHREAD=0 )
 endif()
 
+set(LIBS
+  LLVMSupport # Depends on llvm::raw_ostream
+)
+
 find_library(PTHREAD_LIBRARY_PATH pthread)
 if (PTHREAD_LIBRARY_PATH)
   list(APPEND LIBS pthread)
@@ -42,9 +46,6 @@ add_llvm_library(gtest
 
   LINK_LIBS
   ${LIBS}
-
-  LINK_COMPONENTS
-  Support # Depends on llvm::raw_ostream
 )
 
 add_subdirectory(UnitTestMain)

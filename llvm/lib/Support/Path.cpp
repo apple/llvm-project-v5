@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/COFF.h"
-#include "llvm/Support/MachO.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -672,41 +671,6 @@ StringRef remove_leading_dotslash(StringRef Path) {
   return Path;
 }
 
-static SmallString<256> remove_dots(StringRef path, bool remove_dot_dot) {
-  SmallVector<StringRef, 16> components;
-
-  // Skip the root path, then look for traversal in the components.
-  StringRef rel = path::relative_path(path);
-  for (StringRef C : llvm::make_range(path::begin(rel), path::end(rel))) {
-    if (C == ".")
-      continue;
-    if (remove_dot_dot) {
-      if (C == "..") {
-        if (!components.empty())
-          components.pop_back();
-        continue;
-      }
-    }
-    components.push_back(C);
-  }
-
-  SmallString<256> buffer = path::root_path(path);
-  for (StringRef C : components)
-    path::append(buffer, C);
-  return buffer;
-}
-
-bool remove_dots(SmallVectorImpl<char> &path, bool remove_dot_dot) {
-  StringRef p(path.data(), path.size());
-
-  SmallString<256> result = remove_dots(p, remove_dot_dot);
-  if (result == path)
-    return false;
-
-  path.swap(result);
-  return true;
-}
-
 } // end namespace path
 
 namespace fs {
@@ -1041,24 +1005,12 @@ file_magic identify_magic(StringRef Magic) {
           Magic[2] == char(0xFA) &&
           (Magic[3] == char(0xCE) || Magic[3] == char(0xCF))) {
         /* Native endian */
-        size_t MinSize;
-        if (Magic[3] == char(0xCE))
-          MinSize = sizeof(MachO::mach_header);
-        else
-          MinSize = sizeof(MachO::mach_header_64);
-        if (Magic.size() >= MinSize)
-          type = Magic[12] << 24 | Magic[13] << 12 | Magic[14] << 8 | Magic[15];
+        if (Magic.size() >= 16) type = Magic[14] << 8 | Magic[15];
       } else if ((Magic[0] == char(0xCE) || Magic[0] == char(0xCF)) &&
                  Magic[1] == char(0xFA) && Magic[2] == char(0xED) &&
                  Magic[3] == char(0xFE)) {
         /* Reverse endian */
-        size_t MinSize;
-        if (Magic[0] == char(0xCE))
-          MinSize = sizeof(MachO::mach_header);
-        else
-          MinSize = sizeof(MachO::mach_header_64);
-        if (Magic.size() >= MinSize)
-          type = Magic[15] << 24 | Magic[14] << 12 |Magic[13] << 8 | Magic[12];
+        if (Magic.size() >= 14) type = Magic[13] << 8 | Magic[12];
       }
       switch (type) {
         default: break;

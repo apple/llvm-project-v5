@@ -13,6 +13,7 @@
 
 #include "MipsRegisterInfo.h"
 #include "Mips.h"
+#include "MipsAnalyzeImmediate.h"
 #include "MipsInstrInfo.h"
 #include "MipsMachineFunction.h"
 #include "MipsSubtarget.h"

@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstCombineInternal.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/Loads.h"
 #include "llvm/IR/DataLayout.h"
@@ -91,23 +90,21 @@ isOnlyCopiedFromConstantGlobal(Value *V, MemTransferInst *&TheCopy,
         if (CS.isCallee(&U))
           continue;
 
-        unsigned DataOpNo = CS.getDataOperandNo(&U);
-        bool IsArgOperand = CS.isArgOperand(&U);
-
         // Inalloca arguments are clobbered by the call.
-        if (IsArgOperand && CS.isInAllocaArgument(DataOpNo))
+        unsigned ArgNo = CS.getArgumentNo(&U);
+        if (CS.isInAllocaArgument(ArgNo))
           return false;
 
         // If this is a readonly/readnone call site, then we know it is just a
         // load (but one that potentially returns the value itself), so we can
         // ignore it if we know that the value isn't captured.
         if (CS.onlyReadsMemory() &&
-            (CS.getInstruction()->use_empty() || CS.doesNotCapture(DataOpNo)))
+            (CS.getInstruction()->use_empty() || CS.doesNotCapture(ArgNo)))
           continue;
 
         // If this is being passed as a byval argument, the caller is making a
         // copy, so it is only a read of the alloca.
-        if (IsArgOperand && CS.isByValArgument(DataOpNo))
+        if (CS.isByValArgument(ArgNo))
           continue;
       }
 
@@ -205,11 +202,11 @@ static Instruction *simplifyAllocaArraySize(InstCombiner &IC, AllocaInst &AI) {
 
     // Now make everything use the getelementptr instead of the original
     // allocation.
-    return IC.replaceInstUsesWith(AI, GEP);
+    return IC.ReplaceInstUsesWith(AI, GEP);
   }
 
   if (isa<UndefValue>(AI.getArraySize()))
-    return IC.replaceInstUsesWith(AI, Constant::getNullValue(AI.getType()));
+    return IC.ReplaceInstUsesWith(AI, Constant::getNullValue(AI.getType()));
 
   // Ensure that the alloca array size argument has type intptr_t, so that
   // any casting is exposed early.
@@ -271,7 +268,7 @@ Instruction *InstCombiner::visitAllocaInst(AllocaInst &AI) {
         EntryAI->setAlignment(MaxAlign);
         if (AI.getType() != EntryAI->getType())
           return new BitCastInst(EntryAI, AI.getType());
-        return replaceInstUsesWith(AI, EntryAI);
+        return ReplaceInstUsesWith(AI, EntryAI);
       }
     }
   }
@@ -291,12 +288,12 @@ Instruction *InstCombiner::visitAllocaInst(AllocaInst &AI) {
         DEBUG(dbgs() << "Found alloca equal to global: " << AI << '\n');
         DEBUG(dbgs() << "  memcpy = " << *Copy << '\n');
         for (unsigned i = 0, e = ToDelete.size(); i != e; ++i)
-          eraseInstFromFunction(*ToDelete[i]);
+          EraseInstFromFunction(*ToDelete[i]);
         Constant *TheSrc = cast<Constant>(Copy->getSource());
         Constant *Cast
           = ConstantExpr::getPointerBitCastOrAddrSpaceCast(TheSrc, AI.getType());
-        Instruction *NewI = replaceInstUsesWith(AI, Cast);
-        eraseInstFromFunction(*Copy);
+        Instruction *NewI = ReplaceInstUsesWith(AI, Cast);
+        EraseInstFromFunction(*Copy);
         ++NumGlobalCopies;
         return NewI;
       }
@@ -486,7 +483,7 @@ static Instruction *combineLoadToOperationType(InstCombiner &IC, LoadInst &LI) {
         auto *SI = cast<StoreInst>(*UI++);
         IC.Builder->SetInsertPoint(SI);
         combineStoreToNewValue(IC, *SI, NewLoad);
-        IC.eraseInstFromFunction(*SI);
+        IC.EraseInstFromFunction(*SI);
       }
       assert(LI.use_empty() && "Failed to remove all users of the load!");
       // Return the old load so the combiner can delete it safely.
@@ -503,7 +500,7 @@ static Instruction *combineLoadToOperationType(InstCombiner &IC, LoadInst &LI) {
       if (CI->isNoopCast(DL)) {
         LoadInst *NewLoad = combineLoadToNewType(IC, LI, CI->getDestTy());
         CI->replaceAllUsesWith(NewLoad);
-        IC.eraseInstFromFunction(*CI);
+        IC.EraseInstFromFunction(*CI);
         return &LI;
       }
     }
@@ -523,54 +520,16 @@ static Instruction *unpackLoadToAggregate(InstCombiner &IC, LoadInst &LI) {
   if (!T->isAggregateType())
     return nullptr;
 
-  auto Name = LI.getName();
   assert(LI.getAlignment() && "Alignment must be set at this point");
 
   if (auto *ST = dyn_cast<StructType>(T)) {
     // If the struct only have one element, we unpack.
-    auto NumElements = ST->getNumElements();
-    if (NumElements == 1) {
+    if (ST->getNumElements() == 1) {
       LoadInst *NewLoad = combineLoadToNewType(IC, LI, ST->getTypeAtIndex(0U),
                                                ".unpack");
-      return IC.replaceInstUsesWith(LI, IC.Builder->CreateInsertValue(
-        UndefValue::get(T), NewLoad, 0, Name));
+      return IC.ReplaceInstUsesWith(LI, IC.Builder->CreateInsertValue(
+        UndefValue::get(T), NewLoad, 0, LI.getName()));
     }
-
-    // We don't want to break loads with padding here as we'd loose
-    // the knowledge that padding exists for the rest of the pipeline.
-    const DataLayout &DL = IC.getDataLayout();
-    auto *SL = DL.getStructLayout(ST);
-    if (SL->hasPadding())
-      return nullptr;
-
-    auto Align = LI.getAlignment();
-    if (!Align)
-      Align = DL.getABITypeAlignment(ST);
-
-    SmallString<16> LoadName = Name;
-    LoadName += ".unpack";
-    SmallString<16> EltName = Name;
-    EltName += ".elt";
-
-    auto *Addr = LI.getPointerOperand();
-    auto *IdxType = Type::getInt32Ty(T->getContext());
-    auto *Zero = ConstantInt::get(IdxType, 0);
-
-    Value *V = UndefValue::get(T);
-    for (unsigned i = 0; i < NumElements; i++) {
-      Value *Indices[2] = {
-        Zero,
-        ConstantInt::get(IdxType, i),
-      };
-      auto *Ptr = IC.Builder->CreateInBoundsGEP(ST, Addr, makeArrayRef(Indices),
-                                                EltName);
-      auto EltAlign = MinAlign(Align, SL->getElementOffset(i));
-      auto *L = IC.Builder->CreateAlignedLoad(Ptr, EltAlign, LoadName);
-      V = IC.Builder->CreateInsertValue(V, L, i);
-    }
-
-    V->setName(Name);
-    return IC.replaceInstUsesWith(LI, V);
   }
 
   if (auto *AT = dyn_cast<ArrayType>(T)) {
@@ -578,7 +537,7 @@ static Instruction *unpackLoadToAggregate(InstCombiner &IC, LoadInst &LI) {
     if (AT->getNumElements() == 1) {
       LoadInst *NewLoad = combineLoadToNewType(IC, LI, AT->getElementType(),
                                                ".unpack");
-      return IC.replaceInstUsesWith(LI, IC.Builder->CreateInsertValue(
+      return IC.ReplaceInstUsesWith(LI, IC.Builder->CreateInsertValue(
         UndefValue::get(T), NewLoad, 0, LI.getName()));
     }
   }
@@ -645,7 +604,7 @@ static bool isObjectSizeLessThanOrEq(Value *V, uint64_t MaxSize,
       if (!GV->hasDefinitiveInitializer() || !GV->isConstant())
         return false;
 
-      uint64_t InitSize = DL.getTypeAllocSize(GV->getValueType());
+      uint64_t InitSize = DL.getTypeAllocSize(GV->getType()->getElementType());
       if (InitSize > MaxSize)
         return false;
       continue;
@@ -702,8 +661,10 @@ static bool canReplaceGEPIdxWithZero(InstCombiner &IC, GetElementPtrInst *GEPI,
     return false;
 
   SmallVector<Value *, 4> Ops(GEPI->idx_begin(), GEPI->idx_begin() + Idx);
-  Type *AllocTy =
-    GetElementPtrInst::getIndexedType(GEPI->getSourceElementType(), Ops);
+  Type *AllocTy = GetElementPtrInst::getIndexedType(
+      cast<PointerType>(GEPI->getOperand(0)->getType()->getScalarType())
+          ->getElementType(),
+      Ops);
   if (!AllocTy || !AllocTy->isSized())
     return false;
   const DataLayout &DL = IC.getDataLayout();
@@ -799,7 +760,7 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
   BasicBlock::iterator BBI(LI);
   AAMDNodes AATags;
   if (Value *AvailableVal =
-      FindAvailableLoadedValue(&LI, LI.getParent(), BBI,
+      FindAvailableLoadedValue(Op, LI.getParent(), BBI,
                                DefMaxInstsToScan, AA, &AATags)) {
     if (LoadInst *NLI = dyn_cast<LoadInst>(AvailableVal)) {
       unsigned KnownIDs[] = {
@@ -812,7 +773,7 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
       combineMetadata(NLI, &LI, KnownIDs);
     };
 
-    return replaceInstUsesWith(
+    return ReplaceInstUsesWith(
         LI, Builder->CreateBitOrPointerCast(AvailableVal, LI.getType(),
                                             LI.getName() + ".cast"));
   }
@@ -828,7 +789,7 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
       // CFG.
       new StoreInst(UndefValue::get(LI.getType()),
                     Constant::getNullValue(Op->getType()), &LI);
-      return replaceInstUsesWith(LI, UndefValue::get(LI.getType()));
+      return ReplaceInstUsesWith(LI, UndefValue::get(LI.getType()));
     }
   }
 
@@ -841,7 +802,7 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
     // unreachable instruction directly because we cannot modify the CFG.
     new StoreInst(UndefValue::get(LI.getType()),
                   Constant::getNullValue(Op->getType()), &LI);
-    return replaceInstUsesWith(LI, UndefValue::get(LI.getType()));
+    return ReplaceInstUsesWith(LI, UndefValue::get(LI.getType()));
   }
 
   if (Op->hasOneUse()) {
@@ -858,8 +819,8 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
     if (SelectInst *SI = dyn_cast<SelectInst>(Op)) {
       // load (select (Cond, &V1, &V2))  --> select(Cond, load &V1, load &V2).
       unsigned Align = LI.getAlignment();
-      if (isSafeToLoadUnconditionally(SI->getOperand(1), Align, SI) &&
-          isSafeToLoadUnconditionally(SI->getOperand(2), Align, SI)) {
+      if (isSafeToLoadUnconditionally(SI->getOperand(1), SI, Align) &&
+          isSafeToLoadUnconditionally(SI->getOperand(2), SI, Align)) {
         LoadInst *V1 = Builder->CreateLoad(SI->getOperand(1),
                                            SI->getOperand(1)->getName()+".val");
         LoadInst *V2 = Builder->CreateLoad(SI->getOperand(2),
@@ -941,45 +902,11 @@ static bool unpackStoreToAggregate(InstCombiner &IC, StoreInst &SI) {
 
   if (auto *ST = dyn_cast<StructType>(T)) {
     // If the struct only have one element, we unpack.
-    unsigned Count = ST->getNumElements();
-    if (Count == 1) {
+    if (ST->getNumElements() == 1) {
       V = IC.Builder->CreateExtractValue(V, 0);
       combineStoreToNewValue(IC, SI, V);
       return true;
     }
-
-    // We don't want to break loads with padding here as we'd loose
-    // the knowledge that padding exists for the rest of the pipeline.
-    const DataLayout &DL = IC.getDataLayout();
-    auto *SL = DL.getStructLayout(ST);
-    if (SL->hasPadding())
-      return false;
-
-    auto Align = SI.getAlignment();
-    if (!Align)
-      Align = DL.getABITypeAlignment(ST);
-
-    SmallString<16> EltName = V->getName();
-    EltName += ".elt";
-    auto *Addr = SI.getPointerOperand();
-    SmallString<16> AddrName = Addr->getName();
-    AddrName += ".repack";
-
-    auto *IdxType = Type::getInt32Ty(ST->getContext());
-    auto *Zero = ConstantInt::get(IdxType, 0);
-    for (unsigned i = 0; i < Count; i++) {
-      Value *Indices[2] = {
-        Zero,
-        ConstantInt::get(IdxType, i),
-      };
-      auto *Ptr = IC.Builder->CreateInBoundsGEP(ST, Addr, makeArrayRef(Indices),
-                                                AddrName);
-      auto *Val = IC.Builder->CreateExtractValue(V, i, EltName);
-      auto EltAlign = MinAlign(Align, SL->getElementOffset(i));
-      IC.Builder->CreateAlignedStore(Val, Ptr, EltAlign);
-    }
-
-    return true;
   }
 
   if (auto *AT = dyn_cast<ArrayType>(T)) {
@@ -1029,7 +956,7 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
 
   // Try to canonicalize the stored type.
   if (combineStoreToValueType(*this, SI))
-    return eraseInstFromFunction(SI);
+    return EraseInstFromFunction(SI);
 
   // Attempt to improve the alignment.
   unsigned KnownAlign = getOrEnforceKnownAlignment(
@@ -1045,7 +972,7 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
 
   // Try to canonicalize the stored type.
   if (unpackStoreToAggregate(*this, SI))
-    return eraseInstFromFunction(SI);
+    return EraseInstFromFunction(SI);
 
   // Replace GEP indices if possible.
   if (Instruction *NewGEPI = replaceGEPIdxWithZero(*this, Ptr, SI)) {
@@ -1053,19 +980,19 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
       return &SI;
   }
 
-  // Don't hack volatile/ordered stores.
-  // FIXME: Some bits are legal for ordered atomic stores; needs refactoring.
-  if (!SI.isUnordered()) return nullptr;
+  // Don't hack volatile/atomic stores.
+  // FIXME: Some bits are legal for atomic stores; needs refactoring.
+  if (!SI.isSimple()) return nullptr;
 
   // If the RHS is an alloca with a single use, zapify the store, making the
   // alloca dead.
   if (Ptr->hasOneUse()) {
     if (isa<AllocaInst>(Ptr))
-      return eraseInstFromFunction(SI);
+      return EraseInstFromFunction(SI);
     if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Ptr)) {
       if (isa<AllocaInst>(GEP->getOperand(0))) {
         if (GEP->getOperand(0)->hasOneUse())
-          return eraseInstFromFunction(SI);
+          return EraseInstFromFunction(SI);
       }
     }
   }
@@ -1087,11 +1014,11 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
 
     if (StoreInst *PrevSI = dyn_cast<StoreInst>(BBI)) {
       // Prev store isn't volatile, and stores to the same location?
-      if (PrevSI->isUnordered() && equivalentAddressValues(PrevSI->getOperand(1),
+      if (PrevSI->isSimple() && equivalentAddressValues(PrevSI->getOperand(1),
                                                         SI.getOperand(1))) {
         ++NumDeadStore;
         ++BBI;
-        eraseInstFromFunction(*PrevSI);
+        EraseInstFromFunction(*PrevSI);
         continue;
       }
       break;
@@ -1101,10 +1028,9 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
     // the pointer we're loading and is producing the pointer we're storing,
     // then *this* store is dead (X = load P; store X -> P).
     if (LoadInst *LI = dyn_cast<LoadInst>(BBI)) {
-      if (LI == Val && equivalentAddressValues(LI->getOperand(0), Ptr)) {
-        assert(SI.isUnordered() && "can't eliminate ordering operation");
-        return eraseInstFromFunction(SI);
-      }
+      if (LI == Val && equivalentAddressValues(LI->getOperand(0), Ptr) &&
+          LI->isSimple())
+        return EraseInstFromFunction(SI);
 
       // Otherwise, this is a load from some other location.  Stores before it
       // may not be dead.
@@ -1128,11 +1054,7 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
 
   // store undef, Ptr -> noop
   if (isa<UndefValue>(Val))
-    return eraseInstFromFunction(SI);
-
-  // The code below needs to be audited and adjusted for unordered atomics
-  if (!SI.isSimple())
-    return nullptr;
+    return EraseInstFromFunction(SI);
 
   // If this store is the last instruction in the basic block (possibly
   // excepting debug info instructions), and if the block ends with an
@@ -1280,7 +1202,7 @@ bool InstCombiner::SimplifyStoreAtEndOfBlock(StoreInst &SI) {
   }
 
   // Nuke the old stores.
-  eraseInstFromFunction(SI);
-  eraseInstFromFunction(*OtherStore);
+  EraseInstFromFunction(SI);
+  EraseInstFromFunction(*OtherStore);
   return true;
 }

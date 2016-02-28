@@ -236,6 +236,25 @@ namespace llvm {
   /// are lifetime markers.
   bool onlyUsedByLifetimeMarkers(const Value *V);
 
+  /// isDereferenceablePointer - Return true if this is always a dereferenceable
+  /// pointer. If the context instruction is specified perform context-sensitive
+  /// analysis and return true if the pointer is dereferenceable at the
+  /// specified instruction.
+  bool isDereferenceablePointer(const Value *V, const DataLayout &DL,
+                                const Instruction *CtxI = nullptr,
+                                const DominatorTree *DT = nullptr,
+                                const TargetLibraryInfo *TLI = nullptr);
+
+  /// Returns true if V is always a dereferenceable pointer with alignment
+  /// greater or equal than requested. If the context instruction is specified
+  /// performs context-sensitive analysis and returns true if the pointer is
+  /// dereferenceable at the specified instruction.
+  bool isDereferenceableAndAlignedPointer(const Value *V, unsigned Align,
+                                          const DataLayout &DL,
+                                          const Instruction *CtxI = nullptr,
+                                          const DominatorTree *DT = nullptr,
+                                          const TargetLibraryInfo *TLI = nullptr);
+
   /// isSafeToSpeculativelyExecute - Return true if the instruction does not
   /// have any effects besides calculating the result and does not have
   /// undefined behavior.
@@ -267,7 +286,7 @@ namespace llvm {
 
   /// Returns true if the result or effects of the given instructions \p I
   /// depend on or influence global memory.
-  /// Memory dependence arises for example if the instruction reads from
+  /// Memory dependence arises for example if the the instruction reads from
   /// memory or may produce effects or undefined behaviour. Memory dependent
   /// instructions generally cannot be reorderd with respect to other memory
   /// dependent instructions or moved into non-dominated basic blocks.
@@ -393,11 +412,6 @@ namespace llvm {
     bool Ordered;               /// When implementing this min/max pattern as
                                 /// fcmp; select, does the fcmp have to be
                                 /// ordered?
-
-    /// \brief Return true if \p SPF is a min or a max pattern.
-    static bool isMinOrMax(SelectPatternFlavor SPF) {
-      return !(SPF == SPF_UNKNOWN || SPF == SPF_ABS || SPF == SPF_NABS);
-    }
   };
   /// Pattern match integer [SU]MIN, [SU]MAX and ABS idioms, returning the kind
   /// and providing the out parameter results if we successfully match.
@@ -430,10 +444,7 @@ namespace llvm {
   ///  T | T | F
   ///  F | T | T
   /// (A)
-  bool isImpliedCondition(Value *LHS, Value *RHS, const DataLayout &DL,
-                          unsigned Depth = 0, AssumptionCache *AC = nullptr,
-                          const Instruction *CxtI = nullptr,
-                          const DominatorTree *DT = nullptr);
+  bool isImpliedCondition(Value *LHS, Value *RHS);
 } // end namespace llvm
 
 #endif

@@ -591,12 +591,9 @@ namespace clang {
       /// SM_SLOC_BUFFER_ENTRY record or a SM_SLOC_FILE_ENTRY with an
       /// overridden buffer.
       SM_SLOC_BUFFER_BLOB = 3,
-      /// \brief Describes a zlib-compressed blob that contains the data for
-      /// a buffer entry.
-      SM_SLOC_BUFFER_BLOB_COMPRESSED = 4,
       /// \brief Describes a source location entry (SLocEntry) for a
       /// macro expansion.
-      SM_SLOC_EXPANSION_ENTRY = 5
+      SM_SLOC_EXPANSION_ENTRY = 4
     };
 
     /// \brief Record types used within a preprocessor block.
@@ -910,9 +907,7 @@ namespace clang {
       /// \brief A DecayedType record.
       TYPE_DECAYED               = 41,
       /// \brief An AdjustedType record.
-      TYPE_ADJUSTED              = 42,
-      /// \brief A PipeType record.
-      TYPE_PIPE                  = 43
+      TYPE_ADJUSTED              = 42
     };
 
     /// \brief The type IDs for special types constructed by semantic
@@ -990,19 +985,13 @@ namespace clang {
 
       /// \brief The internal '__make_integer_seq' template.
       PREDEF_DECL_MAKE_INTEGER_SEQ_ID = 13,
-
-      /// \brief The internal '__NSConstantString' typedef.
-      PREDEF_DECL_CF_CONSTANT_STRING_ID = 14,
-
-      /// \brief The internal '__NSConstantString' tag type.
-      PREDEF_DECL_CF_CONSTANT_STRING_TAG_ID = 15,
     };
 
     /// \brief The number of declaration IDs that are predefined.
     ///
     /// For more information about predefined declarations, see the
     /// \c PredefinedDeclIDs type and the PREDEF_DECL_*_ID constants.
-    const unsigned int NUM_PREDEF_DECL_IDS = 16;
+    const unsigned int NUM_PREDEF_DECL_IDS = 14;
 
     /// \brief Record code for a list of local redeclarations of a declaration.
     const unsigned int LOCAL_REDECLARATIONS = 50;
@@ -1163,8 +1152,6 @@ namespace clang {
       DECL_EMPTY,
       /// \brief An ObjCTypeParamDecl record.
       DECL_OBJC_TYPE_PARAM,
-      /// \brief An OMPCapturedExprDecl record.
-      DECL_OMP_CAPTUREDEXPR
     };
 
     /// \brief Record codes for each kind of statement or expression.
@@ -1426,7 +1413,6 @@ namespace clang {
 
       // Microsoft
       EXPR_CXX_PROPERTY_REF_EXPR, // MSPropertyRefExpr
-      EXPR_CXX_PROPERTY_SUBSCRIPT_EXPR, // MSPropertySubscriptExpr
       EXPR_CXX_UUIDOF_EXPR,       // CXXUuidofExpr (of expr).
       EXPR_CXX_UUIDOF_TYPE,       // CXXUuidofExpr (of type).
       STMT_SEH_LEAVE,             // SEHLeaveStmt
@@ -1456,17 +1442,10 @@ namespace clang {
       STMT_OMP_ATOMIC_DIRECTIVE,
       STMT_OMP_TARGET_DIRECTIVE,
       STMT_OMP_TARGET_DATA_DIRECTIVE,
-      STMT_OMP_TARGET_ENTER_DATA_DIRECTIVE,
-      STMT_OMP_TARGET_EXIT_DATA_DIRECTIVE,
-      STMT_OMP_TARGET_PARALLEL_DIRECTIVE,
-      STMT_OMP_TARGET_PARALLEL_FOR_DIRECTIVE,
       STMT_OMP_TEAMS_DIRECTIVE,
       STMT_OMP_TASKGROUP_DIRECTIVE,
       STMT_OMP_CANCELLATION_POINT_DIRECTIVE,
       STMT_OMP_CANCEL_DIRECTIVE,
-      STMT_OMP_TASKLOOP_DIRECTIVE,
-      STMT_OMP_TASKLOOP_SIMD_DIRECTIVE,
-      STMT_OMP_DISTRIBUTE_DIRECTIVE,
       EXPR_OMP_ARRAY_SECTION,
 
       // ARC

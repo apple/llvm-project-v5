@@ -129,7 +129,7 @@ void MCExpr::print(raw_ostream &OS, const MCAsmInfo *MAI) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void MCExpr::dump() const {
+void MCExpr::dump() const {
   dbgs() << *this;
   dbgs() << '\n';
 }
@@ -178,11 +178,8 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_Invalid: return "<<invalid>>";
   case VK_None: return "<<none>>";
 
-  case VK_DTPOFF: return "DTPOFF";
-  case VK_DTPREL: return "DTPREL";
   case VK_GOT: return "GOT";
   case VK_GOTOFF: return "GOTOFF";
-  case VK_GOTREL: return "GOTREL";
   case VK_GOTPCREL: return "GOTPCREL";
   case VK_GOTTPOFF: return "GOTTPOFF";
   case VK_INDNTPOFF: return "INDNTPOFF";
@@ -193,7 +190,7 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_TLSLD: return "TLSLD";
   case VK_TLSLDM: return "TLSLDM";
   case VK_TPOFF: return "TPOFF";
-  case VK_TPREL: return "TPREL";
+  case VK_DTPOFF: return "DTPOFF";
   case VK_TLVP: return "TLVP";
   case VK_TLVPPAGE: return "TLVPPAGE";
   case VK_TLVPPAGEOFF: return "TLVPPAGEOFF";
@@ -230,6 +227,7 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_PPC_TOC_HI: return "toc@h";
   case VK_PPC_TOC_HA: return "toc@ha";
   case VK_PPC_DTPMOD: return "dtpmod";
+  case VK_PPC_TPREL: return "tprel";
   case VK_PPC_TPREL_LO: return "tprel@l";
   case VK_PPC_TPREL_HI: return "tprel@h";
   case VK_PPC_TPREL_HA: return "tprel@ha";
@@ -237,6 +235,7 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_PPC_TPREL_HIGHERA: return "tprel@highera";
   case VK_PPC_TPREL_HIGHEST: return "tprel@highest";
   case VK_PPC_TPREL_HIGHESTA: return "tprel@highesta";
+  case VK_PPC_DTPREL: return "dtprel";
   case VK_PPC_DTPREL_LO: return "dtprel@l";
   case VK_PPC_DTPREL_HI: return "dtprel@h";
   case VK_PPC_DTPREL_HA: return "dtprel@ha";
@@ -301,7 +300,8 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_Hexagon_LD_PLT: return "LDPLT";
   case VK_Hexagon_IE: return "IE";
   case VK_Hexagon_IE_GOT: return "IEGOT";
-  case VK_WebAssembly_FUNCTION: return "FUNCTION";
+  case VK_TPREL: return "tprel";
+  case VK_DTPREL: return "dtprel";
   }
   llvm_unreachable("Invalid variant kind");
 }
@@ -309,11 +309,8 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
 MCSymbolRefExpr::VariantKind
 MCSymbolRefExpr::getVariantKindForName(StringRef Name) {
   return StringSwitch<VariantKind>(Name.lower())
-    .Case("dtprel", VK_DTPREL)
-    .Case("dtpoff", VK_DTPOFF)
     .Case("got", VK_GOT)
     .Case("gotoff", VK_GOTOFF)
-    .Case("gotrel", VK_GOTREL)
     .Case("gotpcrel", VK_GOTPCREL)
     .Case("gottpoff", VK_GOTTPOFF)
     .Case("indntpoff", VK_INDNTPOFF)
@@ -324,7 +321,7 @@ MCSymbolRefExpr::getVariantKindForName(StringRef Name) {
     .Case("tlsld", VK_TLSLD)
     .Case("tlsldm", VK_TLSLDM)
     .Case("tpoff", VK_TPOFF)
-    .Case("tprel", VK_TPREL)
+    .Case("dtpoff", VK_DTPOFF)
     .Case("tlvp", VK_TLVP)
     .Case("tlvppage", VK_TLVPPAGE)
     .Case("tlvppageoff", VK_TLVPPAGEOFF)
@@ -353,6 +350,7 @@ MCSymbolRefExpr::getVariantKindForName(StringRef Name) {
     .Case("toc@ha", VK_PPC_TOC_HA)
     .Case("tls", VK_PPC_TLS)
     .Case("dtpmod", VK_PPC_DTPMOD)
+    .Case("tprel", VK_PPC_TPREL)
     .Case("tprel@l", VK_PPC_TPREL_LO)
     .Case("tprel@h", VK_PPC_TPREL_HI)
     .Case("tprel@ha", VK_PPC_TPREL_HA)
@@ -360,6 +358,7 @@ MCSymbolRefExpr::getVariantKindForName(StringRef Name) {
     .Case("tprel@highera", VK_PPC_TPREL_HIGHERA)
     .Case("tprel@highest", VK_PPC_TPREL_HIGHEST)
     .Case("tprel@highesta", VK_PPC_TPREL_HIGHESTA)
+    .Case("dtprel", VK_PPC_DTPREL)
     .Case("dtprel@l", VK_PPC_DTPREL_LO)
     .Case("dtprel@h", VK_PPC_DTPREL_HI)
     .Case("dtprel@ha", VK_PPC_DTPREL_HA)
@@ -383,13 +382,6 @@ MCSymbolRefExpr::getVariantKindForName(StringRef Name) {
     .Case("got@tlsld@l", VK_PPC_GOT_TLSLD_LO)
     .Case("got@tlsld@h", VK_PPC_GOT_TLSLD_HI)
     .Case("got@tlsld@ha", VK_PPC_GOT_TLSLD_HA)
-    .Case("gdgot", VK_Hexagon_GD_GOT)
-    .Case("gdplt", VK_Hexagon_GD_PLT)
-    .Case("iegot", VK_Hexagon_IE_GOT)
-    .Case("ie", VK_Hexagon_IE)
-    .Case("ldgot", VK_Hexagon_LD_GOT)
-    .Case("ldplt", VK_Hexagon_LD_PLT)
-    .Case("pcrel", VK_Hexagon_PCREL)
     .Case("none", VK_ARM_NONE)
     .Case("got_prel", VK_ARM_GOT_PREL)
     .Case("target1", VK_ARM_TARGET1)

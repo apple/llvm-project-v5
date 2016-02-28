@@ -257,16 +257,18 @@ public:
   class_iterator classes_end() { return SchedClasses.end(); }
   const_class_iterator classes_end() const { return SchedClasses.end(); }
   iterator_range<class_iterator> classes() {
-   return make_range(classes_begin(), classes_end());
+   return iterator_range<class_iterator>(classes_begin(), classes_end());
   }
   iterator_range<const_class_iterator> classes() const {
-   return make_range(classes_begin(), classes_end());
+   return iterator_range<const_class_iterator>(classes_begin(), classes_end());
   }
   iterator_range<class_iterator> explicit_classes() {
-    return make_range(classes_begin(), classes_begin() + NumInstrSchedClasses);
+    return iterator_range<class_iterator>(
+        classes_begin(), classes_begin() + NumInstrSchedClasses);
   }
   iterator_range<const_class_iterator> explicit_classes() const {
-    return make_range(classes_begin(), classes_begin() + NumInstrSchedClasses);
+    return iterator_range<const_class_iterator>(
+        classes_begin(), classes_begin() + NumInstrSchedClasses);
   }
 
   Record *getModelOrItinDef(Record *ProcDef) const {
@@ -300,7 +302,6 @@ public:
   typedef std::vector<CodeGenProcModel>::const_iterator ProcIter;
   ProcIter procModelBegin() const { return ProcModels.begin(); }
   ProcIter procModelEnd() const { return ProcModels.end(); }
-  ArrayRef<CodeGenProcModel> procModels() const { return ProcModels; }
 
   // Return true if any processors have itineraries.
   bool hasItineraries() const;
@@ -354,7 +355,6 @@ public:
   typedef std::vector<CodeGenSchedClass>::const_iterator SchedClassIter;
   SchedClassIter schedClassBegin() const { return SchedClasses.begin(); }
   SchedClassIter schedClassEnd() const { return SchedClasses.end(); }
-  ArrayRef<CodeGenSchedClass> schedClasses() const { return SchedClasses; }
 
   unsigned numInstrSchedClasses() const { return NumInstrSchedClasses; }
 

@@ -69,7 +69,7 @@ public:
   const SystemZTargetLowering *getTargetLowering() const override {
     return &TLInfo;
   }
-  const SelectionDAGTargetInfo *getSelectionDAGInfo() const override {
+  const TargetSelectionDAGInfo *getSelectionDAGInfo() const override {
     return &TSInfo;
   }
 

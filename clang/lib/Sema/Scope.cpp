@@ -130,7 +130,7 @@ void Scope::mergeNRVOIntoParent() {
     getParent()->addNRVOCandidate(NRVO.getPointer());
 }
 
-LLVM_DUMP_METHOD void Scope::dump() const { dumpImpl(llvm::errs()); }
+void Scope::dump() const { dumpImpl(llvm::errs()); }
 
 void Scope::dumpImpl(raw_ostream &OS) const {
   unsigned Flags = getFlags();

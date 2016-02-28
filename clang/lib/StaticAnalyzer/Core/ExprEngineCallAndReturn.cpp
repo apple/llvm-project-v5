@@ -37,12 +37,13 @@ STATISTIC(NumInlinedCalls,
 STATISTIC(NumReachedInlineCountMax,
   "The # of times we reached inline count maximum");
 
-void ExprEngine::processCallEnter(NodeBuilderContext& BC, CallEnter CE,
-                                  ExplodedNode *Pred) {
+void ExprEngine::processCallEnter(CallEnter CE, ExplodedNode *Pred) {
   // Get the entry block in the CFG of the callee.
   const StackFrameContext *calleeCtx = CE.getCalleeContext();
   PrettyStackTraceLocationContext CrashInfo(calleeCtx);
-  const CFGBlock *Entry = CE.getEntry();
+
+  const CFG *CalleeCFG = calleeCtx->getCFG();
+  const CFGBlock *Entry = &(CalleeCFG->getEntry());
 
   // Validate the CFG.
   assert(Entry->empty());
@@ -56,16 +57,12 @@ void ExprEngine::processCallEnter(NodeBuilderContext& BC, CallEnter CE,
 
   ProgramStateRef state = Pred->getState();
 
-  // Construct a new node, notify checkers that analysis of the function has
-  // begun, and add the resultant nodes to the worklist.
+  // Construct a new node and add it to the worklist.
   bool isNew;
   ExplodedNode *Node = G.getNode(Loc, state, false, &isNew);
   Node->addPredecessor(Pred, G);
-  if (isNew) {
-    ExplodedNodeSet DstBegin;
-    processBeginOfFunction(BC, Node, DstBegin, Loc);
-    Engine.enqueue(DstBegin);
-  }
+  if (isNew)
+    Engine.getWorkList()->enqueue(Node);
 }
 
 // Find the last statement on the path to the exploded node and the
@@ -382,6 +379,22 @@ void ExprEngine::examineStackFrames(const Decl *D, const LocationContext *LCtx,
     }
     LCtx = LCtx->getParent();
   }
+
+}
+
+static bool IsInStdNamespace(const FunctionDecl *FD) {
+  const DeclContext *DC = FD->getEnclosingNamespaceContext();
+  const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(DC);
+  if (!ND)
+    return false;
+
+  while (const DeclContext *Parent = ND->getParent()) {
+    if (!isa<NamespaceDecl>(Parent))
+      break;
+    ND = cast<NamespaceDecl>(Parent);
+  }
+
+  return ND->isStdNamespace();
 }
 
 // The GDM component containing the dynamic dispatch bifurcation info. When
@@ -395,8 +408,7 @@ namespace {
     DynamicDispatchModeInlined = 1,
     DynamicDispatchModeConservative
   };
-} // end anonymous namespace
-
+}
 REGISTER_TRAIT_WITH_PROGRAMSTATE(DynamicDispatchBifurcationMap,
                                  CLANG_ENTO_PROGRAMSTATE_MAP(const MemRegion *,
                                                              unsigned))
@@ -409,8 +421,7 @@ bool ExprEngine::inlineCall(const CallEvent &Call, const Decl *D,
   const LocationContext *CurLC = Pred->getLocationContext();
   const StackFrameContext *CallerSFC = CurLC->getCurrentStackFrame();
   const LocationContext *ParentOfCallee = CallerSFC;
-  if (Call.getKind() == CE_Block &&
-      !cast<BlockCall>(Call).isConversionFromLambda()) {
+  if (Call.getKind() == CE_Block) {
     const BlockDataRegion *BR = cast<BlockCall>(Call).getBlockRegion();
     assert(BR && "If we have the block definition we should have its region");
     AnalysisDeclContext *BlockCtx = AMgr.getAnalysisDeclContext(D);
@@ -428,6 +439,7 @@ bool ExprEngine::inlineCall(const CallEvent &Call, const Decl *D,
     CalleeADC->getStackFrame(ParentOfCallee, CallE,
                              currBldrCtx->getBlock(),
                              currStmtIdx);
+
 
   CallEnter Loc(CallE, CalleeSFC, CurLC);
 
@@ -748,7 +760,7 @@ static bool mayInlineDecl(AnalysisDeclContext *CalleeADC,
       // Conditionally control the inlining of C++ standard library functions.
       if (!Opts.mayInlineCXXStandardLibrary())
         if (Ctx.getSourceManager().isInSystemHeader(FD->getLocation()))
-          if (AnalysisDeclContext::isInStdNamespace(FD))
+          if (IsInStdNamespace(FD))
             return false;
 
       // Conditionally control the inlining of methods on objects that look
@@ -765,6 +777,7 @@ static bool mayInlineDecl(AnalysisDeclContext *CalleeADC,
       if (!Opts.mayInlineCXXSharedPtrDtor())
         if (isCXXSharedPtrDtor(FD))
           return false;
+
     }
   }
 
@@ -974,10 +987,13 @@ void ExprEngine::BifurcateCall(const MemRegion *BifurReg,
   conservativeEvalCall(Call, Bldr, Pred, NoIState);
 
   NumOfDynamicDispatchPathSplits++;
+  return;
 }
+
 
 void ExprEngine::VisitReturnStmt(const ReturnStmt *RS, ExplodedNode *Pred,
                                  ExplodedNodeSet &Dst) {
+
   ExplodedNodeSet dstPreVisit;
   getCheckerManager().runCheckersForPreStmt(dstPreVisit, Pred, RS, *this);
 

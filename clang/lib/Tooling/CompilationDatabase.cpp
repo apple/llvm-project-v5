@@ -139,8 +139,9 @@ private:
       ;
     }
 
-    for (const driver::Action *AI : A->inputs())
-      runImpl(AI, CollectChildren);
+    for (driver::ActionList::const_iterator I = A->begin(), E = A->end();
+         I != E; ++I)
+      runImpl(*I, CollectChildren);
   }
 };
 

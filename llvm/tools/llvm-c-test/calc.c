@@ -14,6 +14,7 @@
 \*===----------------------------------------------------------------------===*/
 
 #include "llvm-c-test.h"
+#include "llvm-c/Core.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -139,9 +140,9 @@ static void handle_line(char **tokens, int ntokens) {
   LLVMDisposeModule(M);
 }
 
-int llvm_calc(void) {
+int calc(void) {
 
-  llvm_tokenize_stdin(handle_line);
+  tokenize_stdin(handle_line);
 
   return 0;
 }

@@ -1017,8 +1017,8 @@ The following type trait primitives are supported by Clang:
   ``argtypes...`` such that no non-trivial functions are called as part of
   that initialization.  This trait is required to implement the C++11 standard
   library.
-* ``__is_destructible`` (MSVC 2013)
-* ``__is_nothrow_destructible`` (MSVC 2013)
+* ``__is_destructible`` (MSVC 2013): partially implemented
+* ``__is_nothrow_destructible`` (MSVC 2013): partially implemented
 * ``__is_nothrow_assignable`` (MSVC 2013, clang)
 * ``__is_constructible`` (MSVC 2013, clang)
 * ``__is_nothrow_constructible`` (MSVC 2013, clang)
@@ -1728,24 +1728,6 @@ convert their operands before performing the operation.
 
 Query for this feature with ``__has_builtin(__builtin_add_overflow)``, etc.
 
-Floating point builtins
----------------------------------------
-
-``__builtin_canonicalize``
---------------------------
-
-.. code-block:: c
-
-   double __builtin_canonicalize(double);
-   float __builtin_canonicalizef(float);
-   long double__builtin_canonicalizel(long double);
-
-Returns the platform specific canonical encoding of a floating point
-number. This canonicalization is useful for implementing certain
-numeric primitives such as frexp. See `LLVM canonicalize intrinsic
-<http://llvm.org/docs/LangRef.html#llvm-canonicalize-intrinsic>`_ for
-more information on the semantics.
-
 .. _langext-__c11_atomic:
 
 __c11_atomic builtins
@@ -1875,7 +1857,7 @@ in the `ARM C Language Extensions Release 2.0
 <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0053c/IHI0053C_acle_2_0.pdf>`_.
 Note that these intrinsics are implemented as motion barriers that block
 reordering of memory accesses and side effect instructions. Other instructions
-like simple arithmetic may be reordered around the intrinsic. If you expect to
+like simple arithmatic may be reordered around the intrinsic. If you expect to
 have no reordering at all, use inline assembly instead.
 
 X86/X86-64 Language Extensions

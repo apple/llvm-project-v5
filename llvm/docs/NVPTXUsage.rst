@@ -395,7 +395,7 @@ JIT compiling a PTX string to a device binary:
 .. code-block:: c++
 
     CUmodule module;
-    CUfunction function;
+    CUfunction funcion;
 
     // JIT compile a null-terminated PTX string
     cuModuleLoadData(&module, (void*)PTXString);

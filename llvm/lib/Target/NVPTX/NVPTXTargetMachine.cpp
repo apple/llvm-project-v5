@@ -143,20 +143,14 @@ public:
   void addOptimizedRegAlloc(FunctionPass *RegAllocPass) override;
 
 private:
-  // If the opt level is aggressive, add GVN; otherwise, add EarlyCSE. This
-  // function is only called in opt mode.
+  // if the opt level is aggressive, add GVN; otherwise, add EarlyCSE.
   void addEarlyCSEOrGVNPass();
-
-  // Add passes that propagate special memory spaces.
-  void addMemorySpaceInferencePasses();
-
-  // Add passes that perform straight-line scalar optimizations.
-  void addStraightLineScalarOptimizationPasses();
 };
 } // end anonymous namespace
 
 TargetPassConfig *NVPTXTargetMachine::createPassConfig(PassManagerBase &PM) {
-  return new NVPTXPassConfig(this, PM);
+  NVPTXPassConfig *PassConfig = new NVPTXPassConfig(this, PM);
+  return PassConfig;
 }
 
 TargetIRAnalysis NVPTXTargetMachine::getTargetIRAnalysis() {
@@ -172,7 +166,22 @@ void NVPTXPassConfig::addEarlyCSEOrGVNPass() {
     addPass(createEarlyCSEPass());
 }
 
-void NVPTXPassConfig::addMemorySpaceInferencePasses() {
+void NVPTXPassConfig::addIRPasses() {
+  // The following passes are known to not play well with virtual regs hanging
+  // around after register allocation (which in our case, is *all* registers).
+  // We explicitly disable them here.  We do, however, need some functionality
+  // of the PrologEpilogCodeInserter pass, so we emulate that behavior in the
+  // NVPTXPrologEpilog pass (see NVPTXPrologEpilogPass.cpp).
+  disablePass(&PrologEpilogCodeInserterID);
+  disablePass(&MachineCopyPropagationID);
+  disablePass(&TailDuplicateID);
+
+  addPass(createNVVMReflectPass());
+  addPass(createNVPTXImageOptimizerPass());
+  addPass(createNVPTXAssignValidGlobalNamesPass());
+  addPass(createGenericToNVVMPass());
+
+  // === Propagate special address spaces ===
   addPass(createNVPTXLowerKernelArgsPass(&getNVPTXTargetMachine()));
   // NVPTXLowerKernelArgs emits alloca for byval parameters which can often
   // be eliminated by SROA.
@@ -183,9 +192,8 @@ void NVPTXPassConfig::addMemorySpaceInferencePasses() {
   // them unused. We could remove dead code in an ad-hoc manner, but that
   // requires manual work and might be error-prone.
   addPass(createDeadCodeEliminationPass());
-}
 
-void NVPTXPassConfig::addStraightLineScalarOptimizationPasses() {
+  // === Straight-line scalar optimizations ===
   addPass(createSeparateConstOffsetFromGEPPass());
   addPass(createSpeculativeExecutionPass());
   // ReassociateGEPs exposes more opportunites for SLSR. See
@@ -200,28 +208,6 @@ void NVPTXPassConfig::addStraightLineScalarOptimizationPasses() {
   // NaryReassociate on GEPs creates redundant common expressions, so run
   // EarlyCSE after it.
   addPass(createEarlyCSEPass());
-}
-
-void NVPTXPassConfig::addIRPasses() {
-  // The following passes are known to not play well with virtual regs hanging
-  // around after register allocation (which in our case, is *all* registers).
-  // We explicitly disable them here.  We do, however, need some functionality
-  // of the PrologEpilogCodeInserter pass, so we emulate that behavior in the
-  // NVPTXPrologEpilog pass (see NVPTXPrologEpilogPass.cpp).
-  disablePass(&PrologEpilogCodeInserterID);
-  disablePass(&MachineCopyPropagationID);
-  disablePass(&TailDuplicateID);
-
-  addPass(createNVVMReflectPass());
-  if (getOptLevel() != CodeGenOpt::None)
-    addPass(createNVPTXImageOptimizerPass());
-  addPass(createNVPTXAssignValidGlobalNamesPass());
-  addPass(createGenericToNVVMPass());
-
-  if (getOptLevel() != CodeGenOpt::None) {
-    addMemorySpaceInferencePasses();
-    addStraightLineScalarOptimizationPasses();
-  }
 
   // === LSR and other generic IR passes ===
   TargetPassConfig::addIRPasses();
@@ -237,8 +223,7 @@ void NVPTXPassConfig::addIRPasses() {
   //   %1 = shl %a, 2
   //
   // but EarlyCSE can do neither of them.
-  if (getOptLevel() != CodeGenOpt::None)
-    addEarlyCSEOrGVNPass();
+  addEarlyCSEOrGVNPass();
 }
 
 bool NVPTXPassConfig::addInstSelector() {

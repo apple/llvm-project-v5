@@ -14,6 +14,7 @@
 #ifndef LLVM_IR_VALUE_H
 #define LLVM_IR_VALUE_H
 
+#include "llvm-c/Core.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/Use.h"
 #include "llvm/Support/CBindingWrapping.h"
@@ -27,7 +28,6 @@ class Argument;
 class AssemblyAnnotationWriter;
 class BasicBlock;
 class Constant;
-class ConstantData;
 class DataLayout;
 class Function;
 class GlobalAlias;
@@ -107,11 +107,10 @@ protected:
   enum : unsigned { NumUserOperandsBits = 28 };
   unsigned NumUserOperands : NumUserOperandsBits;
 
-  // Use the same type as the bitfield above so that MSVC will pack them.
-  unsigned IsUsedByMD : 1;
-  unsigned HasName : 1;
-  unsigned HasHungOffUses : 1;
-  unsigned HasDescriptor : 1;
+  bool IsUsedByMD : 1;
+  bool HasName : 1;
+  bool HasHungOffUses : 1;
+  bool HasDescriptor : 1;
 
 private:
   template <typename UseT> // UseT == 'Use' or 'const Use'
@@ -275,93 +274,36 @@ public:
   //----------------------------------------------------------------------
   // Methods for handling the chain of uses of this Value.
   //
-  // Materializing a function can introduce new uses, so these methods come in
-  // two variants:
-  // The methods that start with materialized_ check the uses that are
-  // currently known given which functions are materialized. Be very careful
-  // when using them since you might not get all uses.
-  // The methods that don't start with materialized_ assert that modules is
-  // fully materialized.
-  void assertModuleIsMaterialized() const;
+  bool               use_empty() const { return UseList == nullptr; }
 
-  bool use_empty() const {
-    assertModuleIsMaterialized();
-    return UseList == nullptr;
-  }
-
-  typedef use_iterator_impl<Use> use_iterator;
+  typedef use_iterator_impl<Use>       use_iterator;
   typedef use_iterator_impl<const Use> const_use_iterator;
-  use_iterator materialized_use_begin() { return use_iterator(UseList); }
-  const_use_iterator materialized_use_begin() const {
-    return const_use_iterator(UseList);
-  }
-  use_iterator use_begin() {
-    assertModuleIsMaterialized();
-    return materialized_use_begin();
-  }
-  const_use_iterator use_begin() const {
-    assertModuleIsMaterialized();
-    return materialized_use_begin();
-  }
-  use_iterator use_end() { return use_iterator(); }
-  const_use_iterator use_end() const { return const_use_iterator(); }
-  iterator_range<use_iterator> materialized_uses() {
-    return make_range(materialized_use_begin(), use_end());
-  }
-  iterator_range<const_use_iterator> materialized_uses() const {
-    return make_range(materialized_use_begin(), use_end());
-  }
+  use_iterator       use_begin()       { return use_iterator(UseList); }
+  const_use_iterator use_begin() const { return const_use_iterator(UseList); }
+  use_iterator       use_end()         { return use_iterator();   }
+  const_use_iterator use_end()   const { return const_use_iterator();   }
   iterator_range<use_iterator> uses() {
-    assertModuleIsMaterialized();
-    return materialized_uses();
+    return iterator_range<use_iterator>(use_begin(), use_end());
   }
   iterator_range<const_use_iterator> uses() const {
-    assertModuleIsMaterialized();
-    return materialized_uses();
+    return iterator_range<const_use_iterator>(use_begin(), use_end());
   }
 
-  bool user_empty() const {
-    assertModuleIsMaterialized();
-    return UseList == nullptr;
-  }
+  bool               user_empty() const { return UseList == nullptr; }
 
-  typedef user_iterator_impl<User> user_iterator;
+  typedef user_iterator_impl<User>       user_iterator;
   typedef user_iterator_impl<const User> const_user_iterator;
-  user_iterator materialized_user_begin() { return user_iterator(UseList); }
-  const_user_iterator materialized_user_begin() const {
-    return const_user_iterator(UseList);
-  }
-  user_iterator user_begin() {
-    assertModuleIsMaterialized();
-    return materialized_user_begin();
-  }
-  const_user_iterator user_begin() const {
-    assertModuleIsMaterialized();
-    return materialized_user_begin();
-  }
-  user_iterator user_end() { return user_iterator(); }
-  const_user_iterator user_end() const { return const_user_iterator(); }
-  User *user_back() {
-    assertModuleIsMaterialized();
-    return *materialized_user_begin();
-  }
-  const User *user_back() const {
-    assertModuleIsMaterialized();
-    return *materialized_user_begin();
-  }
-  iterator_range<user_iterator> materialized_users() {
-    return make_range(materialized_user_begin(), user_end());
-  }
-  iterator_range<const_user_iterator> materialized_users() const {
-    return make_range(materialized_user_begin(), user_end());
-  }
+  user_iterator       user_begin()       { return user_iterator(UseList); }
+  const_user_iterator user_begin() const { return const_user_iterator(UseList); }
+  user_iterator       user_end()         { return user_iterator();   }
+  const_user_iterator user_end()   const { return const_user_iterator();   }
+  User               *user_back()        { return *user_begin(); }
+  const User         *user_back()  const { return *user_begin(); }
   iterator_range<user_iterator> users() {
-    assertModuleIsMaterialized();
-    return materialized_users();
+    return iterator_range<user_iterator>(user_begin(), user_end());
   }
   iterator_range<const_user_iterator> users() const {
-    assertModuleIsMaterialized();
-    return materialized_users();
+    return iterator_range<const_user_iterator>(user_begin(), user_end());
   }
 
   /// \brief Return true if there is exactly one user of this value.
@@ -502,12 +444,6 @@ public:
     return const_cast<Value*>(this)->stripInBoundsOffsets();
   }
 
-  /// \brief Returns an alignment of the pointer value.
-  ///
-  /// Returns an alignment which is either specified explicitly, e.g. via
-  /// align attribute of a function argument, or guaranteed by DataLayout.
-  unsigned getPointerAlignment(const DataLayout &DL) const;
-
   /// \brief Translate PHI node to its predecessor from the given basic block.
   ///
   /// If this value is a PHI node with CurBB as its parent, return the value in
@@ -606,16 +542,6 @@ void Use::set(Value *V) {
   if (V) V->addUse(*this);
 }
 
-Value *Use::operator=(Value *RHS) {
-  set(RHS);
-  return RHS;
-}
-
-const Use &Use::operator=(const Use &RHS) {
-  set(RHS.Val);
-  return *this;
-}
-
 template <class Compare> void Value::sortUseList(Compare Cmp) {
   if (!UseList || !UseList->Next)
     // No need to sort 0 or 1 uses.
@@ -690,13 +616,6 @@ template <> struct isa_impl<Constant, Value> {
   static inline bool doit(const Value &Val) {
     return Val.getValueID() >= Value::ConstantFirstVal &&
       Val.getValueID() <= Value::ConstantLastVal;
-  }
-};
-
-template <> struct isa_impl<ConstantData, Value> {
-  static inline bool doit(const Value &Val) {
-    return Val.getValueID() >= Value::ConstantDataFirstVal &&
-           Val.getValueID() <= Value::ConstantDataLastVal;
   }
 };
 

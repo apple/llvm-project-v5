@@ -50,8 +50,6 @@ def DirectivePwr8: SubtargetFeature<"", "DarwinDirective", "PPC::DIR_PWR8", "">;
 
 def Feature64Bit     : SubtargetFeature<"64bit","Has64BitSupport", "true",
                                         "Enable 64-bit instructions">;
-def FeatureSoftFloat : SubtargetFeature<"soft-float", "UseSoftFloat", "true",
-                              "Use software emulation for floating point">;                                        
 def Feature64BitRegs : SubtargetFeature<"64bitregs","Use64BitRegs", "true",
                               "Enable 64-bit registers usage for ppc32 [beta]">;
 def FeatureCRBits    : SubtargetFeature<"crbits", "UseCRBits", "true",
@@ -124,12 +122,6 @@ def FeatureP8Crypto : SubtargetFeature<"crypto", "HasP8Crypto", "true",
 def FeatureP8Vector  : SubtargetFeature<"power8-vector", "HasP8Vector", "true",
                                         "Enable POWER8 vector instructions",
                                         [FeatureVSX, FeatureP8Altivec]>;
-def FeatureP9Altivec : SubtargetFeature<"power9-altivec", "HasP9Altivec", "true",
-                                        "Enable POWER9 Altivec instructions",
-                                        [FeatureP8Altivec]>;
-def FeatureP9Vector  : SubtargetFeature<"power9-vector", "HasP9Vector", "true",
-                                        "Enable POWER9 vector instructions",
-                                        [FeatureP8Vector, FeatureP9Altivec]>;
 def FeatureDirectMove :
   SubtargetFeature<"direct-move", "HasDirectMove", "true",
                    "Enable Power8 direct move instructions",
@@ -145,12 +137,6 @@ def FeatureHTM : SubtargetFeature<"htm", "HasHTM", "true",
                                   "Enable Hardware Transactional Memory instructions">;
 def FeatureMFTB   : SubtargetFeature<"", "FeatureMFTB", "true",
                                         "Implement mftb using the mfspr instruction">;
-def FeatureFusion : SubtargetFeature<"fusion", "HasFusion", "true",
-                                     "Target supports add/load integer fusion.">;
-def FeatureFloat128 :
-  SubtargetFeature<"float128", "HasFloat128", "true",
-                   "Enable the __float128 data type for IEEE-754R Binary128.",
-                   [FeatureVSX]>;
 
 def DeprecatedDST    : SubtargetFeature<"", "DeprecatedDST", "true",
   "Treat vector data stream cache control instructions as deprecated">;
@@ -182,8 +168,7 @@ def ProcessorFeatures {
        FeatureMFTB, DeprecatedDST];
   list<SubtargetFeature> Power8SpecificFeatures =
       [DirectivePwr8, FeatureP8Altivec, FeatureP8Vector, FeatureP8Crypto,
-       FeatureHTM, FeatureDirectMove, FeatureICBT, FeaturePartwordAtomic,
-       FeatureFusion];
+       FeatureHTM, FeatureDirectMove, FeatureICBT, FeaturePartwordAtomic];
   list<SubtargetFeature> Power8FeatureList =
       !listconcat(Power7FeatureList, Power8SpecificFeatures);
 }
@@ -324,7 +309,7 @@ def : ProcessorModel<"g5", G5Model,
                    Feature64Bit /*, Feature64BitRegs */,
                    FeatureMFTB, DeprecatedDST]>;
 def : ProcessorModel<"e500mc", PPCE500mcModel,
-                  [DirectiveE500mc,
+                  [DirectiveE500mc, FeatureMFOCRF,
                    FeatureSTFIWX, FeatureICBT, FeatureBookE, 
                    FeatureISEL, FeatureMFTB]>;
 def : ProcessorModel<"e5500", PPCE5500Model,
@@ -418,7 +403,6 @@ def PPCAsmParserVariant : AsmParserVariant {
   // InstAlias definitions use immediate literals.  Set RegisterPrefix
   // so that those are not misinterpreted as registers.
   string RegisterPrefix = "%";
-  string BreakCharacters = ".";
 }
 
 def PPC : Target {

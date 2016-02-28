@@ -962,8 +962,10 @@ void Scanner::skip(uint32_t Distance) {
 bool Scanner::isBlankOrBreak(StringRef::iterator Position) {
   if (Position == End)
     return false;
-  return *Position == ' ' || *Position == '\t' || *Position == '\r' ||
-         *Position == '\n';
+  if (   *Position == ' ' || *Position == '\t'
+      || *Position == '\r' || *Position == '\n')
+    return true;
+  return false;
 }
 
 bool Scanner::consumeLineBreakIfPresent() {
@@ -1911,7 +1913,7 @@ StringRef ScalarNode::getValue(SmallVectorImpl<char> &Storage) const {
     return UnquotedValue;
   }
   // Plain or block.
-  return Value.rtrim(' ');
+  return Value.rtrim(" ");
 }
 
 StringRef ScalarNode::unescapeDoubleQuoted( StringRef UnquotedValue

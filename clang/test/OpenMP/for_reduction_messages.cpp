@@ -1,6 +1,4 @@
 // RUN: %clang_cc1 -verify -fopenmp -ferror-limit 150 -o - %s
-// RUN: %clang_cc1 -verify -fopenmp -std=c++98 -ferror-limit 150 -o - %s
-// RUN: %clang_cc1 -verify -fopenmp -std=c++11 -ferror-limit 150 -o - %s
 
 void foo() {
 }
@@ -56,9 +54,6 @@ public:
   S5(int v) : a(v) {}
 };
 class S6 { // expected-note 2 {{candidate function (the implicit copy assignment operator) not viable: no known conversion from 'int' to 'const S6' for 1st argument}}
-#if __cplusplus >= 201103L // C++11 or later
-// expected-note@-2 2 {{candidate function (the implicit move assignment operator) not viable: no known conversion from 'int' to 'S6' for 1st argument}}
-#endif
   int a;
 
 public:
@@ -147,15 +142,15 @@ T tmain(T argc) {
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel
-#pragma omp for reduction(+ : ba) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp for reduction(+ : ba) // expected-error {{a reduction list item with array type 'const S2 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel
-#pragma omp for reduction(* : ca) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp for reduction(* : ca) // expected-error {{a reduction list item with array type 'const S3 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel
-#pragma omp for reduction(- : da) // expected-error {{const-qualified list item cannot be reduction}} expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp for reduction(- : da) // expected-error {{a reduction list item with array type 'const int [5]'}} expected-error {{a reduction list item with array type 'const float [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel
@@ -304,15 +299,15 @@ int main(int argc, char **argv) {
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel
-#pragma omp for reduction(+ : ba) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp for reduction(+ : ba) // expected-error {{a reduction list item with array type 'const S2 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel
-#pragma omp for reduction(* : ca) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp for reduction(* : ca) // expected-error {{a reduction list item with array type 'const S3 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel
-#pragma omp for reduction(- : da) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp for reduction(- : da) // expected-error {{a reduction list item with array type 'const int [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp parallel

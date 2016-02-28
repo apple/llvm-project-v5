@@ -27,6 +27,7 @@ public:
   void dump(PDBSymDumper &Dumper) const override;
 
   FORWARD_SYMBOL_METHOD(getName)
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
 };
 
 } // namespace llvm

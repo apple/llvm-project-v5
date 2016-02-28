@@ -17,7 +17,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Analysis/ConstantFolding.h"
-#include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionInitializer.h"
@@ -28,7 +27,6 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
-#include "llvm/CodeGen/WinEHFuncInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/Function.h"
@@ -46,11 +44,6 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "codegen"
-
-static cl::opt<unsigned>
-    AlignAllFunctions("align-all-functions",
-                      cl::desc("Force the alignment of all functions."),
-                      cl::init(0), cl::Hidden);
 
 void MachineFunctionInitializer::anchor() {}
 
@@ -92,16 +85,8 @@ MachineFunction::MachineFunction(const Function *F, const TargetMachine &TM,
     Alignment = std::max(Alignment,
                          STI->getTargetLowering()->getPrefFunctionAlignment());
 
-  if (AlignAllFunctions)
-    Alignment = AlignAllFunctions;
-
   FunctionNumber = FunctionNum;
   JumpTableInfo = nullptr;
-
-  if (isFuncletEHPersonality(classifyEHPersonality(
-          F->hasPersonalityFn() ? F->getPersonalityFn() : nullptr))) {
-    WinEHInfo = new (Allocator) WinEHFuncInfo();
-  }
 
   assert(TM.isCompatibleDataLayout(getDataLayout()) &&
          "Can't create a MachineFunction using a Module with a "
@@ -140,11 +125,6 @@ MachineFunction::~MachineFunction() {
     JumpTableInfo->~MachineJumpTableInfo();
     Allocator.Deallocate(JumpTableInfo);
   }
-
-  if (WinEHInfo) {
-    WinEHInfo->~WinEHFuncInfo();
-    Allocator.Deallocate(WinEHInfo);
-  }
 }
 
 const DataLayout &MachineFunction::getDataLayout() const {
@@ -163,7 +143,7 @@ getOrCreateJumpTableInfo(unsigned EntryKind) {
 }
 
 /// Should we be emitting segmented stack stuff for the function
-bool MachineFunction::shouldSplitStack() const {
+bool MachineFunction::shouldSplitStack() {
   return getFunction()->hasFnAttribute("split-stack");
 }
 
@@ -358,7 +338,7 @@ const char *MachineFunction::createExternalSymbolName(StringRef Name) {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void MachineFunction::dump() const {
+void MachineFunction::dump() const {
   print(dbgs());
 }
 #endif
@@ -628,9 +608,10 @@ BitVector MachineFrameInfo::getPristineRegs(const MachineFunction &MF) const {
     BV.set(*CSR);
 
   // Saved CSRs are not pristine.
-  for (auto &I : getCalleeSavedInfo())
-    for (MCSubRegIterator S(I.getReg(), TRI, true); S.isValid(); ++S)
-      BV.reset(*S);
+  const std::vector<CalleeSavedInfo> &CSI = getCalleeSavedInfo();
+  for (std::vector<CalleeSavedInfo>::const_iterator I = CSI.begin(),
+         E = CSI.end(); I != E; ++I)
+    BV.reset(I->getReg());
 
   return BV;
 }
@@ -819,7 +800,7 @@ void MachineJumpTableInfo::print(raw_ostream &OS) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void MachineJumpTableInfo::dump() const { print(dbgs()); }
+void MachineJumpTableInfo::dump() const { print(dbgs()); }
 #endif
 
 
@@ -835,28 +816,42 @@ Type *MachineConstantPoolEntry::getType() const {
   return Val.ConstVal->getType();
 }
 
-bool MachineConstantPoolEntry::needsRelocation() const {
+
+unsigned MachineConstantPoolEntry::getRelocationInfo() const {
   if (isMachineConstantPoolEntry())
-    return true;
-  return Val.ConstVal->needsRelocation();
+    return Val.MachineCPVal->getRelocationInfo();
+  return Val.ConstVal->getRelocationInfo();
 }
 
 SectionKind
 MachineConstantPoolEntry::getSectionKind(const DataLayout *DL) const {
-  if (needsRelocation())
-    return SectionKind::getReadOnlyWithRel();
-  switch (DL->getTypeAllocSize(getType())) {
-  case 4:
-    return SectionKind::getMergeableConst4();
-  case 8:
-    return SectionKind::getMergeableConst8();
-  case 16:
-    return SectionKind::getMergeableConst16();
-  case 32:
-    return SectionKind::getMergeableConst32();
+  SectionKind Kind;
+  switch (getRelocationInfo()) {
   default:
-    return SectionKind::getReadOnly();
+    llvm_unreachable("Unknown section kind");
+  case Constant::GlobalRelocations:
+    Kind = SectionKind::getReadOnlyWithRel();
+    break;
+  case Constant::LocalRelocation:
+    Kind = SectionKind::getReadOnlyWithRelLocal();
+    break;
+  case Constant::NoRelocation:
+    switch (DL->getTypeAllocSize(getType())) {
+    case 4:
+      Kind = SectionKind::getMergeableConst4();
+      break;
+    case 8:
+      Kind = SectionKind::getMergeableConst8();
+      break;
+    case 16:
+      Kind = SectionKind::getMergeableConst16();
+      break;
+    default:
+      Kind = SectionKind::getReadOnly();
+      break;
+    }
   }
+  return Kind;
 }
 
 MachineConstantPool::~MachineConstantPool() {
@@ -897,17 +892,17 @@ static bool CanShareConstantPoolEntry(const Constant *A, const Constant *B,
   // the constant folding APIs to do this so that we get the benefit of
   // DataLayout.
   if (isa<PointerType>(A->getType()))
-    A = ConstantFoldCastOperand(Instruction::PtrToInt,
-                                const_cast<Constant *>(A), IntTy, DL);
+    A = ConstantFoldInstOperands(Instruction::PtrToInt, IntTy,
+                                 const_cast<Constant *>(A), DL);
   else if (A->getType() != IntTy)
-    A = ConstantFoldCastOperand(Instruction::BitCast, const_cast<Constant *>(A),
-                                IntTy, DL);
+    A = ConstantFoldInstOperands(Instruction::BitCast, IntTy,
+                                 const_cast<Constant *>(A), DL);
   if (isa<PointerType>(B->getType()))
-    B = ConstantFoldCastOperand(Instruction::PtrToInt,
-                                const_cast<Constant *>(B), IntTy, DL);
+    B = ConstantFoldInstOperands(Instruction::PtrToInt, IntTy,
+                                 const_cast<Constant *>(B), DL);
   else if (B->getType() != IntTy)
-    B = ConstantFoldCastOperand(Instruction::BitCast, const_cast<Constant *>(B),
-                                IntTy, DL);
+    B = ConstantFoldInstOperands(Instruction::BitCast, IntTy,
+                                 const_cast<Constant *>(B), DL);
 
   return A == B;
 }
@@ -968,5 +963,5 @@ void MachineConstantPool::print(raw_ostream &OS) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void MachineConstantPool::dump() const { print(dbgs()); }
+void MachineConstantPool::dump() const { print(dbgs()); }
 #endif

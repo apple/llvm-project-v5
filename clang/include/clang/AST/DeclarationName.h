@@ -30,7 +30,6 @@ namespace clang {
   class IdentifierInfo;
   class MultiKeywordSelector;
   enum OverloadedOperatorKind : int;
-  struct PrintingPolicy;
   class QualType;
   class Type;
   class TypeSourceInfo;
@@ -303,9 +302,7 @@ public:
   }
 
   static int compare(DeclarationName LHS, DeclarationName RHS);
-
-  void print(raw_ostream &OS, const PrintingPolicy &Policy);
-
+  
   void dump() const;
 };
 
@@ -398,7 +395,7 @@ struct DeclarationNameLoc {
   // Locations (if any) for the tilde (destructor) or operator keyword
   // (conversion) are stored elsewhere.
   struct NT {
-    TypeSourceInfo *TInfo;
+    TypeSourceInfo* TInfo;
   };
 
   // The location (if any) of the operator keyword is stored elsewhere.

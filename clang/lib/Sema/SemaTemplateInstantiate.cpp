@@ -1512,7 +1512,7 @@ QualType Sema::SubstType(QualType T,
 }
 
 static bool NeedsInstantiationAsFunctionType(TypeSourceInfo *T) {
-  if (T->getType()->isInstantiationDependentType() ||
+  if (T->getType()->isInstantiationDependentType() || 
       T->getType()->isVariablyModifiedType())
     return true;
 
@@ -1521,13 +1521,23 @@ static bool NeedsInstantiationAsFunctionType(TypeSourceInfo *T) {
     return false;
 
   FunctionProtoTypeLoc FP = TL.castAs<FunctionProtoTypeLoc>();
-  for (ParmVarDecl *P : FP.getParams()) {
+  for (unsigned I = 0, E = FP.getNumParams(); I != E; ++I) {
+    ParmVarDecl *P = FP.getParam(I);
+
     // This must be synthesized from a typedef.
     if (!P) continue;
 
-    // If there are any parameters, a new TypeSourceInfo that refers to the
-    // instantiated parameters must be built.
-    return true;
+    // The parameter's type as written might be dependent even if the
+    // decayed type was not dependent.
+    if (TypeSourceInfo *TSInfo = P->getTypeSourceInfo())
+      if (TSInfo->getType()->isInstantiationDependentType())
+        return true;
+
+    // TODO: currently we always rebuild expressions.  When we
+    // properly get lazier about this, we should use the same
+    // logic to avoid rebuilding prototypes here.
+    if (P->hasDefaultArg())
+      return true;
   }
 
   return false;
@@ -1546,7 +1556,7 @@ TypeSourceInfo *Sema::SubstFunctionDeclType(TypeSourceInfo *T,
   assert(!ActiveTemplateInstantiations.empty() &&
          "Cannot perform an instantiation without some context on the "
          "instantiation stack");
-
+  
   if (!NeedsInstantiationAsFunctionType(T))
     return T;
 
@@ -1670,11 +1680,8 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
       Sema::ContextRAII SavedContext(*this, OwningFunc);
       LocalInstantiationScope Local(*this);
       ExprResult NewArg = SubstExpr(Arg, TemplateArgs);
-      if (NewArg.isUsable()) {
-        // It would be nice if we still had this.
-        SourceLocation EqualLoc = NewArg.get()->getLocStart();
-        SetParamDefaultArgument(NewParm, NewArg.get(), EqualLoc);
-      }
+      if (NewArg.isUsable())
+        NewParm->setDefaultArg(NewArg.get());
     } else {
       // FIXME: if we non-lazily instantiated non-dependent default args for
       // non-dependent parameter types we could remove a bunch of duplicate
@@ -1827,7 +1834,9 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       Invalid = true;
   }
 
-  if (!Invalid && AttachBaseSpecifiers(Instantiation, InstantiatedBases))
+  if (!Invalid &&
+      AttachBaseSpecifiers(Instantiation, InstantiatedBases.data(),
+                           InstantiatedBases.size()))
     Invalid = true;
 
   return Invalid;
@@ -1949,13 +1958,6 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   bool MergeWithParentScope = !Instantiation->isDefinedOutsideFunctionOrMethod();
   LocalInstantiationScope Scope(*this, MergeWithParentScope);
 
-  // All dllexported classes created during instantiation should be fully
-  // emitted after instantiation completes. We may not be ready to emit any
-  // delayed classes already on the stack, so save them away and put them back
-  // later.
-  decltype(DelayedDllExportClasses) ExportedClasses;
-  std::swap(ExportedClasses, DelayedDllExportClasses);
-
   // Pull attributes from the pattern onto the instantiation.
   InstantiateAttrs(TemplateArgs, Pattern, Instantiation);
 
@@ -2040,9 +2042,6 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   // Default arguments are parsed, if not instantiated. We can go instantiate
   // default arg exprs for default constructors if necessary now.
   ActOnFinishCXXNonNestedClass(Instantiation);
-
-  // Put back the delayed exported classes that we moved out of the way.
-  std::swap(ExportedClasses, DelayedDllExportClasses);
 
   // Instantiate late parsed attributes, and attach them to their decls.
   // See Sema::InstantiateAttrs
@@ -2664,17 +2663,16 @@ ExprResult Sema::SubstInitializer(Expr *Init,
   return Instantiator.TransformInitializer(Init, CXXDirectInit);
 }
 
-bool Sema::SubstExprs(ArrayRef<Expr *> Exprs, bool IsCall,
+bool Sema::SubstExprs(Expr **Exprs, unsigned NumExprs, bool IsCall,
                       const MultiLevelTemplateArgumentList &TemplateArgs,
                       SmallVectorImpl<Expr *> &Outputs) {
-  if (Exprs.empty())
+  if (NumExprs == 0)
     return false;
 
   TemplateInstantiator Instantiator(*this, TemplateArgs,
                                     SourceLocation(),
                                     DeclarationName());
-  return Instantiator.TransformExprs(Exprs.data(), Exprs.size(),
-                                     IsCall, Outputs);
+  return Instantiator.TransformExprs(Exprs, NumExprs, IsCall, Outputs);
 }
 
 NestedNameSpecifierLoc

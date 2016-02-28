@@ -45,7 +45,7 @@ struct SubMultiClassReference {
   void dump() const;
 };
 
-LLVM_DUMP_METHOD void SubMultiClassReference::dump() const {
+void SubMultiClassReference::dump() const {
   errs() << "Multiclass:\n";
 
   MC->dump();
@@ -77,8 +77,7 @@ bool TGParser::AddValue(Record *CurRec, SMLoc Loc, const RecordVal &RV) {
 /// SetValue -
 /// Return true on error, false on success.
 bool TGParser::SetValue(Record *CurRec, SMLoc Loc, Init *ValName,
-                        ArrayRef<unsigned> BitList, Init *V,
-                        bool AllowSelfAssignment) {
+                        const std::vector<unsigned> &BitList, Init *V) {
   if (!V) return false;
 
   if (!CurRec) CurRec = &CurMultiClass->Rec;
@@ -92,8 +91,8 @@ bool TGParser::SetValue(Record *CurRec, SMLoc Loc, Init *ValName,
   // in the resolution machinery.
   if (BitList.empty())
     if (VarInit *VI = dyn_cast<VarInit>(V))
-      if (VI->getNameInit() == ValName && !AllowSelfAssignment)
-        return true;
+      if (VI->getNameInit() == ValName)
+        return false;
 
   // If we are assigning to a subset of the bits in the value... then we must be
   // assigning to a field of BitsRecTy, which must have a BitsInit
@@ -166,7 +165,7 @@ bool TGParser::AddSubClass(Record *CurRec, SubClassReference &SubClass) {
     if (i < SubClass.TemplateArgs.size()) {
       // If a value is specified for this template arg, set it now.
       if (SetValue(CurRec, SubClass.RefRange.Start, TArgs[i],
-                   None, SubClass.TemplateArgs[i]))
+                   std::vector<unsigned>(), SubClass.TemplateArgs[i]))
         return true;
 
       // Resolve it next.
@@ -185,12 +184,13 @@ bool TGParser::AddSubClass(Record *CurRec, SubClassReference &SubClass) {
 
   // Since everything went well, we can now set the "superclass" list for the
   // current record.
-  ArrayRef<std::pair<Record *, SMRange>> SCs = SC->getSuperClasses();
-  for (const auto &SCPair : SCs) {
-    if (CurRec->isSubClassOf(SCPair.first))
+  ArrayRef<Record *> SCs = SC->getSuperClasses();
+  ArrayRef<SMRange> SCRanges = SC->getSuperClassRanges();
+  for (unsigned i = 0, e = SCs.size(); i != e; ++i) {
+    if (CurRec->isSubClassOf(SCs[i]))
       return Error(SubClass.RefRange.Start,
-                   "Already subclass of '" + SCPair.first->getName() + "'!\n");
-    CurRec->addSuperClass(SCPair.first, SCPair.second);
+                   "Already subclass of '" + SCs[i]->getName() + "'!\n");
+    CurRec->addSuperClass(SCs[i], SCRanges[i]);
   }
 
   if (CurRec->isSubClassOf(SC))
@@ -243,7 +243,8 @@ bool TGParser::AddSubMultiClass(MultiClass *CurMC,
       // If a value is specified for this template arg, set it in the
       // superclass now.
       if (SetValue(CurRec, SubMultiClass.RefRange.Start, SMCTArgs[i],
-                   None, SubMultiClass.TemplateArgs[i]))
+                   std::vector<unsigned>(),
+                   SubMultiClass.TemplateArgs[i]))
         return true;
 
       // Resolve it next.
@@ -257,7 +258,8 @@ bool TGParser::AddSubMultiClass(MultiClass *CurMC,
       for (const auto &Def :
              makeArrayRef(CurMC->DefPrototypes).slice(newDefStart)) {
         if (SetValue(Def.get(), SubMultiClass.RefRange.Start, SMCTArgs[i],
-                     None, SubMultiClass.TemplateArgs[i]))
+                     std::vector<unsigned>(),
+                     SubMultiClass.TemplateArgs[i]))
           return true;
 
         // Resolve it next.
@@ -330,7 +332,8 @@ bool TGParser::ProcessForeachDefs(Record *CurRec, SMLoc Loc, IterSet &IterVals){
 
     IterRec->addValue(RecordVal(IterVar->getName(), IVal->getType(), false));
 
-    if (SetValue(IterRec.get(), Loc, IterVar->getName(), None, IVal))
+    if (SetValue(IterRec.get(), Loc, IterVar->getName(),
+                 std::vector<unsigned>(), IVal))
       return Error(Loc, "when instantiating this def");
 
     // Resolve it next.
@@ -1725,7 +1728,7 @@ Init *TGParser::ParseDeclaration(Record *CurRec,
     SMLoc ValLoc = Lex.getLoc();
     Init *Val = ParseValue(CurRec, Type);
     if (!Val ||
-        SetValue(CurRec, ValLoc, DeclName, None, Val))
+        SetValue(CurRec, ValLoc, DeclName, std::vector<unsigned>(), Val))
       // Return the name, even if an error is thrown.  This is so that we can
       // continue to make some progress, even without the value having been
       // initialized.
@@ -2355,8 +2358,8 @@ Record *TGParser::InstantiateMulticlassDef(MultiClass &MC, Record *DefProto,
   // Set the value for NAME. We don't resolve references to it 'til later,
   // though, so that uses in nested multiclass names don't get
   // confused.
-  if (SetValue(CurRec.get(), Ref.RefRange.Start, "NAME", None, DefmPrefix,
-               /*AllowSelfAssignment*/true)) {
+  if (SetValue(CurRec.get(), Ref.RefRange.Start, "NAME",
+               std::vector<unsigned>(), DefmPrefix)) {
     Error(DefmPrefixRange.Start, "Could not resolve " +
           CurRec->getNameInitAsString() + ":NAME to '" +
           DefmPrefix->getAsUnquotedString() + "'");
@@ -2443,7 +2446,8 @@ bool TGParser::ResolveMulticlassDefArgs(MultiClass &MC, Record *CurRec,
     // Check if a value is specified for this temp-arg.
     if (i < TemplateVals.size()) {
       // Set it now.
-      if (SetValue(CurRec, DefmPrefixLoc, TArgs[i], None, TemplateVals[i]))
+      if (SetValue(CurRec, DefmPrefixLoc, TArgs[i], std::vector<unsigned>(),
+                   TemplateVals[i]))
         return true;
 
       // Resolve it next.
@@ -2542,7 +2546,7 @@ bool TGParser::ParseDefm(MultiClass *CurMultiClass) {
       // The record name construction goes as follow:
       //  - If the def name is a string, prepend the prefix.
       //  - If the def name is a more complex pattern, use that pattern.
-      // As a result, the record is instantiated before resolving
+      // As a result, the record is instanciated before resolving
       // arguments, as it would make its name a string.
       Record *CurRec = InstantiateMulticlassDef(*MC, DefProto.get(), DefmPrefix,
                                                 SMRange(DefmLoc,
@@ -2551,7 +2555,7 @@ bool TGParser::ParseDefm(MultiClass *CurMultiClass) {
       if (!CurRec)
         return true;
 
-      // Now that the record is instantiated, we can resolve arguments.
+      // Now that the record is instanciated, we can resolve arguments.
       if (ResolveMulticlassDefArgs(*MC, CurRec, DefmLoc, SubClassLoc,
                                    TArgs, TemplateVals, true/*Delete args*/))
         return Error(SubClassLoc, "could not instantiate def");

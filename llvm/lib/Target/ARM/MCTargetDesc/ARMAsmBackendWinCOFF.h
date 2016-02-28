@@ -10,7 +10,6 @@
 #ifndef LLVM_LIB_TARGET_ARM_ARMASMBACKENDWINCOFF_H
 #define LLVM_LIB_TARGET_ARM_ARMASMBACKENDWINCOFF_H
 
-#include "ARMAsmBackend.h"
 using namespace llvm;
 
 namespace {

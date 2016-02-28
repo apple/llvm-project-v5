@@ -7,20 +7,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the XCore subclass for SelectionDAGTargetInfo.
+// This file defines the XCore subclass for TargetSelectionDAGInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIB_TARGET_XCORE_XCORESELECTIONDAGINFO_H
 #define LLVM_LIB_TARGET_XCORE_XCORESELECTIONDAGINFO_H
 
-#include "llvm/CodeGen/SelectionDAGTargetInfo.h"
+#include "llvm/Target/TargetSelectionDAGInfo.h"
 
 namespace llvm {
 
 class XCoreTargetMachine;
 
-class XCoreSelectionDAGInfo : public SelectionDAGTargetInfo {
+class XCoreSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
 
   SDValue

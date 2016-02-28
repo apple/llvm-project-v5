@@ -11,7 +11,6 @@
 #define LLVM_EXECUTIONENGINE_RUNTIMEDYLDCHECKER_H
 
 #include "llvm/ADT/StringRef.h"
-#include <memory>
 
 namespace llvm {
 

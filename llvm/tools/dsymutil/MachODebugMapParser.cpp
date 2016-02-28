@@ -10,7 +10,6 @@
 #include "BinaryHolder.h"
 #include "DebugMap.h"
 #include "dsymutil.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/Object/MachO.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
@@ -54,7 +53,7 @@ private:
   /// Owns the MemoryBuffer for the currently handled object file.
   BinaryHolder CurrentObjectHolder;
   /// Map of the currently processed object file symbol addresses.
-  StringMap<Optional<uint64_t>> CurrentObjectAddresses;
+  StringMap<uint64_t> CurrentObjectAddresses;
   /// Element of the debug map corresponfing to the current object file.
   DebugMapObject *CurrentDebugMapObject;
 
@@ -405,18 +404,7 @@ void MachODebugMapParser::loadCurrentObjectFileSymbols(
     ErrorOr<StringRef> Name = Sym.getName();
     if (!Name)
       continue;
-    // The value of some categories of symbols isn't meaningful. For
-    // example common symbols store their size in the value field, not
-    // their address. Absolute symbols have a fixed address that can
-    // conflict with standard symbols. These symbols (especially the
-    // common ones), might still be referenced by relocations. These
-    // relocations will use the symbol itself, and won't need an
-    // object file address. The object file address field is optional
-    // in the DebugMap, leave it unassigned for these symbols.
-    if (Sym.getFlags() & (SymbolRef::SF_Absolute | SymbolRef::SF_Common))
-      CurrentObjectAddresses[*Name] = None;
-    else
-      CurrentObjectAddresses[*Name] = Addr;
+    CurrentObjectAddresses[*Name] = Addr;
   }
 }
 

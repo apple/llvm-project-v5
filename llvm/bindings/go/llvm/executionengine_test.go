@@ -81,6 +81,7 @@ func TestFactorial(t *testing.T) {
 	pass := NewPassManager()
 	defer pass.Dispose()
 
+	pass.Add(engine.TargetData())
 	pass.AddConstantPropagationPass()
 	pass.AddInstructionCombiningPass()
 	pass.AddPromoteMemoryToRegisterPass()

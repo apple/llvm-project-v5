@@ -86,7 +86,7 @@ void DIEAbbrev::Emit(const AsmPrinter *AP) const {
   AP->EmitULEB128(0, "EOM(2)");
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEAbbrev::print(raw_ostream &O) {
   O << "Abbreviation @"
     << format("0x%lx", (long)(intptr_t)this)
@@ -104,9 +104,8 @@ void DIEAbbrev::print(raw_ostream &O) {
       << '\n';
   }
 }
-
-LLVM_DUMP_METHOD
 void DIEAbbrev::dump() { print(dbgs()); }
+#endif
 
 DIEAbbrev DIE::generateAbbrev() const {
   DIEAbbrev Abbrev(Tag, hasChildren());
@@ -145,7 +144,7 @@ DIEValue DIE::findAttribute(dwarf::Attribute Attribute) const {
   return DIEValue();
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 static void printValues(raw_ostream &O, const DIEValueList &Values,
                         StringRef Type, unsigned Size, unsigned IndentCount) {
   O << Type << ": Size: " << Size << "\n";
@@ -161,7 +160,6 @@ static void printValues(raw_ostream &O, const DIEValueList &Values,
   }
 }
 
-LLVM_DUMP_METHOD
 void DIE::print(raw_ostream &O, unsigned IndentCount) const {
   const std::string Indent(IndentCount, ' ');
   O << Indent << "Die: " << format("0x%lx", (long)(intptr_t) this)
@@ -186,10 +184,10 @@ void DIE::print(raw_ostream &O, unsigned IndentCount) const {
   O << "\n";
 }
 
-LLVM_DUMP_METHOD
 void DIE::dump() {
   print(dbgs());
 }
+#endif
 
 void DIEValue::EmitValue(const AsmPrinter *AP) const {
   switch (Ty) {
@@ -215,7 +213,7 @@ unsigned DIEValue::SizeOf(const AsmPrinter *AP) const {
   llvm_unreachable("Unknown DIE kind");
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEValue::print(raw_ostream &O) const {
   switch (Ty) {
   case isNone:
@@ -228,10 +226,10 @@ void DIEValue::print(raw_ostream &O) const {
   }
 }
 
-LLVM_DUMP_METHOD
 void DIEValue::dump() const {
   print(dbgs());
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIEInteger Implementation
@@ -305,11 +303,12 @@ unsigned DIEInteger::SizeOf(const AsmPrinter *AP, dwarf::Form Form) const {
   }
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEInteger::print(raw_ostream &O) const {
   O << "Int: " << (int64_t)Integer << "  0x";
   O.write_hex(Integer);
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIEExpr Implementation
@@ -330,8 +329,9 @@ unsigned DIEExpr::SizeOf(const AsmPrinter *AP, dwarf::Form Form) const {
   return AP->getPointerSize();
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEExpr::print(raw_ostream &O) const { O << "Expr: " << *Expr; }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIELabel Implementation
@@ -355,8 +355,9 @@ unsigned DIELabel::SizeOf(const AsmPrinter *AP, dwarf::Form Form) const {
   return AP->getPointerSize();
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIELabel::print(raw_ostream &O) const { O << "Lbl: " << Label->getName(); }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIEDelta Implementation
@@ -377,10 +378,11 @@ unsigned DIEDelta::SizeOf(const AsmPrinter *AP, dwarf::Form Form) const {
   return AP->getPointerSize();
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEDelta::print(raw_ostream &O) const {
   O << "Del: " << LabelHi->getName() << "-" << LabelLo->getName();
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIEString Implementation
@@ -429,10 +431,11 @@ unsigned DIEString::SizeOf(const AsmPrinter *AP, dwarf::Form Form) const {
   return DIEInteger(S.getOffset()).SizeOf(AP, Form);
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEString::print(raw_ostream &O) const {
   O << "String: " << S.getString();
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIEEntry Implementation
@@ -473,10 +476,26 @@ unsigned DIEEntry::getRefAddrSize(const AsmPrinter *AP) {
   return sizeof(int32_t);
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEEntry::print(raw_ostream &O) const {
   O << format("Die: 0x%lx", (long)(intptr_t)&Entry);
 }
+#endif
+
+//===----------------------------------------------------------------------===//
+// DIETypeSignature Implementation
+//===----------------------------------------------------------------------===//
+void DIETypeSignature::EmitValue(const AsmPrinter *Asm,
+                                 dwarf::Form Form) const {
+  assert(Form == dwarf::DW_FORM_ref_sig8);
+  Asm->OutStreamer->EmitIntValue(Unit->getTypeSignature(), 8);
+}
+
+#ifndef NDEBUG
+void DIETypeSignature::print(raw_ostream &O) const {
+  O << format("Type Unit: 0x%lx", Unit->getTypeSignature());
+}
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIELoc Implementation
@@ -524,10 +543,11 @@ unsigned DIELoc::SizeOf(const AsmPrinter *AP, dwarf::Form Form) const {
   }
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIELoc::print(raw_ostream &O) const {
   printValues(O, *this, "ExprLoc", Size, 5);
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIEBlock Implementation
@@ -571,10 +591,11 @@ unsigned DIEBlock::SizeOf(const AsmPrinter *AP, dwarf::Form Form) const {
   }
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIEBlock::print(raw_ostream &O) const {
   printValues(O, *this, "Blk", Size, 5);
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // DIELocList Implementation
@@ -596,5 +617,6 @@ void DIELocList::EmitValue(const AsmPrinter *AP, dwarf::Form Form) const {
   AP->emitDwarfSymbolReference(Label, /*ForceOffset*/ DD->useSplitDwarf());
 }
 
-LLVM_DUMP_METHOD
+#ifndef NDEBUG
 void DIELocList::print(raw_ostream &O) const { O << "LocList: " << Index; }
+#endif

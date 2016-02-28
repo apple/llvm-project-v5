@@ -13,6 +13,19 @@ def simm12 : Operand<i32> {
   let DecoderMethod = "DecodeSimm12";
 }
 
+def MipsUimm5Lsl2AsmOperand : AsmOperandClass {
+  let Name = "Uimm5Lsl2";
+  let RenderMethod = "addImmOperands";
+  let ParserMethod = "parseImm";
+  let PredicateMethod = "isUImm5Lsl2";
+}
+
+def uimm5_lsl2 : Operand<OtherVT> {
+  let EncoderMethod = "getUImm5Lsl2Encoding";
+  let DecoderMethod = "DecodeUImm5lsl2";
+  let ParserMatchClass = MipsUimm5Lsl2AsmOperand;
+}
+
 def uimm6_lsl2 : Operand<i32> {
   let EncoderMethod = "getUImm6Lsl2Encoding";
   let DecoderMethod = "DecodeUImm6Lsl2";
@@ -647,14 +660,6 @@ def BREAK16_MM : BrkSdbbp16MM<"break16">, BRKSDBBP16_FM_MM<0x28>,
 def SDBBP16_MM : BrkSdbbp16MM<"sdbbp16">, BRKSDBBP16_FM_MM<0x2C>,
     ISA_MICROMIPS_NOT_32R6_64R6;
 
-let DecoderNamespace = "MicroMips" in {
-  /// Load and Store Instructions - multiple
-  def SWM16_MM : StoreMultMM16<"swm16">, LWM_FM_MM16<0x5>,
-                 ISA_MICROMIPS32_NOT_MIPS32R6;
-  def LWM16_MM : LoadMultMM16<"lwm16">, LWM_FM_MM16<0x4>,
-                 ISA_MICROMIPS32_NOT_MIPS32R6;
-}
-
 class WaitMM<string opstr> :
   InstSE<(outs), (ins uimm10:$code_), !strconcat(opstr, "\t$code_"), [],
          NoItinerary, FrmOther, opstr>;
@@ -681,7 +686,7 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
                  ADDI_FM_MM<0x14>;
   def XORi_MM  : MMRel, ArithLogicI<"xori", uimm16, GPR32Opnd>,
                  ADDI_FM_MM<0x1c>;
-  def LUi_MM   : MMRel, LoadUpper<"lui", GPR32Opnd, uimm16_relaxed>, LUI_FM_MM;
+  def LUi_MM   : MMRel, LoadUpper<"lui", GPR32Opnd, uimm16>, LUI_FM_MM;
 
   def LEA_ADDiu_MM : MMRel, EffectiveAddress<"addiu", GPR32Opnd>,
                      LW_FM_MM<0xc>;
@@ -785,6 +790,8 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
   /// Load and Store Instructions - multiple
   def SWM32_MM  : StoreMultMM<"swm32">, LWM_FM_MM<0xd>;
   def LWM32_MM  : LoadMultMM<"lwm32">, LWM_FM_MM<0x5>;
+  def SWM16_MM : StoreMultMM16<"swm16">, LWM_FM_MM16<0x5>;
+  def LWM16_MM : LoadMultMM16<"lwm16">, LWM_FM_MM16<0x4>;
 
   /// Load and Store Pair Instructions
   def SWP_MM  : StorePairMM<"swp">, LWM_FM_MM<0x9>;
@@ -844,11 +851,11 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
   /// Word Swap Bytes Within Halfwords
   def WSBH_MM : MMRel, SubwordSwap<"wsbh", GPR32Opnd, II_WSBH>,
                 SEB_FM_MM<0x1ec>, ISA_MIPS32R2;
-  // TODO: Add '0 < pos+size <= 32' constraint check to ext instruction
-  def EXT_MM : MMRel, ExtBase<"ext", GPR32Opnd, uimm5, uimm5_plus1,
-                              MipsExt>, EXT_FM_MM<0x2c>;
-  def INS_MM : MMRel, InsBase<"ins", GPR32Opnd, uimm5, uimm5_inssize_plus1,
-               MipsIns>, EXT_FM_MM<0x0c>;
+
+  def EXT_MM : MMRel, ExtBase<"ext", GPR32Opnd, uimm5, MipsExt>,
+               EXT_FM_MM<0x2c>;
+  def INS_MM : MMRel, InsBase<"ins", GPR32Opnd, uimm5, MipsIns>,
+               EXT_FM_MM<0x0c>;
 
   /// Jump Instructions
   let DecoderMethod = "DecodeJumpTargetMM" in {
@@ -901,12 +908,12 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
                    ISA_MIPS32R2;
 
   /// Trap Instructions
-  def TEQ_MM  : MMRel, TEQ_FT<"teq", GPR32Opnd, uimm4>, TEQ_FM_MM<0x0>;
-  def TGE_MM  : MMRel, TEQ_FT<"tge", GPR32Opnd, uimm4>, TEQ_FM_MM<0x08>;
-  def TGEU_MM : MMRel, TEQ_FT<"tgeu", GPR32Opnd, uimm4>, TEQ_FM_MM<0x10>;
-  def TLT_MM  : MMRel, TEQ_FT<"tlt", GPR32Opnd, uimm4>, TEQ_FM_MM<0x20>;
-  def TLTU_MM : MMRel, TEQ_FT<"tltu", GPR32Opnd, uimm4>, TEQ_FM_MM<0x28>;
-  def TNE_MM  : MMRel, TEQ_FT<"tne", GPR32Opnd, uimm4>, TEQ_FM_MM<0x30>;
+  def TEQ_MM  : MMRel, TEQ_FT<"teq", GPR32Opnd>, TEQ_FM_MM<0x0>;
+  def TGE_MM  : MMRel, TEQ_FT<"tge", GPR32Opnd>, TEQ_FM_MM<0x08>;
+  def TGEU_MM : MMRel, TEQ_FT<"tgeu", GPR32Opnd>, TEQ_FM_MM<0x10>;
+  def TLT_MM  : MMRel, TEQ_FT<"tlt", GPR32Opnd>, TEQ_FM_MM<0x20>;
+  def TLTU_MM : MMRel, TEQ_FT<"tltu", GPR32Opnd>, TEQ_FM_MM<0x28>;
+  def TNE_MM  : MMRel, TEQ_FT<"tne", GPR32Opnd>, TEQ_FM_MM<0x30>;
 
   def TEQI_MM  : MMRel, TEQI_FT<"teqi", GPR32Opnd>, TEQI_FM_MM<0x0e>;
   def TGEI_MM  : MMRel, TEQI_FT<"tgei", GPR32Opnd>, TEQI_FM_MM<0x09>;
@@ -1018,7 +1025,6 @@ def B_MM_Pseudo : UncondBranchMMPseudo<"b">, ISA_MICROMIPS;
 
 let Predicates = [InMicroMips] in {
 def : MipsInstAlias<"ei", (EI_MM ZERO), 1>, ISA_MIPS32R2;
-def : MipsInstAlias<"di", (DI_MM ZERO), 1>, ISA_MIPS32R2;
 def : MipsInstAlias<"teq $rs, $rt",
                     (TEQ_MM GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
 def : MipsInstAlias<"tge $rs, $rt",

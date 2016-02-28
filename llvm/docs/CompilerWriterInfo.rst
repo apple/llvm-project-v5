@@ -13,18 +13,23 @@ Architecture & Platform Information for Compiler Writers
 Hardware
 ========
 
-AArch64 & ARM
--------------
+ARM
+---
 
-* `ARMv8-A Architecture Reference Manual <http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0487a.h/index.html>`_ (authentication required, free sign-up). This document covers both AArch64 and ARM instructions
+* `ARM documentation <http://www.arm.com/documentation/>`_ (`Processor Cores <http://www.arm.com/documentation/ARMProcessor_Cores/>`_ Cores)
 
-* `ARMv7-M Architecture Reference Manual` <http://infocenter.arm.com/help/topic/com.arm.doc.ddi0403e.b/index.html>`_ (authentication required, free sign-up). This covers the Thumb2-only microcontrollers
+* `ABI <http://www.arm.com/products/DevTools/ABI.html>`_
 
-* `ARMv6-M Architecture Reference Manual` <http://infocenter.arm.com/help/topic/com.arm.doc.ddi0419c/index.html>_ (authentication required, free sign-up). This covers the Thumb1-only microcontrollers
+* `ABI Addenda and Errata <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0045d/IHI0045D_ABI_addenda.pdf>`_
 
-* `ARM C Language Extensions <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0053c/IHI0053C_acle_2_0.pdf>`_
+* `ARM C Language Extensions <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0053a/IHI0053A_acle.pdf>`_
 
-* AArch32 `ABI Addenda and Errata <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0045d/IHI0045D_ABI_addenda.pdf>`_
+AArch64
+-------
+
+* `ARMv8 Instruction Set Overview <http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.genc010197a/index.html>`_
+
+* `ARM C Language Extensions <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0053a/IHI0053A_acle.pdf>`_
 
 Itanium (ia64)
 --------------

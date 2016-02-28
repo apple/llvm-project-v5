@@ -719,9 +719,7 @@ SourceLocation Lexer::AdvanceToTokenCharacter(SourceLocation TokStart,
   while (Lexer::isObviouslySimpleCharacter(*TokPtr)) {
     if (CharNo == 0)
       return TokStart.getLocWithOffset(PhysOffset);
-    ++TokPtr;
-    --CharNo;
-    ++PhysOffset;
+    ++TokPtr, --CharNo, ++PhysOffset;
   }
   
   // If we have a character that may be a trigraph or escaped newline, use a
@@ -993,31 +991,6 @@ StringRef Lexer::getImmediateMacroName(SourceLocation Loc,
   // range. This is where the macro name was spelled in order to begin
   // expanding this macro.
   Loc = SM.getSpellingLoc(Loc);
-
-  // Dig out the buffer where the macro name was spelled and the extents of the
-  // name so that we can render it into the expansion note.
-  std::pair<FileID, unsigned> ExpansionInfo = SM.getDecomposedLoc(Loc);
-  unsigned MacroTokenLength = Lexer::MeasureTokenLength(Loc, SM, LangOpts);
-  StringRef ExpansionBuffer = SM.getBufferData(ExpansionInfo.first);
-  return ExpansionBuffer.substr(ExpansionInfo.second, MacroTokenLength);
-}
-
-StringRef Lexer::getImmediateMacroNameForDiagnostics(
-    SourceLocation Loc, const SourceManager &SM, const LangOptions &LangOpts) {
-  assert(Loc.isMacroID() && "Only reasonble to call this on macros");
-  // Walk past macro argument expanions.
-  while (SM.isMacroArgExpansion(Loc))
-    Loc = SM.getImmediateExpansionRange(Loc).first;
-
-  // If the macro's spelling has no FileID, then it's actually a token paste
-  // or stringization (or similar) and not a macro at all.
-  if (!SM.getFileEntryForID(SM.getFileID(SM.getSpellingLoc(Loc))))
-    return StringRef();
-
-  // Find the spelling location of the start of the non-argument expansion
-  // range. This is where the macro name was spelled in order to begin
-  // expanding this macro.
-  Loc = SM.getSpellingLoc(SM.getImmediateExpansionRange(Loc).first);
 
   // Dig out the buffer where the macro name was spelled and the extents of the
   // name so that we can render it into the expansion note.
@@ -1381,9 +1354,7 @@ void Lexer::SkipBytes(unsigned Bytes, bool StartOfLine) {
 }
 
 static bool isAllowedIDChar(uint32_t C, const LangOptions &LangOpts) {
-  if (LangOpts.AsmPreprocessor) {
-    return false;
-  } else if (LangOpts.CPlusPlus11 || LangOpts.C11) {
+  if (LangOpts.CPlusPlus11 || LangOpts.C11) {
     static const llvm::sys::UnicodeCharSet C11AllowedIDChars(
         C11AllowedIDCharRanges);
     return C11AllowedIDChars.contains(C);
@@ -1400,9 +1371,7 @@ static bool isAllowedIDChar(uint32_t C, const LangOptions &LangOpts) {
 
 static bool isAllowedInitiallyIDChar(uint32_t C, const LangOptions &LangOpts) {
   assert(isAllowedIDChar(C, LangOpts));
-  if (LangOpts.AsmPreprocessor) {
-    return false;
-  } else if (LangOpts.CPlusPlus11 || LangOpts.C11) {
+  if (LangOpts.CPlusPlus11 || LangOpts.C11) {
     static const llvm::sys::UnicodeCharSet C11DisallowedInitialIDChars(
         C11DisallowedInitialIDCharRanges);
     return !C11DisallowedInitialIDChars.contains(C);
@@ -1763,7 +1732,7 @@ bool Lexer::LexStringLiteral(Token &Result, const char *CurPtr,
     if (C == '\n' || C == '\r' ||             // Newline.
         (C == 0 && CurPtr-1 == BufferEnd)) {  // End of file.
       if (!isLexingRawMode() && !LangOpts.AsmPreprocessor)
-        Diag(BufferPtr, diag::ext_unterminated_char_or_string) << 1;
+        Diag(BufferPtr, diag::ext_unterminated_string);
       FormTokenWithChars(Result, CurPtr-1, tok::unknown);
       return true;
     }
@@ -1787,7 +1756,7 @@ bool Lexer::LexStringLiteral(Token &Result, const char *CurPtr,
 
   // If a nul character existed in the string, warn about it.
   if (NulCharacter && !isLexingRawMode())
-    Diag(NulCharacter, diag::null_in_char_or_string) << 1;
+    Diag(NulCharacter, diag::null_in_string);
 
   // Update the location of the token as well as the BufferPtr instance var.
   const char *TokStart = BufferPtr;
@@ -1903,7 +1872,7 @@ bool Lexer::LexAngledStringLiteral(Token &Result, const char *CurPtr) {
 
   // If a nul character existed in the string, warn about it.
   if (NulCharacter && !isLexingRawMode())
-    Diag(NulCharacter, diag::null_in_char_or_string) << 1;
+    Diag(NulCharacter, diag::null_in_string);
 
   // Update the location of token as well as BufferPtr.
   const char *TokStart = BufferPtr;
@@ -1945,7 +1914,7 @@ bool Lexer::LexCharConstant(Token &Result, const char *CurPtr,
     if (C == '\n' || C == '\r' ||             // Newline.
         (C == 0 && CurPtr-1 == BufferEnd)) {  // End of file.
       if (!isLexingRawMode() && !LangOpts.AsmPreprocessor)
-        Diag(BufferPtr, diag::ext_unterminated_char_or_string) << 0;
+        Diag(BufferPtr, diag::ext_unterminated_char);
       FormTokenWithChars(Result, CurPtr-1, tok::unknown);
       return true;
     }
@@ -1969,7 +1938,7 @@ bool Lexer::LexCharConstant(Token &Result, const char *CurPtr,
 
   // If a nul character existed in the character, warn about it.
   if (NulCharacter && !isLexingRawMode())
-    Diag(NulCharacter, diag::null_in_char_or_string) << 0;
+    Diag(NulCharacter, diag::null_in_char);
 
   // Update the location of token as well as BufferPtr.
   const char *TokStart = BufferPtr;
@@ -2987,11 +2956,8 @@ LexNextToken:
       
   case 26:  // DOS & CP/M EOF: "^Z".
     // If we're in Microsoft extensions mode, treat this as end of file.
-    if (LangOpts.MicrosoftExt) {
-      if (!isLexingRawMode())
-        Diag(CurPtr-1, diag::ext_ctrl_z_eof_microsoft);
+    if (LangOpts.MicrosoftExt)
       return LexEndOfFile(Result, CurPtr-1);
-    }
 
     // If Microsoft extensions are disabled, this is just random garbage.
     Kind = tok::unknown;
@@ -3507,9 +3473,6 @@ LexNextToken:
     if (Char == '=') {
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::caretequal;
-    } else if (LangOpts.OpenCL && Char == '^') {
-      CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
-      Kind = tok::caretcaret;
     } else {
       Kind = tok::caret;
     }

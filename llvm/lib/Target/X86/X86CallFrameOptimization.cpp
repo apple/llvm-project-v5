@@ -110,7 +110,7 @@ private:
 };
 
 char X86CallFrameOptimization::ID = 0;
-} // end anonymous namespace
+}
 
 FunctionPass *llvm::createX86CallFrameOptimization() {
   return new X86CallFrameOptimization();
@@ -440,6 +440,7 @@ void X86CallFrameOptimization::collectCallInfo(MachineFunction &MF,
       return;
 
   Context.UsePush = true;
+  return;
 }
 
 bool X86CallFrameOptimization::adjustCallSequence(MachineFunction &MF,
@@ -499,8 +500,7 @@ bool X86CallFrameOptimization::adjustCallSequence(MachineFunction &MF,
 
     // For debugging, when using SP-based CFA, we need to adjust the CFA
     // offset after each push.
-    // TODO: This is needed only if we require precise CFA.
-    if (!TFL->hasFP(MF))
+    if (!TFL->hasFP(MF) && MF.getMMI().usePreciseUnwindInfo())
       TFL->BuildCFI(MBB, std::next(Push), DL, 
                     MCCFIInstruction::createAdjustCfaOffset(nullptr, 4));
 

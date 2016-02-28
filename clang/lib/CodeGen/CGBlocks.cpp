@@ -399,15 +399,9 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
 
     // Block pointers require copy/dispose.  So do Objective-C pointers.
     } else if (variable->getType()->isObjCRetainableType()) {
-      // But honor the inert __unsafe_unretained qualifier, which doesn't
-      // actually make it into the type system.
-       if (variable->getType()->isObjCInertUnsafeUnretainedType()) {
-        lifetime = Qualifiers::OCL_ExplicitNone;
-      } else {
-        info.NeedsCopyDispose = true;
-        // used for mrr below.
-        lifetime = Qualifiers::OCL_Strong;
-      }
+      info.NeedsCopyDispose = true;
+      // used for mrr below.
+      lifetime = Qualifiers::OCL_Strong;
 
     // So do types that require non-trivial copy construction.
     } else if (CI.hasCopyExpr()) {
@@ -508,7 +502,7 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
   // At this point, we just have to add padding if the end align still
   // isn't aligned right.
   if (endAlign < maxFieldAlign) {
-    CharUnits newBlockSize = blockSize.alignTo(maxFieldAlign);
+    CharUnits newBlockSize = blockSize.RoundUpToAlignment(maxFieldAlign);
     CharUnits padding = newBlockSize - blockSize;
 
     // If we haven't yet added any fields, remember that there was an
@@ -1109,8 +1103,8 @@ void CodeGenFunction::setBlockContextParameter(const ImplicitParamDecl *D,
   }
 
   if (CGDebugInfo *DI = getDebugInfo()) {
-    if (CGM.getCodeGenOpts().getDebugInfo() >=
-        codegenoptions::LimitedDebugInfo) {
+    if (CGM.getCodeGenOpts().getDebugInfo()
+          >= CodeGenOptions::LimitedDebugInfo) {
       DI->setLocation(D->getLocation());
       DI->EmitDeclareOfBlockLiteralArgVariable(*BlockInfo, arg, argNum,
                                                localAddr, Builder);
@@ -1241,7 +1235,7 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
   if (IsLambdaConversionToBlock)
     EmitLambdaBlockInvokeBody();
   else {
-    PGO.assignRegionCounters(GlobalDecl(blockDecl), fn);
+    PGO.assignRegionCounters(blockDecl, fn);
     incrementProfileCounter(blockDecl->getBody());
     EmitStmt(blockDecl->getBody());
   }
@@ -1260,8 +1254,8 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
       const VarDecl *variable = CI.getVariable();
       DI->EmitLocation(Builder, variable->getLocation());
 
-      if (CGM.getCodeGenOpts().getDebugInfo() >=
-          codegenoptions::LimitedDebugInfo) {
+      if (CGM.getCodeGenOpts().getDebugInfo()
+            >= CodeGenOptions::LimitedDebugInfo) {
         const CGBlockInfo::Capture &capture = blockInfo.getCapture(variable);
         if (capture.isConstant()) {
           auto addr = LocalDeclMap.find(variable)->second;
@@ -1270,9 +1264,10 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
           continue;
         }
 
-        DI->EmitDeclareOfBlockDeclRefVariable(
-            variable, BlockPointerDbgLoc, Builder, blockInfo,
-            entry_ptr == entry->end() ? nullptr : &*entry_ptr);
+        DI->EmitDeclareOfBlockDeclRefVariable(variable, BlockPointerDbgLoc,
+                                              Builder, blockInfo,
+                                              entry_ptr == entry->end()
+                                              ? nullptr : entry_ptr);
       }
     }
     // Recover location if it was changed in the above loop.
@@ -2108,7 +2103,7 @@ const BlockByrefInfo &CodeGenFunction::getBlockByrefInfo(const VarDecl *D) {
 
   bool packed = false;
   CharUnits varAlign = getContext().getDeclAlign(D);
-  CharUnits varOffset = size.alignTo(varAlign);
+  CharUnits varOffset = size.RoundUpToAlignment(varAlign);
 
   // We may have to insert padding.
   if (varOffset != size) {

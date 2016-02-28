@@ -131,6 +131,11 @@ bool CodeGenModule::TryEmitDefinitionAsAlias(GlobalDecl AliasDecl,
   if (!llvm::GlobalAlias::isValidLinkage(Linkage))
     return true;
 
+  // Don't create a weak alias for a dllexport'd symbol.
+  if (AliasDecl.getDecl()->hasAttr<DLLExportAttr>() &&
+      llvm::GlobalValue::isWeakForLinker(Linkage))
+    return true;
+
   llvm::GlobalValue::LinkageTypes TargetLinkage =
       getFunctionLinkage(TargetDecl);
 
@@ -164,18 +169,8 @@ bool CodeGenModule::TryEmitDefinitionAsAlias(GlobalDecl AliasDecl,
     // members with attribute "AlwaysInline" and expect no reference to
     // be generated. It is desirable to reenable this optimisation after
     // corresponding LLVM changes.
-    addReplacement(MangledName, Aliasee);
+    Replacements[MangledName] = Aliasee;
     return false;
-  }
-
-  // If we have a weak, non-discardable alias (weak, weak_odr), like an extern
-  // template instantiation or a dllexported class, avoid forming it on COFF.
-  // A COFF weak external alias cannot satisfy a normal undefined symbol
-  // reference from another TU. The other TU must also mark the referenced
-  // symbol as weak, which we cannot rely on.
-  if (llvm::GlobalValue::isWeakForLinker(Linkage) &&
-      getTriple().isOSBinFormatCOFF()) {
-    return true;
   }
 
   if (!InEveryTU) {

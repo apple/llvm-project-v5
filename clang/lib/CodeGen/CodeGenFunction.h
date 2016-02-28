@@ -36,7 +36,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Transforms/Utils/SanitizerStats.h"
 
 namespace llvm {
 class BasicBlock;
@@ -280,6 +279,8 @@ public:
   /// finally block or filter expression.
   bool IsOutlinedSEHHelper;
 
+  bool IsCleanupPadScope = false;
+
   const CodeGen::CGBlockInfo *BlockInfo;
   llvm::Value *BlockPointer;
 
@@ -293,8 +294,6 @@ public:
   EHScopeStack EHStack;
   llvm::SmallVector<char, 256> LifetimeExtendedCleanupStack;
   llvm::SmallVector<const JumpDest *, 2> SEHTryEpilogueStack;
-
-  llvm::Instruction *CurrentFuncletPad = nullptr;
 
   /// Header for data within LifetimeExtendedCleanupStack.
   struct LifetimeExtendedCleanupHeader {
@@ -376,9 +375,7 @@ public:
   bool isSEHTryScope() const { return !SEHTryEpilogueStack.empty(); }
 
   /// Returns true while emitting a cleanuppad.
-  bool isCleanupPadScope() const {
-    return CurrentFuncletPad && isa<llvm::CleanupPadInst>(CurrentFuncletPad);
-  }
+  bool isCleanupPadScope() const { return IsCleanupPadScope; }
 
   /// pushFullExprCleanup - Push a cleanup to be run at the end of the
   /// current full-expression.  Safe against the possibility that
@@ -917,12 +914,6 @@ private:
   /// decls.
   DeclMapTy LocalDeclMap;
 
-  /// SizeArguments - If a ParmVarDecl had the pass_object_size attribute, this
-  /// will contain a mapping from said ParmVarDecl to its implicit "object_size"
-  /// parameter.
-  llvm::SmallDenseMap<const ParmVarDecl *, const ImplicitParamDecl *, 2>
-      SizeArguments;
-
   /// Track escaped local variables with auto storage. Used during SEH
   /// outlining to produce a call to llvm.localescape.
   llvm::DenseMap<llvm::AllocaInst *, int> EscapedLocals;
@@ -952,7 +943,7 @@ private:
 public:
   /// Increment the profiler's counter for the given statement.
   void incrementProfileCounter(const Stmt *S) {
-    if (CGM.getCodeGenOpts().hasProfileClangInstr())
+    if (CGM.getCodeGenOpts().ProfileInstrGenerate)
       PGO.emitCounterIncrement(Builder, S);
     PGO.setCurrentStmt(S);
   }
@@ -1389,7 +1380,6 @@ public:
     CFITCK_NVCall,
     CFITCK_DerivedCast,
     CFITCK_UnrelatedCast,
-    CFITCK_ICall,
   };
 
   /// \brief Derived is the presumed address of an object of type T after a
@@ -1401,19 +1391,13 @@ public:
 
   /// EmitVTablePtrCheckForCall - Virtual method MD is being called via VTable.
   /// If vptr CFI is enabled, emit a check that VTable is valid.
-  void EmitVTablePtrCheckForCall(const CXXRecordDecl *RD, llvm::Value *VTable,
+  void EmitVTablePtrCheckForCall(const CXXMethodDecl *MD, llvm::Value *VTable,
                                  CFITypeCheckKind TCK, SourceLocation Loc);
 
   /// EmitVTablePtrCheck - Emit a check that VTable is a valid virtual table for
   /// RD using llvm.bitset.test.
   void EmitVTablePtrCheck(const CXXRecordDecl *RD, llvm::Value *VTable,
                           CFITypeCheckKind TCK, SourceLocation Loc);
-
-  /// If whole-program virtual table optimization is enabled, emit an assumption
-  /// that VTable is a member of the type's bitset. Or, if vptr CFI is enabled,
-  /// emit a check that VTable is a member of the type's bitset.
-  void EmitBitSetCodeForVCall(const CXXRecordDecl *RD, llvm::Value *VTable,
-                              SourceLocation Loc);
 
   /// CanDevirtualizeMemberFunctionCalls - Checks whether virtual calls on given
   /// expr can be devirtualized.
@@ -1579,10 +1563,6 @@ public:
   Address EmitLoadOfReference(Address Ref, const ReferenceType *RefTy,
                               AlignmentSource *Source = nullptr);
   LValue EmitLoadOfReferenceLValue(Address Ref, const ReferenceType *RefTy);
-
-  Address EmitLoadOfPointer(Address Ptr, const PointerType *PtrTy,
-                            AlignmentSource *Source = nullptr);
-  LValue EmitLoadOfPointerLValue(Address Ptr, const PointerType *PtrTy);
 
   /// CreateTempAlloca - This creates a alloca and inserts it into the entry
   /// block. The caller is responsible for setting an appropriate alignment on
@@ -2216,17 +2196,16 @@ public:
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
 
-  /// Returns calculated size of the specified type.
-  llvm::Value *getTypeSize(QualType Ty);
   LValue InitCapturedStruct(const CapturedStmt &S);
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
   llvm::Function *GenerateCapturedStmtFunction(const CapturedStmt &S);
   Address GenerateCapturedStmtArgument(const CapturedStmt &S);
-  llvm::Function *GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S);
+  llvm::Function *
+  GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S,
+                                     bool UseOnlyReferences = false);
   void GenerateOpenMPCapturedVars(const CapturedStmt &S,
-                                  SmallVectorImpl<llvm::Value *> &CapturedVars);
-  void emitOMPSimpleStore(LValue LVal, RValue RVal, QualType RValTy,
-                          SourceLocation Loc);
+                                  SmallVectorImpl<llvm::Value *> &CapturedVars,
+                                  bool UseOnlyReferences = false);
   /// \brief Perform element by element copying of arrays with type \a
   /// OriginalType from \a SrcAddr to \a DestAddr using copying procedure
   /// generated by \a CopyGen.
@@ -2351,18 +2330,10 @@ public:
   void EmitOMPAtomicDirective(const OMPAtomicDirective &S);
   void EmitOMPTargetDirective(const OMPTargetDirective &S);
   void EmitOMPTargetDataDirective(const OMPTargetDataDirective &S);
-  void EmitOMPTargetEnterDataDirective(const OMPTargetEnterDataDirective &S);
-  void EmitOMPTargetExitDataDirective(const OMPTargetExitDataDirective &S);
-  void EmitOMPTargetParallelDirective(const OMPTargetParallelDirective &S);
-  void
-  EmitOMPTargetParallelForDirective(const OMPTargetParallelForDirective &S);
   void EmitOMPTeamsDirective(const OMPTeamsDirective &S);
   void
   EmitOMPCancellationPointDirective(const OMPCancellationPointDirective &S);
   void EmitOMPCancelDirective(const OMPCancelDirective &S);
-  void EmitOMPTaskLoopDirective(const OMPTaskLoopDirective &S);
-  void EmitOMPTaskLoopSimdDirective(const OMPTaskLoopSimdDirective &S);
-  void EmitOMPDistributeDirective(const OMPDistributeDirective &S);
 
   /// \brief Emit inner loop of the worksharing/simd construct.
   ///
@@ -2386,19 +2357,19 @@ private:
 
   /// Helpers for the OpenMP loop directives.
   void EmitOMPLoopBody(const OMPLoopDirective &D, JumpDest LoopExit);
-  void EmitOMPSimdInit(const OMPLoopDirective &D, bool IsMonotonic = false);
+  void EmitOMPSimdInit(const OMPLoopDirective &D);
   void EmitOMPSimdFinal(const OMPLoopDirective &D);
   /// \brief Emit code for the worksharing loop-based directive.
   /// \return true, if this construct has any lastprivate clause, false -
   /// otherwise.
   bool EmitOMPWorksharingLoop(const OMPLoopDirective &S);
   void EmitOMPForOuterLoop(OpenMPScheduleClauseKind ScheduleKind,
-                           bool IsMonotonic, const OMPLoopDirective &S,
-                           OMPPrivateScope &LoopScope, bool Ordered, Address LB,
-                           Address UB, Address ST, Address IL,
-                           llvm::Value *Chunk);
+                           const OMPLoopDirective &S,
+                           OMPPrivateScope &LoopScope, bool Ordered,
+                           Address LB, Address UB, Address ST,
+                           Address IL, llvm::Value *Chunk);
   /// \brief Emit code for sections directive.
-  void EmitSections(const OMPExecutableDirective &S);
+  OpenMPDirectiveKind EmitSections(const OMPExecutableDirective &S);
 
 public:
 
@@ -2650,19 +2621,24 @@ public:
   /// EmitCall - Generate a call of the given function, expecting the given
   /// result type, and using the given argument list which specifies both the
   /// LLVM arguments and the types they were derived from.
-  RValue EmitCall(const CGFunctionInfo &FnInfo, llvm::Value *Callee,
-                  ReturnValueSlot ReturnValue, const CallArgList &Args,
-                  CGCalleeInfo CalleeInfo = CGCalleeInfo(),
+  ///
+  /// \param TargetDecl - If given, the decl of the function in a direct call;
+  /// used to set attributes on the call (noreturn, etc.).
+  RValue EmitCall(const CGFunctionInfo &FnInfo,
+                  llvm::Value *Callee,
+                  ReturnValueSlot ReturnValue,
+                  const CallArgList &Args,
+                  const Decl *TargetDecl = nullptr,
                   llvm::Instruction **callOrInvoke = nullptr);
 
   RValue EmitCall(QualType FnType, llvm::Value *Callee, const CallExpr *E,
                   ReturnValueSlot ReturnValue,
-                  CGCalleeInfo CalleeInfo = CGCalleeInfo(),
+                  const Decl *TargetDecl = nullptr,
                   llvm::Value *Chain = nullptr);
   RValue EmitCallExpr(const CallExpr *E,
                       ReturnValueSlot ReturnValue = ReturnValueSlot());
 
-  void checkTargetFeatures(const CallExpr *E, const FunctionDecl *TargetDecl);
+  bool checkBuiltinTargetFeatures(const FunctionDecl *TargetDecl);
 
   llvm::CallInst *EmitRuntimeCall(llvm::Value *callee,
                                   const Twine &name = "");
@@ -2727,8 +2703,6 @@ public:
   RValue EmitCUDAKernelCallExpr(const CUDAKernelCallExpr *E,
                                 ReturnValueSlot ReturnValue);
 
-  RValue EmitCUDADevicePrintfCallExpr(const CallExpr *E,
-                                      ReturnValueSlot ReturnValue);
 
   RValue EmitBuiltinExpr(const FunctionDecl *FD,
                          unsigned BuiltinID, const CallExpr *E,
@@ -2819,25 +2793,19 @@ public:
   llvm::Value *EmitARCAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleasedReturnValue(llvm::Value *value);
-  llvm::Value *EmitARCUnsafeClaimAutoreleasedReturnValue(llvm::Value *value);
 
   std::pair<LValue,llvm::Value*>
   EmitARCStoreAutoreleasing(const BinaryOperator *e);
   std::pair<LValue,llvm::Value*>
   EmitARCStoreStrong(const BinaryOperator *e, bool ignored);
-  std::pair<LValue,llvm::Value*>
-  EmitARCStoreUnsafeUnretained(const BinaryOperator *e, bool ignored);
 
   llvm::Value *EmitObjCThrowOperand(const Expr *expr);
   llvm::Value *EmitObjCConsumeObject(QualType T, llvm::Value *Ptr);
   llvm::Value *EmitObjCExtendObjectLifetime(QualType T, llvm::Value *Ptr);
 
   llvm::Value *EmitARCExtendBlockObject(const Expr *expr);
-  llvm::Value *EmitARCReclaimReturnedObject(const Expr *e,
-                                            bool allowUnsafeClaim);
   llvm::Value *EmitARCRetainScalarExpr(const Expr *expr);
   llvm::Value *EmitARCRetainAutoreleaseScalarExpr(const Expr *expr);
-  llvm::Value *EmitARCUnsafeUnretainedScalarExpr(const Expr *expr);
 
   void EmitARCIntrinsicUse(ArrayRef<llvm::Value*> values);
 
@@ -2968,7 +2936,7 @@ public:
 
   void EmitLambdaExpr(const LambdaExpr *E, AggValueSlot Dest);
 
-  RValue EmitAtomicExpr(AtomicExpr *E);
+  RValue EmitAtomicExpr(AtomicExpr *E, Address Dest = Address::invalid());
 
   //===--------------------------------------------------------------------===//
   //                         Annotations Emission
@@ -3038,12 +3006,6 @@ public:
                  StringRef CheckName, ArrayRef<llvm::Constant *> StaticArgs,
                  ArrayRef<llvm::Value *> DynamicArgs);
 
-  /// \brief Emit a slow path cross-DSO CFI check which calls __cfi_slowpath
-  /// if Cond if false.
-  void EmitCfiSlowPathCheck(SanitizerMask Kind, llvm::Value *Cond,
-                            llvm::ConstantInt *TypeId, llvm::Value *Ptr,
-                            ArrayRef<llvm::Constant *> StaticArgs);
-
   /// \brief Create a basic block that will call the trap intrinsic, and emit a
   /// conditional branch to it, for the -ftrapv checks.
   void EmitTrapCheck(llvm::Value *Checked);
@@ -3051,9 +3013,6 @@ public:
   /// \brief Emit a call to trap or debugtrap and attach function attribute
   /// "trap-func-name" if specified.
   llvm::CallInst *EmitTrapCall(llvm::Intrinsic::ID IntrID);
-
-  /// \brief Emit a cross-DSO CFI failure handling function.
-  void EmitCfiCheckFail();
 
   /// \brief Create a check for a function parameter that may potentially be
   /// declared as non-null.
@@ -3109,18 +3068,6 @@ private:
                                   LValue InputValue, QualType InputType,
                                   std::string &ConstraintStr,
                                   SourceLocation Loc);
-
-  /// \brief Attempts to statically evaluate the object size of E. If that
-  /// fails, emits code to figure the size of E out for us. This is
-  /// pass_object_size aware.
-  llvm::Value *evaluateOrEmitBuiltinObjectSize(const Expr *E, unsigned Type,
-                                               llvm::IntegerType *ResType);
-
-  /// \brief Emits the size of E, as required by __builtin_object_size. This
-  /// function is aware of pass_object_size parameters, and will act accordingly
-  /// if E is a parameter with the pass_object_size attribute.
-  llvm::Value *emitBuiltinObjectSize(const Expr *E, unsigned Type,
-                                     llvm::IntegerType *ResType);
 
 public:
 #ifndef NDEBUG
@@ -3219,8 +3166,6 @@ public:
   ///   explicit source.
   Address EmitPointerWithAlignment(const Expr *Addr,
                                    AlignmentSource *Source = nullptr);
-
-  void EmitSanitizerStatReport(llvm::SanitizerStatKind SSK);
 
 private:
   QualType getVarArgType(const Expr *Arg);

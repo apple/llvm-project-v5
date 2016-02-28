@@ -57,10 +57,6 @@
 #endif
 #endif
 
-#ifdef LLVM_ON_WIN32
-#include "Windows/WindowsSupport.h"
-#endif
-
 using namespace llvm;
 
 raw_ostream::~raw_ostream() {
@@ -141,7 +137,7 @@ raw_ostream &raw_ostream::operator<<(unsigned long long N) {
     return this->operator<<(static_cast<unsigned long>(N));
 
   char NumberBuffer[20];
-  char *EndPtr = std::end(NumberBuffer);
+  char *EndPtr = NumberBuffer+sizeof(NumberBuffer);
   char *CurPtr = EndPtr;
 
   while (N) {
@@ -166,13 +162,13 @@ raw_ostream &raw_ostream::write_hex(unsigned long long N) {
   if (N == 0)
     return *this << '0';
 
-  char NumberBuffer[16];
-  char *EndPtr = std::end(NumberBuffer);
+  char NumberBuffer[20];
+  char *EndPtr = NumberBuffer+sizeof(NumberBuffer);
   char *CurPtr = EndPtr;
 
   while (N) {
-    unsigned char x = static_cast<unsigned char>(N) % 16;
-    *--CurPtr = hexdigit(x, /*LowerCase*/true);
+    uintptr_t x = N % 16;
+    *--CurPtr = (x < 10 ? '0' + x : 'a' + x - 10);
     N /= 16;
   }
 
@@ -181,7 +177,9 @@ raw_ostream &raw_ostream::write_hex(unsigned long long N) {
 
 raw_ostream &raw_ostream::write_escaped(StringRef Str,
                                         bool UseHexEscapes) {
-  for (unsigned char c : Str) {
+  for (unsigned i = 0, e = Str.size(); i != e; ++i) {
+    unsigned char c = Str[i];
+
     switch (c) {
     case '\\':
       *this << '\\' << '\\';
@@ -420,10 +418,11 @@ raw_ostream &raw_ostream::operator<<(const FormattedNumber &FN) {
       NumberBuffer[1] = '0';
     char *EndPtr = NumberBuffer+Width;
     char *CurPtr = EndPtr;
+    const char A = FN.Upper ? 'A' : 'a';
     unsigned long long N = FN.HexValue;
     while (N) {
-      unsigned char x = static_cast<unsigned char>(N) % 16;
-      *--CurPtr = hexdigit(x, !FN.Upper);
+      uintptr_t x = N % 16;
+      *--CurPtr = (x < 10 ? '0' + x : A + x - 10);
       N /= 16;
     }
 
@@ -518,7 +517,7 @@ raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,
 /// closes the file when the stream is destroyed.
 raw_fd_ostream::raw_fd_ostream(int fd, bool shouldClose, bool unbuffered)
     : raw_pwrite_stream(unbuffered), FD(fd), ShouldClose(shouldClose),
-      Error(false) {
+      Error(false), UseAtomicWrites(false) {
   if (FD < 0 ) {
     ShouldClose = false;
     return;
@@ -568,21 +567,22 @@ void raw_fd_ostream::write_impl(const char *Ptr, size_t Size) {
   assert(FD >= 0 && "File already closed.");
   pos += Size;
 
-#ifndef LLVM_ON_WIN32
-  bool ShouldWriteInChunks = false;
-#else
-  // Writing a large size of output to Windows console returns ENOMEM. It seems
-  // that, prior to Windows 8, WriteFile() is redirecting to WriteConsole(), and
-  // the latter has a size limit (66000 bytes or less, depending on heap usage).
-  bool ShouldWriteInChunks = !!::_isatty(FD) && !RunningWindows8OrGreater();
-#endif
-
   do {
-    size_t ChunkSize = Size;
-    if (ChunkSize > 32767 && ShouldWriteInChunks)
-        ChunkSize = 32767;
+    ssize_t ret;
 
-    ssize_t ret = ::write(FD, Ptr, ChunkSize);
+    // Check whether we should attempt to use atomic writes.
+    if (LLVM_LIKELY(!UseAtomicWrites)) {
+      ret = ::write(FD, Ptr, Size);
+    } else {
+      // Use ::writev() where available.
+#if defined(HAVE_WRITEV)
+      const void *Addr = static_cast<const void *>(Ptr);
+      struct iovec IOV = {const_cast<void *>(Addr), Size };
+      ret = ::writev(FD, &IOV, 1);
+#else
+      ret = ::write(FD, Ptr, Size);
+#endif
+    }
 
     if (ret < 0) {
       // If it's a recoverable error, swallow it and retry the write.
@@ -623,7 +623,6 @@ void raw_fd_ostream::close() {
 }
 
 uint64_t raw_fd_ostream::seek(uint64_t off) {
-  assert(SupportsSeeking && "Stream does not support seeking!");
   flush();
   pos = ::lseek(FD, off, SEEK_SET);
   if (pos == (uint64_t)-1)
@@ -716,10 +715,9 @@ bool raw_fd_ostream::has_colors() const {
 /// outs() - This returns a reference to a raw_ostream for standard output.
 /// Use it like: outs() << "foo" << "bar";
 raw_ostream &llvm::outs() {
-  // Set buffer settings to model stdout behavior.  Delete the file descriptor
-  // when the program exits, forcing error detection.  This means that if you
-  // ever call outs(), you can't open another raw_fd_ostream on stdout, as we'll
-  // close stdout twice and print an error the second time.
+  // Set buffer settings to model stdout behavior.
+  // Delete the file descriptor when the program exits, forcing error
+  // detection. If you don't want this behavior, don't use outs().
   std::error_code EC;
   static raw_fd_ostream S("-", EC, sys::fs::F_None);
   assert(!EC);

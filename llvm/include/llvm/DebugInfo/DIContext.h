@@ -112,7 +112,6 @@ enum DIDumpType {
   DIDT_LineDwo,
   DIDT_Loc,
   DIDT_LocDwo,
-  DIDT_Macro,
   DIDT_Ranges,
   DIDT_Pubnames,
   DIDT_Pubtypes,
@@ -124,9 +123,7 @@ enum DIDumpType {
   DIDT_AppleNames,
   DIDT_AppleTypes,
   DIDT_AppleNamespaces,
-  DIDT_AppleObjC,
-  DIDT_CUIndex,
-  DIDT_TUIndex,
+  DIDT_AppleObjC
 };
 
 class DIContext {
@@ -140,8 +137,7 @@ public:
   DIContext(DIContextKind K) : Kind(K) {}
   virtual ~DIContext() {}
 
-  virtual void dump(raw_ostream &OS, DIDumpType DumpType = DIDT_All,
-                    bool DumpEH = false) = 0;
+  virtual void dump(raw_ostream &OS, DIDumpType DumpType = DIDT_All) = 0;
 
   virtual DILineInfo getLineInfoForAddress(uint64_t Address,
       DILineInfoSpecifier Specifier = DILineInfoSpecifier()) = 0;

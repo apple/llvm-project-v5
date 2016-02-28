@@ -34,15 +34,9 @@ public:
 
   const WebAssemblyRegisterInfo &getRegisterInfo() const { return RI; }
 
-  bool isReallyTriviallyReMaterializable(const MachineInstr *MI,
-                                         AliasAnalysis *AA) const override;
-
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
                    DebugLoc DL, unsigned DestReg, unsigned SrcReg,
                    bool KillSrc) const override;
-  MachineInstr *commuteInstructionImpl(MachineInstr *MI, bool NewMI,
-                                       unsigned OpIdx1,
-                                       unsigned OpIdx2) const override;
 
   bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                      MachineBasicBlock *&FBB,
@@ -50,7 +44,8 @@ public:
                      bool AllowModify = false) const override;
   unsigned RemoveBranch(MachineBasicBlock &MBB) const override;
   unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
-                        MachineBasicBlock *FBB, ArrayRef<MachineOperand> Cond,
+                        MachineBasicBlock *FBB,
+                        ArrayRef<MachineOperand> Cond,
                         DebugLoc DL) const override;
   bool
   ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;

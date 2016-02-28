@@ -116,10 +116,20 @@ private:
 };
 
 /// Analysis pass providing a never-invalidated alias analysis result.
-struct GlobalsAA : AnalysisBase<GlobalsAA> {
+class GlobalsAA {
+public:
   typedef GlobalsAAResult Result;
 
+  /// \brief Opaque, unique identifier for this analysis pass.
+  static void *ID() { return (void *)&PassID; }
+
   GlobalsAAResult run(Module &M, AnalysisManager<Module> *AM);
+
+  /// \brief Provide access to a name for this pass for debugging purposes.
+  static StringRef name() { return "GlobalsAA"; }
+
+private:
+  static char PassID;
 };
 
 /// Legacy wrapper pass to provide the GlobalsAAResult object.

@@ -12,7 +12,6 @@
 
 #include "Error.h"
 #include "StreamWriter.h"
-#include "llvm-readobj.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFTypes.h"

@@ -15,10 +15,10 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
-#include "llvm/MC/MCParser/MCTargetAsmParser.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSectionCOFF.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/Support/COFF.h"
 using namespace llvm;
 
@@ -98,10 +98,11 @@ class COFFAsmParser : public MCAsmParserExtension {
                               SectionKind::getText());
   }
   bool ParseSectionDirectiveData(StringRef, SMLoc) {
-    return ParseSectionSwitch(".data", COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
-                                           COFF::IMAGE_SCN_MEM_READ |
-                                           COFF::IMAGE_SCN_MEM_WRITE,
-                              SectionKind::getData());
+    return ParseSectionSwitch(".data",
+                              COFF::IMAGE_SCN_CNT_INITIALIZED_DATA
+                            | COFF::IMAGE_SCN_MEM_READ
+                            | COFF::IMAGE_SCN_MEM_WRITE,
+                              SectionKind::getDataRel());
   }
   bool ParseSectionDirectiveBSS(StringRef, SMLoc) {
     return ParseSectionSwitch(".bss",
@@ -152,7 +153,7 @@ static SectionKind computeSectionKind(unsigned Flags) {
   if (Flags & COFF::IMAGE_SCN_MEM_READ &&
       (Flags & COFF::IMAGE_SCN_MEM_WRITE) == 0)
     return SectionKind::getReadOnly();
-  return SectionKind::getData();
+  return SectionKind::getDataRel();
 }
 
 bool COFFAsmParser::ParseSectionFlags(StringRef FlagsString, unsigned* Flags) {

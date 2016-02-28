@@ -157,17 +157,6 @@ private:
                                                        + NumArgs)[index];
   }
 
-  /// The location of the 'strict' keyword in an availability attribute.
-  SourceLocation *getStrictSlot() {
-    return reinterpret_cast<SourceLocation*>(
-               &getAvailabilitySlot(ObsoletedSlot) + 1);
-  }
-
-  SourceLocation const *getStrictSlot() const {
-    return reinterpret_cast<SourceLocation const*>(
-               &getAvailabilitySlot(ObsoletedSlot) + 1);
-  }
-
 public:
   struct TypeTagForDatatypeData {
     ParsedType *MatchingCType;
@@ -244,7 +233,7 @@ private:
                 const AvailabilityChange &obsoleted,
                 SourceLocation unavailable, 
                 const Expr *messageExpr,
-                Syntax syntaxUsed, SourceLocation strict)
+                Syntax syntaxUsed)
     : AttrName(attrName), ScopeName(scopeName), AttrRange(attrRange),
       ScopeLoc(scopeLoc), EllipsisLoc(), NumArgs(1), SyntaxUsed(syntaxUsed),
       Invalid(false), UsedAsTypeAttr(false), IsAvailability(true),
@@ -256,7 +245,6 @@ private:
     new (&getAvailabilitySlot(IntroducedSlot)) AvailabilityChange(introduced);
     new (&getAvailabilitySlot(DeprecatedSlot)) AvailabilityChange(deprecated);
     new (&getAvailabilitySlot(ObsoletedSlot)) AvailabilityChange(obsoleted);
-    memcpy(getStrictSlot(), &strict, sizeof(SourceLocation));
     AttrKind = getKind(getName(), getScopeName(), syntaxUsed);
   }
 
@@ -424,11 +412,6 @@ public:
     return getAvailabilitySlot(ObsoletedSlot);
   }
 
-  SourceLocation getStrictLoc() const {
-    assert(getKind() == AT_Availability && "Not an availability attribute");
-    return *getStrictSlot();
-  }
-
   SourceLocation getUnavailableLoc() const {
     assert(getKind() == AT_Availability && "Not an availability attribute");
     return UnavailableLoc;
@@ -505,7 +488,7 @@ public:
     AvailabilityAllocSize =
       sizeof(AttributeList)
       + ((3 * sizeof(AvailabilityChange) + sizeof(void*) +
-         sizeof(ArgsUnion) + sizeof(SourceLocation) - 1)
+         sizeof(ArgsUnion) - 1)
          / sizeof(void*) * sizeof(void*)),
     TypeTagForDatatypeAllocSize =
       sizeof(AttributeList)
@@ -574,10 +557,8 @@ public:
   /// Create a new pool for a factory.
   AttributePool(AttributeFactory &factory) : Factory(factory), Head(nullptr) {}
 
-  AttributePool(const AttributePool &) = delete;
-
   /// Move the given pool's allocations to this pool.
-  AttributePool(AttributePool &&pool) : Factory(pool.Factory), Head(pool.Head) {
+  AttributePool(AttributePool &pool) : Factory(pool.Factory), Head(pool.Head) {
     pool.Head = nullptr;
   }
 
@@ -623,14 +604,13 @@ public:
                         const AvailabilityChange &obsoleted,
                         SourceLocation unavailable,
                         const Expr *MessageExpr,
-                        AttributeList::Syntax syntax,
-                        SourceLocation strict) {
+                        AttributeList::Syntax syntax) {
     void *memory = allocate(AttributeFactory::AvailabilityAllocSize);
     return add(new (memory) AttributeList(attrName, attrRange,
                                           scopeName, scopeLoc,
                                           Param, introduced, deprecated,
                                           obsoleted, unavailable, MessageExpr,
-                                          syntax, strict));
+                                          syntax));
   }
 
   AttributeList *create(IdentifierInfo *attrName, SourceRange attrRange,
@@ -759,12 +739,10 @@ public:
                         const AvailabilityChange &obsoleted,
                         SourceLocation unavailable,
                         const Expr *MessageExpr,
-                        AttributeList::Syntax syntax,
-                        SourceLocation strict) {
+                        AttributeList::Syntax syntax) {
     AttributeList *attr =
       pool.create(attrName, attrRange, scopeName, scopeLoc, Param, introduced,
-                  deprecated, obsoleted, unavailable, MessageExpr, syntax,
-                  strict);
+                  deprecated, obsoleted, unavailable, MessageExpr, syntax);
     add(attr);
     return attr;
   }
@@ -875,8 +853,7 @@ enum AttributeDeclKind {
   ExpectedStructOrTypedef,
   ExpectedObjectiveCInterfaceOrProtocol,
   ExpectedKernelFunction,
-  ExpectedFunctionWithProtoType,
-  ExpectedVariableEnumFieldOrTypedef
+  ExpectedFunctionWithProtoType
 };
 
 }  // end namespace clang

@@ -85,7 +85,7 @@ ARMConstantPoolValue::hasSameValue(ARMConstantPoolValue *ACPV) {
   return false;
 }
 
-LLVM_DUMP_METHOD void ARMConstantPoolValue::dump() const {
+void ARMConstantPoolValue::dump() const {
   errs() << "  " << *this;
 }
 

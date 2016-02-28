@@ -10,13 +10,10 @@ public:
 };
 
 static int sii;
-// expected-note@+1 {{defined as threadprivate or thread local}}
 #pragma omp threadprivate(sii)
 static int globalii;
 
-// Currently, we cannot use "0" for global register variables.
-// register int reg0 __asm__("0");
-int reg0;
+register int reg0 __asm__("0");
 
 int test_iteration_spaces() {
   const int N = 100;
@@ -310,7 +307,6 @@ int test_iteration_spaces() {
 
 #pragma omp parallel
   {
-// expected-error@+2 {{loop iteration variable in the associated loop of 'omp for' directive may not be threadprivate or thread local, predetermined as private}}
 #pragma omp for
     for (sii = 0; sii < 10; sii += 1)
       c[sii] = a[sii];
@@ -423,19 +419,6 @@ public:
   bool operator<(GoodIter a) { return true; }
   bool operator<=(GoodIter a) { return true; }
   bool operator>=(GoodIter a) { return false; }
-  typedef int difference_type;
-  typedef std::random_access_iterator_tag iterator_category;
-};
-class GoodIter1 {
-public:
-  GoodIter1() {}
-  GoodIter1(const GoodIter1 &) {}
-  GoodIter1 &operator++(int) { return *this; }
-  GoodIter1 &operator=(const GoodIter1 &that) { return *this; }
-  GoodIter1 &operator+=(int x) { return *this; }
-  friend long operator-(const GoodIter1 &, const GoodIter1 &);
-  GoodIter1 &operator-(int) { return *this; }
-  bool operator<(GoodIter1 a) { return true; }
   typedef int difference_type;
   typedef std::random_access_iterator_tag iterator_category;
 };
@@ -585,10 +568,6 @@ int test_with_random_access_iterator() {
 #pragma omp for
   for (Iter1 I; I < end1; ++I) {
   }
-  GoodIter1 I1, E1;
-#pragma omp for
-  for (GoodIter1 I = I1; I < E1; I++)
-    ;
   return 0;
 }
 

@@ -42,48 +42,50 @@ bool callIsSmall(ImmutableCallSite CS);
 struct CodeMetrics {
   /// \brief True if this function contains a call to setjmp or other functions
   /// with attribute "returns twice" without having the attribute itself.
-  bool exposesReturnsTwice = false;
+  bool exposesReturnsTwice;
 
   /// \brief True if this function calls itself.
-  bool isRecursive = false;
+  bool isRecursive;
 
   /// \brief True if this function cannot be duplicated.
   ///
   /// True if this function contains one or more indirect branches, or it contains
   /// one or more 'noduplicate' instructions.
-  bool notDuplicatable = false;
-
-  /// \brief True if this function contains a call to a convergent function.
-  bool convergent = false;
+  bool notDuplicatable;
 
   /// \brief True if this function calls alloca (in the C sense).
-  bool usesDynamicAlloca = false;
+  bool usesDynamicAlloca;
 
   /// \brief Number of instructions in the analyzed blocks.
-  unsigned NumInsts = false;
+  unsigned NumInsts;
 
   /// \brief Number of analyzed blocks.
-  unsigned NumBlocks = false;
+  unsigned NumBlocks;
 
   /// \brief Keeps track of basic block code size estimates.
   DenseMap<const BasicBlock *, unsigned> NumBBInsts;
 
   /// \brief Keep track of the number of calls to 'big' functions.
-  unsigned NumCalls = false;
+  unsigned NumCalls;
 
   /// \brief The number of calls to internal functions with a single caller.
   ///
   /// These are likely targets for future inlining, likely exposed by
   /// interleaved devirtualization.
-  unsigned NumInlineCandidates = 0;
+  unsigned NumInlineCandidates;
 
   /// \brief How many instructions produce vector values.
   ///
   /// The inliner is more aggressive with inlining vector kernels.
-  unsigned NumVectorInsts = 0;
+  unsigned NumVectorInsts;
 
   /// \brief How many 'ret' instructions the blocks contain.
-  unsigned NumRets = 0;
+  unsigned NumRets;
+
+  CodeMetrics()
+      : exposesReturnsTwice(false), isRecursive(false), notDuplicatable(false),
+        usesDynamicAlloca(false), NumInsts(0), NumBlocks(0), NumCalls(0),
+        NumInlineCandidates(0), NumVectorInsts(0), NumRets(0) {}
 
   /// \brief Add information about a block to the current state.
   void analyzeBasicBlock(const BasicBlock *BB, const TargetTransformInfo &TTI,

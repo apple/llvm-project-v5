@@ -19,9 +19,3 @@ C: for(for))
 // rdar://6880648
 #define f(x,y...) y
 f()
-
-// CHECK: #pragma omp parallel for
-#define FOO parallel
-#define Streaming _Pragma("omp FOO for")
-Streaming
-

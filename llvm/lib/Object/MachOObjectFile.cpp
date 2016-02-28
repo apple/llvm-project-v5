@@ -317,61 +317,6 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
       Load = LoadOrErr.get();
     }
   }
-  if (!SymtabLoadCmd) {
-    if (DysymtabLoadCmd) {
-      // Diagnostic("truncated or malformed object (contains LC_DYSYMTAB load "
-      // "command without a LC_SYMTAB load command)");
-      EC = object_error::parse_failed;
-      return;
-    }
-  } else if (DysymtabLoadCmd) {
-    MachO::symtab_command Symtab =
-      getStruct<MachO::symtab_command>(this, SymtabLoadCmd);
-    MachO::dysymtab_command Dysymtab =
-      getStruct<MachO::dysymtab_command>(this, DysymtabLoadCmd);
-    if (Dysymtab.nlocalsym != 0 && Dysymtab.ilocalsym > Symtab.nsyms) {
-      // Diagnostic("truncated or malformed object (ilocalsym in LC_DYSYMTAB "
-      // "load command extends past the end of the symbol table)"
-      EC = object_error::parse_failed;
-      return;
-    }
-    uint64_t big_size = Dysymtab.ilocalsym;
-    big_size += Dysymtab.nlocalsym;
-    if (Dysymtab.nlocalsym != 0 && big_size > Symtab.nsyms) {
-      // Diagnostic("truncated or malformed object (ilocalsym plus nlocalsym "
-      // "in LC_DYSYMTAB load command extends past the end of the symbol table)"
-      EC = object_error::parse_failed;
-      return;
-    }
-    if (Dysymtab.nextdefsym != 0 && Dysymtab.ilocalsym > Symtab.nsyms) {
-      // Diagnostic("truncated or malformed object (nextdefsym in LC_DYSYMTAB "
-      // "load command extends past the end of the symbol table)"
-      EC = object_error::parse_failed;
-      return;
-    }
-    big_size = Dysymtab.iextdefsym;
-    big_size += Dysymtab.nextdefsym;
-    if (Dysymtab.nextdefsym != 0 && big_size > Symtab.nsyms) {
-      // Diagnostic("truncated or malformed object (iextdefsym plus nextdefsym "
-      // "in LC_DYSYMTAB load command extends past the end of the symbol table)"
-      EC = object_error::parse_failed;
-      return;
-    }
-    if (Dysymtab.nundefsym != 0 && Dysymtab.iundefsym > Symtab.nsyms) {
-      // Diagnostic("truncated or malformed object (nundefsym in LC_DYSYMTAB "
-      // "load command extends past the end of the symbol table)"
-      EC = object_error::parse_failed;
-      return;
-    }
-    big_size = Dysymtab.iundefsym;
-    big_size += Dysymtab.nundefsym;
-    if (Dysymtab.nundefsym != 0 && big_size > Symtab.nsyms) {
-      // Diagnostic("truncated or malformed object (iundefsym plus nundefsym "
-      // "in LC_DYSYMTAB load command extends past the end of the symbol table)"
-      EC = object_error::parse_failed;
-      return;
-    }
-  }
   assert(LoadCommands.size() == LoadCommandCount);
 }
 
@@ -387,7 +332,8 @@ ErrorOr<StringRef> MachOObjectFile::getSymbolName(DataRefImpl Symb) const {
   MachO::nlist_base Entry = getSymbolTableEntryBase(this, Symb);
   const char *Start = &StringTable.data()[Entry.n_strx];
   if (Start < getData().begin() || Start >= getData().end())
-    return object_error::parse_failed;
+    report_fatal_error(
+        "Symbol name entry points before beginning or past end of file.");
   return StringRef(Start);
 }
 
@@ -455,9 +401,6 @@ SymbolRef::Type MachOObjectFile::getSymbolType(DataRefImpl Symb) const {
     case MachO::N_UNDF :
       return SymbolRef::ST_Unknown;
     case MachO::N_SECT :
-      section_iterator Sec = *getSymbolSection(Symb);
-      if (Sec->isData() || Sec->isBSS())
-        return SymbolRef::ST_Data;
       return SymbolRef::ST_Function;
   }
   return SymbolRef::ST_Other;
@@ -512,7 +455,7 @@ MachOObjectFile::getSymbolSection(DataRefImpl Symb) const {
   DataRefImpl DRI;
   DRI.d.a = index - 1;
   if (DRI.d.a >= Sections.size())
-    return object_error::parse_failed;
+    report_fatal_error("getSymbolSection: Invalid section index.");
   return section_iterator(SectionRef(DRI, this));
 }
 
@@ -996,20 +939,15 @@ MachOObjectFile::getRelocationRelocatedSection(relocation_iterator Rel) const {
 }
 
 basic_symbol_iterator MachOObjectFile::symbol_begin_impl() const {
-  DataRefImpl DRI;
-  MachO::symtab_command Symtab = getSymtabLoadCommand();
-  if (!SymtabLoadCmd || Symtab.nsyms == 0)
-    return basic_symbol_iterator(SymbolRef(DRI, this));
-
   return getSymbolByIndex(0);
 }
 
 basic_symbol_iterator MachOObjectFile::symbol_end_impl() const {
   DataRefImpl DRI;
-  MachO::symtab_command Symtab = getSymtabLoadCommand();
-  if (!SymtabLoadCmd || Symtab.nsyms == 0)
+  if (!SymtabLoadCmd)
     return basic_symbol_iterator(SymbolRef(DRI, this));
 
+  MachO::symtab_command Symtab = getSymtabLoadCommand();
   unsigned SymbolTableEntrySize = is64Bit() ?
     sizeof(MachO::nlist_64) :
     sizeof(MachO::nlist);
@@ -1020,12 +958,15 @@ basic_symbol_iterator MachOObjectFile::symbol_end_impl() const {
 }
 
 basic_symbol_iterator MachOObjectFile::getSymbolByIndex(unsigned Index) const {
+  DataRefImpl DRI;
+  if (!SymtabLoadCmd)
+    return basic_symbol_iterator(SymbolRef(DRI, this));
+
   MachO::symtab_command Symtab = getSymtabLoadCommand();
-  if (!SymtabLoadCmd || Index >= Symtab.nsyms)
+  if (Index >= Symtab.nsyms)
     report_fatal_error("Requested symbol index is out of range.");
   unsigned SymbolTableEntrySize =
     is64Bit() ? sizeof(MachO::nlist_64) : sizeof(MachO::nlist);
-  DataRefImpl DRI;
   DRI.p = reinterpret_cast<uintptr_t>(getPtr(this, Symtab.symoff));
   DRI.p += Index * SymbolTableEntrySize;
   return basic_symbol_iterator(SymbolRef(DRI, this));
@@ -1459,7 +1400,8 @@ MachOObjectFile::exports(ArrayRef<uint8_t> Trie) {
   ExportEntry Finish(Trie);
   Finish.moveToEnd();
 
-  return make_range(export_iterator(Start), export_iterator(Finish));
+  return iterator_range<export_iterator>(export_iterator(Start),
+                                         export_iterator(Finish));
 }
 
 iterator_range<export_iterator> MachOObjectFile::exports() const {
@@ -1629,7 +1571,8 @@ MachOObjectFile::rebaseTable(ArrayRef<uint8_t> Opcodes, bool is64) {
   MachORebaseEntry Finish(Opcodes, is64);
   Finish.moveToEnd();
 
-  return make_range(rebase_iterator(Start), rebase_iterator(Finish));
+  return iterator_range<rebase_iterator>(rebase_iterator(Start),
+                                         rebase_iterator(Finish));
 }
 
 iterator_range<rebase_iterator> MachOObjectFile::rebaseTable() const {
@@ -1880,7 +1823,8 @@ MachOObjectFile::bindTable(ArrayRef<uint8_t> Opcodes, bool is64,
   MachOBindEntry Finish(Opcodes, is64, BKind);
   Finish.moveToEnd();
 
-  return make_range(bind_iterator(Start), bind_iterator(Finish));
+  return iterator_range<bind_iterator>(bind_iterator(Start),
+                                       bind_iterator(Finish));
 }
 
 iterator_range<bind_iterator> MachOObjectFile::bindTable() const {
@@ -1910,7 +1854,8 @@ MachOObjectFile::end_load_commands() const {
 
 iterator_range<MachOObjectFile::load_command_iterator>
 MachOObjectFile::load_commands() const {
-  return make_range(begin_load_commands(), end_load_commands());
+  return iterator_range<load_command_iterator>(begin_load_commands(),
+                                               end_load_commands());
 }
 
 StringRef

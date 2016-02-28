@@ -14,7 +14,7 @@
 #include "clang/StaticAnalyzer/Frontend/AnalysisConsumer.h"
 #include "ModelInjector.h"
 #include "clang/AST/ASTConsumer.h"
-#include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/DataRecursiveASTVisitor.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
@@ -141,7 +141,7 @@ public:
 namespace {
 
 class AnalysisConsumer : public AnalysisASTConsumer,
-                         public RecursiveASTVisitor<AnalysisConsumer> {
+                         public DataRecursiveASTVisitor<AnalysisConsumer> {
   enum {
     AM_None = 0,
     AM_Syntax = 0x1,
@@ -274,7 +274,7 @@ public:
       llvm::errs() << ": " << Loc.getFilename();
       if (isa<FunctionDecl>(D) || isa<ObjCMethodDecl>(D)) {
         const NamedDecl *ND = cast<NamedDecl>(D);
-        llvm::errs() << ' ' << ND->getQualifiedNameAsString() << '\n';
+        llvm::errs() << ' ' << *ND << '\n';
       }
       else if (isa<BlockDecl>(D)) {
         llvm::errs() << ' ' << "block(line:" << Loc.getLine() << ",col:"
@@ -368,11 +368,7 @@ public:
   bool VisitBlockDecl(BlockDecl *BD) {
     if (BD->hasBody()) {
       assert(RecVisitorMode == AM_Syntax || Mgr->shouldInlineCall() == false);
-      // Since we skip function template definitions, we should skip blocks
-      // declared in those functions as well.
-      if (!BD->isDependentContext()) {
-        HandleCode(BD, RecVisitorMode);
-      }
+      HandleCode(BD, RecVisitorMode);
     }
     return true;
   }
@@ -496,11 +492,10 @@ void AnalysisConsumer::HandleDeclsCallGraph(const unsigned LocalTUDeclsSize) {
                (Mgr->options.InliningMode == All ? nullptr : &VisitedCallees));
 
     // Add the visited callees to the global visited set.
-    for (const Decl *Callee : VisitedCallees)
-      // Decls from CallGraph are already canonical. But Decls coming from
-      // CallExprs may be not. We should canonicalize them manually.
-      Visited.insert(isa<ObjCMethodDecl>(Callee) ? Callee
-                                                 : Callee->getCanonicalDecl());
+    for (SetOfConstDecls::iterator I = VisitedCallees.begin(),
+                                   E = VisitedCallees.end(); I != E; ++I) {
+        Visited.insert(*I);
+    }
     VisitedAsTopLevel.insert(D);
   }
 }

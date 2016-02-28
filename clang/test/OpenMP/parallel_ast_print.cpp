@@ -8,91 +8,6 @@
 
 void foo() {}
 
-struct S1 {
-  S1(): a(0) {}
-  S1(int v) : a(v) {}
-  int a;
-  typedef int type;
-};
-
-template <typename T>
-class S7 : public T {
-protected:
-  T a;
-  S7() : a(0) {}
-
-public:
-  S7(typename T::type v) : a(v) {
-#pragma omp parallel private(a) private(this->a) private(T::a)
-    for (int k = 0; k < a.a; ++k)
-      ++this->a.a;
-#pragma omp parallel firstprivate(a) firstprivate(this->a) firstprivate(T::a)
-    for (int k = 0; k < a.a; ++k)
-      ++this->a.a;
-#pragma omp parallel shared(a) shared(this->a) shared(T::a)
-    for (int k = 0; k < a.a; ++k)
-      ++this->a.a;
-  }
-  S7 &operator=(S7 &s) {
-#pragma omp parallel private(a) private(this->a)
-    for (int k = 0; k < s.a.a; ++k)
-      ++s.a.a;
-#pragma omp parallel firstprivate(a) firstprivate(this->a)
-    for (int k = 0; k < s.a.a; ++k)
-      ++s.a.a;
-#pragma omp parallel shared(a) shared(this->a)
-    for (int k = 0; k < s.a.a; ++k)
-      ++s.a.a;
-    return *this;
-  }
-};
-
-// CHECK: #pragma omp parallel private(this->a) private(this->a) private(this->S1::a)
-// CHECK: #pragma omp parallel firstprivate(this->a) firstprivate(this->a) firstprivate(this->S1::a)
-// CHECK: #pragma omp parallel shared(this->a) shared(this->a) shared(this->S1::a)
-// CHECK: #pragma omp parallel private(this->a) private(this->a) private(T::a)
-// CHECK: #pragma omp parallel firstprivate(this->a) firstprivate(this->a) firstprivate(T::a)
-// CHECK: #pragma omp parallel shared(this->a) shared(this->a) shared(T::a)
-// CHECK: #pragma omp parallel private(this->a) private(this->a)
-// CHECK: #pragma omp parallel firstprivate(this->a) firstprivate(this->a)
-// CHECK: #pragma omp parallel shared(this->a) shared(this->a)
-
-class S8 : public S7<S1> {
-  S8() {}
-
-public:
-  S8(int v) : S7<S1>(v){
-#pragma omp parallel private(a) private(this->a) private(S7 < S1 > ::a)
-    for (int k = 0; k < a.a; ++k)
-      ++this->a.a;
-#pragma omp parallel firstprivate(a) firstprivate(this->a) firstprivate(S7 < S1 > ::a)
-    for (int k = 0; k < a.a; ++k)
-      ++this->a.a;
-#pragma omp parallel shared(a) shared(this->a) shared(S7 < S1 > ::a)
-    for (int k = 0; k < a.a; ++k)
-      ++this->a.a;
-  }
-  S8 &operator=(S8 &s) {
-#pragma omp parallel private(a) private(this->a)
-    for (int k = 0; k < s.a.a; ++k)
-      ++s.a.a;
-#pragma omp parallel firstprivate(a) firstprivate(this->a)
-    for (int k = 0; k < s.a.a; ++k)
-      ++s.a.a;
-#pragma omp parallel shared(a) shared(this->a)
-    for (int k = 0; k < s.a.a; ++k)
-      ++s.a.a;
-    return *this;
-  }
-};
-
-// CHECK: #pragma omp parallel private(this->a) private(this->a) private(this->S7<S1>::a)
-// CHECK: #pragma omp parallel firstprivate(this->a) firstprivate(this->a) firstprivate(this->S7<S1>::a)
-// CHECK: #pragma omp parallel shared(this->a) shared(this->a) shared(this->S7<S1>::a)
-// CHECK: #pragma omp parallel private(this->a) private(this->a)
-// CHECK: #pragma omp parallel firstprivate(this->a) firstprivate(this->a)
-// CHECK: #pragma omp parallel shared(this->a) shared(this->a)
-
 template <class T>
 struct S {
   operator T() {return T();}
@@ -185,24 +100,6 @@ int main (int argc, char **argv) {
 #pragma omp parallel if (b) num_threads(c) proc_bind(close) reduction(^:e, f) reduction(&& : g, arr[0:argc][:10])
   foo();
   return tmain<int, 5>(b, &b) + tmain<long, 1>(x, &x);
-}
-
-template <class T>
-struct Foo {
-  int foo;
-};
-
-void foo(const Foo<int> &arg) {
-// CHECK: #pragma omp parallel
-#pragma omp parallel
-  {
-// CHECK: #pragma omp for schedule(static)
-#pragma omp for schedule(static)
-    for (int idx = 0; idx < 1234; ++idx) {
-      //arg.foo = idx;
-      idx = arg.foo;
-    }
-  }
 }
 
 #endif

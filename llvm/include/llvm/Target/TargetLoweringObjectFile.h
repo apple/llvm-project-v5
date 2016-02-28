@@ -71,8 +71,7 @@ public:
   /// placed in.
   virtual MCSection *getSectionForConstant(const DataLayout &DL,
                                            SectionKind Kind,
-                                           const Constant *C,
-                                           unsigned &Align) const;
+                                           const Constant *C) const;
 
   /// Classify the specified global variable into a set of target independent
   /// categories embodied in SectionKind.

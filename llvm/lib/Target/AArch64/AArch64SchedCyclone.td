@@ -1,4 +1,4 @@
-//=- AArch64SchedCyclone.td - Cyclone Scheduling Definitions -*- tablegen -*-=//
+//=- ARMSchedCyclone.td - AArch64 Cyclone Scheduling Defs ----*- tablegen -*-=//
 //
 //                     The LLVM Compiler Infrastructure
 //

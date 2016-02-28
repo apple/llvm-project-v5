@@ -14,7 +14,6 @@
 #ifndef LLVM_CLANG_SEMA_OBJCMETHODLIST_H
 #define LLVM_CLANG_SEMA_OBJCMETHODLIST_H
 
-#include "clang/AST/DeclObjC.h"
 #include "llvm/ADT/PointerIntPair.h"
 
 namespace clang {

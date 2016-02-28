@@ -156,6 +156,16 @@ Pass *createLoopStrengthReducePass();
 
 //===----------------------------------------------------------------------===//
 //
+// GlobalMerge - This pass merges internal (by default) globals into structs
+// to enable reuse of a base pointer by indexed addressing modes.
+// It can also be configured to focus on size optimizations only.
+//
+Pass *createGlobalMergePass(const TargetMachine *TM, unsigned MaximalOffset,
+                            bool OnlyOptimizeForSize = false,
+                            bool MergeExternalByDefault = false);
+
+//===----------------------------------------------------------------------===//
+//
 // LoopUnswitch - This pass is a simple loop unswitching pass.
 //
 Pass *createLoopUnswitchPass(bool OptimizeForSize = false);
@@ -192,12 +202,6 @@ Pass *createLoopRotatePass(int MaxHeaderSize = -1);
 // LoopIdiom - This pass recognizes and replaces idioms in loops.
 //
 Pass *createLoopIdiomPass();
-
-//===----------------------------------------------------------------------===//
-//
-// LoopVersioningLICM - This pass is a loop versioning pass for LICM.
-//
-Pass *createLoopVersioningLICMPass();
 
 //===----------------------------------------------------------------------===//
 //
@@ -258,10 +262,7 @@ FunctionPass *createFlattenCFGPass();
 //
 // CFG Structurization - Remove irreducible control flow
 //
-///
-/// When \p SkipUniformRegions is true the structizer will not structurize
-/// regions that only contain uniform branches.
-Pass *createStructurizeCFGPass(bool SkipUniformRegions = false);
+Pass *createStructurizeCFGPass();
 
 //===----------------------------------------------------------------------===//
 //
@@ -484,25 +485,6 @@ FunctionPass *createLoopDistributePass();
 // LoopLoadElimination - Perform loop-aware load elimination.
 //
 FunctionPass *createLoopLoadEliminationPass();
-
-//===----------------------------------------------------------------------===//
-//
-// LoopSimplifyCFG - This pass performs basic CFG simplification on loops,
-// primarily to help other loop passes.
-//
-Pass *createLoopSimplifyCFGPass();
-
-//===----------------------------------------------------------------------===//
-//
-// LoopVersioning - Perform loop multi-versioning.
-//
-FunctionPass *createLoopVersioningPass();
-
-//===----------------------------------------------------------------------===//
-//
-// LoopDataPrefetch - Perform data prefetching in loops.
-//
-FunctionPass *createLoopDataPrefetchPass();
 
 } // End llvm namespace
 

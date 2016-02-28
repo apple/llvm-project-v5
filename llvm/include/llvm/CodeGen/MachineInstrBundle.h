@@ -43,22 +43,23 @@ bool finalizeBundles(MachineFunction &MF);
 
 /// getBundleStart - Returns the first instruction in the bundle containing MI.
 ///
-inline MachineInstr &getBundleStart(MachineInstr &MI) {
+inline MachineInstr *getBundleStart(MachineInstr *MI) {
   MachineBasicBlock::instr_iterator I(MI);
   while (I->isBundledWithPred())
     --I;
-  return *I;
+  return &*I;
 }
 
-inline const MachineInstr &getBundleStart(const MachineInstr &MI) {
+inline const MachineInstr *getBundleStart(const MachineInstr *MI) {
   MachineBasicBlock::const_instr_iterator I(MI);
   while (I->isBundledWithPred())
     --I;
-  return *I;
+  return &*I;
 }
 
 /// Return an iterator pointing beyond the bundle containing MI.
-inline MachineBasicBlock::instr_iterator getBundleEnd(MachineInstr &MI) {
+inline MachineBasicBlock::instr_iterator
+getBundleEnd(MachineInstr *MI) {
   MachineBasicBlock::instr_iterator I(MI);
   while (I->isBundledWithSucc())
     ++I;
@@ -67,7 +68,7 @@ inline MachineBasicBlock::instr_iterator getBundleEnd(MachineInstr &MI) {
 
 /// Return an iterator pointing beyond the bundle containing MI.
 inline MachineBasicBlock::const_instr_iterator
-getBundleEnd(const MachineInstr &MI) {
+getBundleEnd(const MachineInstr *MI) {
   MachineBasicBlock::const_instr_iterator I(MI);
   while (I->isBundledWithSucc())
     ++I;
@@ -113,12 +114,12 @@ protected:
   /// @param MI The instruction to examine.
   /// @param WholeBundle When true, visit all operands on the entire bundle.
   ///
-  explicit MachineOperandIteratorBase(MachineInstr &MI, bool WholeBundle) {
+  explicit MachineOperandIteratorBase(MachineInstr *MI, bool WholeBundle) {
     if (WholeBundle) {
-      InstrI = getBundleStart(MI).getIterator();
-      InstrE = MI.getParent()->instr_end();
+      InstrI = getBundleStart(MI)->getIterator();
+      InstrE = MI->getParent()->instr_end();
     } else {
-      InstrI = InstrE = MI.getIterator();
+      InstrI = InstrE = MI->getIterator();
       ++InstrE;
     }
     OpI = InstrI->operands_begin();
@@ -163,32 +164,27 @@ public:
     bool Tied;
   };
 
-  /// Information about how a physical register Reg is used by a set of
+  /// PhysRegInfo - Information about a physical register used by a set of
   /// operands.
   struct PhysRegInfo {
-    /// There is a regmask operand indicating Reg is clobbered.
-    /// \see MachineOperand::CreateRegMask().
-    bool Clobbered;
+    /// Clobbers - Reg or an overlapping register is defined, or a regmask
+    /// clobbers Reg.
+    bool Clobbers;
 
-    /// Reg or one of its aliases is defined. The definition may only cover
-    /// parts of the register.
-    bool Defined;
-    /// Reg or a super-register is defined. The definition covers the full
-    /// register.
-    bool FullyDefined;
+    /// Defines - Reg or a super-register is defined.
+    bool Defines;
 
-    /// Reg or one of its aliases is read. The register may only be read
-    /// partially.
-    bool Read;
-    /// Reg or a super-register is read. The full register is read.
-    bool FullyRead;
+    /// Reads - Read or a super-register is read.
+    bool Reads;
 
-    /// Reg is FullyDefined and all defs of reg or an overlapping register are
-    /// dead.
-    bool DeadDef;
+    /// ReadsOverlap - Reg or an overlapping register is read.
+    bool ReadsOverlap;
 
-    /// There is a use operand of reg or a super-register with kill flag set.
-    bool Killed;
+    /// DefinesDead - All defs of a Reg or a super-register are dead.
+    bool DefinesDead;
+
+    /// There is a kill of Reg or a super-register.
+    bool Kills;
   };
 
   /// analyzeVirtReg - Analyze how the current instruction or bundle uses a
@@ -215,7 +211,7 @@ public:
 ///
 class MIOperands : public MachineOperandIteratorBase {
 public:
-  MIOperands(MachineInstr &MI) : MachineOperandIteratorBase(MI, false) {}
+  MIOperands(MachineInstr *MI) : MachineOperandIteratorBase(MI, false) {}
   MachineOperand &operator* () const { return deref(); }
   MachineOperand *operator->() const { return &deref(); }
 };
@@ -224,8 +220,8 @@ public:
 ///
 class ConstMIOperands : public MachineOperandIteratorBase {
 public:
-  ConstMIOperands(const MachineInstr &MI)
-      : MachineOperandIteratorBase(const_cast<MachineInstr &>(MI), false) {}
+  ConstMIOperands(const MachineInstr *MI)
+    : MachineOperandIteratorBase(const_cast<MachineInstr*>(MI), false) {}
   const MachineOperand &operator* () const { return deref(); }
   const MachineOperand *operator->() const { return &deref(); }
 };
@@ -235,7 +231,7 @@ public:
 ///
 class MIBundleOperands : public MachineOperandIteratorBase {
 public:
-  MIBundleOperands(MachineInstr &MI) : MachineOperandIteratorBase(MI, true) {}
+  MIBundleOperands(MachineInstr *MI) : MachineOperandIteratorBase(MI, true) {}
   MachineOperand &operator* () const { return deref(); }
   MachineOperand *operator->() const { return &deref(); }
 };
@@ -245,8 +241,8 @@ public:
 ///
 class ConstMIBundleOperands : public MachineOperandIteratorBase {
 public:
-  ConstMIBundleOperands(const MachineInstr &MI)
-      : MachineOperandIteratorBase(const_cast<MachineInstr &>(MI), true) {}
+  ConstMIBundleOperands(const MachineInstr *MI)
+    : MachineOperandIteratorBase(const_cast<MachineInstr*>(MI), true) {}
   const MachineOperand &operator* () const { return deref(); }
   const MachineOperand *operator->() const { return &deref(); }
 };

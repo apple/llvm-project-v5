@@ -30,6 +30,7 @@ public:
   FORWARD_SYMBOL_METHOD(getAddressSection)
   FORWARD_SYMBOL_METHOD(getDataKind)
   FORWARD_SYMBOL_METHOD(getRelativeVirtualAddress)
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
   // FORWARD_SYMBOL_METHOD(getValue)
   FORWARD_SYMBOL_METHOD(getVirtualAddress)
 };

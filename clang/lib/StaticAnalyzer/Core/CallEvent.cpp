@@ -210,16 +210,6 @@ ProgramPoint CallEvent::getProgramPoint(bool IsPreVisit,
   return PostImplicitCall(D, Loc, getLocationContext(), Tag);
 }
 
-bool CallEvent::isCalled(const CallDescription &CD) const {
-  assert(getKind() != CE_ObjCMessage && "Obj-C methods are not supported");
-  if (!CD.II)
-    CD.II = &getState()->getStateManager().getContext().Idents.get(CD.FuncName);
-  if (getCalleeIdentifier() != CD.II)
-    return false;
-  return (CD.RequiredArgs == CallDescription::NoArgRequirement ||
-          CD.RequiredArgs == getNumArgs());
-}
-
 SVal CallEvent::getArgSVal(unsigned Index) const {
   const Expr *ArgE = getArgExpr(Index);
   if (!ArgE)
@@ -430,8 +420,8 @@ const FunctionDecl *CXXInstanceCall::getDecl() const {
   return getSVal(CE->getCallee()).getAsFunctionDecl();
 }
 
-void CXXInstanceCall::getExtraInvalidatedValues(
-    ValueList &Values, RegionAndSymbolInvalidationTraits *ETraits) const {
+void CXXInstanceCall::getExtraInvalidatedValues(ValueList &Values,
+                        RegionAndSymbolInvalidationTraits *ETraits) const {
   SVal ThisVal = getCXXThisVal();
   Values.push_back(ThisVal);
 
@@ -448,11 +438,9 @@ void CXXInstanceCall::getExtraInvalidatedValues(
       return;
     // Preserve CXXThis.
     const MemRegion *ThisRegion = ThisVal.getAsRegion();
-    if (!ThisRegion)
-      return;
-
+    assert(ThisRegion && "ThisValue was not a memory region");
     ETraits->setTrait(ThisRegion->getBaseRegion(),
-                      RegionAndSymbolInvalidationTraits::TK_PreserveContents);
+      RegionAndSymbolInvalidationTraits::TK_PreserveContents);
   }
 }
 
@@ -608,25 +596,10 @@ void BlockCall::getExtraInvalidatedValues(ValueList &Values,
 
 void BlockCall::getInitialStackFrameContents(const StackFrameContext *CalleeCtx,
                                              BindingsTy &Bindings) const {
+  const BlockDecl *D = cast<BlockDecl>(CalleeCtx->getDecl());
   SValBuilder &SVB = getState()->getStateManager().getSValBuilder();
-  ArrayRef<ParmVarDecl*> Params;
-  if (isConversionFromLambda()) {
-    auto *LambdaOperatorDecl = cast<CXXMethodDecl>(CalleeCtx->getDecl());
-    Params = LambdaOperatorDecl->parameters();
-
-    // For blocks converted from a C++ lambda, the callee declaration is the
-    // operator() method on the lambda so we bind "this" to
-    // the lambda captured by the block.
-    const VarRegion *CapturedLambdaRegion = getRegionStoringCapturedLambda();
-    SVal ThisVal = loc::MemRegionVal(CapturedLambdaRegion);
-    Loc ThisLoc = SVB.getCXXThis(LambdaOperatorDecl, CalleeCtx);
-    Bindings.push_back(std::make_pair(ThisLoc, ThisVal));
-  } else {
-    Params = cast<BlockDecl>(CalleeCtx->getDecl())->parameters();
-  }
-
   addParameterValuesToBindings(CalleeCtx, Bindings, SVB, *this,
-                               Params);
+                               D->parameters());
 }
 
 
@@ -678,26 +651,9 @@ ArrayRef<ParmVarDecl*> ObjCMethodCall::parameters() const {
   return D->parameters();
 }
 
-void ObjCMethodCall::getExtraInvalidatedValues(
-    ValueList &Values, RegionAndSymbolInvalidationTraits *ETraits) const {
-
-  // If the method call is a setter for property known to be backed by
-  // an instance variable, don't invalidate the entire receiver, just
-  // the storage for that instance variable.
-  if (const ObjCPropertyDecl *PropDecl = getAccessedProperty()) {
-    if (const ObjCIvarDecl *PropIvar = PropDecl->getPropertyIvarDecl()) {
-      SVal IvarLVal = getState()->getLValue(PropIvar, getReceiverSVal());
-      const MemRegion *IvarRegion = IvarLVal.getAsRegion();
-      ETraits->setTrait(
-          IvarRegion,
-          RegionAndSymbolInvalidationTraits::TK_DoNotInvalidateSuperRegion);
-      ETraits->setTrait(IvarRegion,
-                        RegionAndSymbolInvalidationTraits::TK_SuppressEscape);
-      Values.push_back(IvarLVal);
-      return;
-    }
-  }
-
+void
+ObjCMethodCall::getExtraInvalidatedValues(ValueList &Values,
+                  RegionAndSymbolInvalidationTraits *ETraits) const {
   Values.push_back(getReceiverSVal());
 }
 
@@ -757,18 +713,6 @@ const PseudoObjectExpr *ObjCMethodCall::getContainingPseudoObjectExpr() const {
   return ObjCMessageDataTy::getFromOpaqueValue(Data).getPointer();
 }
 
-static const Expr *
-getSyntacticFromForPseudoObjectExpr(const PseudoObjectExpr *POE) {
-  const Expr *Syntactic = POE->getSyntacticForm();
-
-  // This handles the funny case of assigning to the result of a getter.
-  // This can happen if the getter returns a non-const reference.
-  if (const BinaryOperator *BO = dyn_cast<BinaryOperator>(Syntactic))
-    Syntactic = BO->getLHS();
-
-  return Syntactic;
-}
-
 ObjCMessageKind ObjCMethodCall::getMessageKind() const {
   if (!Data) {
 
@@ -778,7 +722,12 @@ ObjCMessageKind ObjCMethodCall::getMessageKind() const {
 
     // Check if parent is a PseudoObjectExpr.
     if (const PseudoObjectExpr *POE = dyn_cast_or_null<PseudoObjectExpr>(S)) {
-      const Expr *Syntactic = getSyntacticFromForPseudoObjectExpr(POE);
+      const Expr *Syntactic = POE->getSyntacticForm();
+
+      // This handles the funny case of assigning to the result of a getter.
+      // This can happen if the getter returns a non-const reference.
+      if (const BinaryOperator *BO = dyn_cast<BinaryOperator>(Syntactic))
+        Syntactic = BO->getLHS();
 
       ObjCMessageKind K;
       switch (Syntactic->getStmtClass()) {
@@ -814,27 +763,6 @@ ObjCMessageKind ObjCMethodCall::getMessageKind() const {
   return static_cast<ObjCMessageKind>(Info.getInt());
 }
 
-const ObjCPropertyDecl *ObjCMethodCall::getAccessedProperty() const {
-  // Look for properties accessed with property syntax (foo.bar = ...)
-  if ( getMessageKind() == OCM_PropertyAccess) {
-    const PseudoObjectExpr *POE = getContainingPseudoObjectExpr();
-    assert(POE && "Property access without PseudoObjectExpr?");
-
-    const Expr *Syntactic = getSyntacticFromForPseudoObjectExpr(POE);
-    auto *RefExpr = cast<ObjCPropertyRefExpr>(Syntactic);
-
-    if (RefExpr->isExplicitProperty())
-      return RefExpr->getExplicitProperty();
-  }
-
-  // Look for properties accessed with method syntax ([foo setBar:...]).
-  const ObjCMethodDecl *MD = getDecl();
-  if (!MD || !MD->isPropertyAccessor())
-    return nullptr;
-
-  // Note: This is potentially quite slow.
-  return MD->findPropertyDecl();
-}
 
 bool ObjCMethodCall::canBeOverridenInSubclass(ObjCInterfaceDecl *IDecl,
                                              Selector Sel) const {

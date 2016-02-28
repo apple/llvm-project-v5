@@ -124,7 +124,7 @@ static void ReportControlFlow(raw_ostream &o,
   --indent;
 
   // Output any helper text.
-  const auto &s = P.getString();
+  const std::string& s = P.getString();
   if (!s.empty()) {
     Indent(o, indent) << "<key>alternate</key>";
     EmitString(o, s) << '\n';
@@ -295,7 +295,7 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
   const SourceManager* SM = nullptr;
 
   if (!Diags.empty())
-    SM = &Diags.front()->path.front()->getLocation().getManager();
+    SM = &(*(*Diags.begin())->path.begin())->getLocation().getManager();
 
 
   for (std::vector<const PathDiagnostic*>::iterator DI = Diags.begin(),
@@ -399,7 +399,7 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
                     *SM);
     const Decl *DeclWithIssue = D->getDeclWithIssue();
     EmitString(o, GetIssueHash(*SM, L, D->getCheckName(), D->getBugType(),
-                               DeclWithIssue, LangOpts))
+                               DeclWithIssue))
         << '\n';
 
     // Output information about the semantic context where

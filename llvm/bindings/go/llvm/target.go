@@ -14,7 +14,6 @@
 package llvm
 
 /*
-#include "llvm-c/Core.h"
 #include "llvm-c/Target.h"
 #include "llvm-c/TargetMachine.h"
 #include <stdlib.h>
@@ -119,6 +118,13 @@ func NewTargetData(rep string) (td TargetData) {
 	defer C.free(unsafe.Pointer(crep))
 	td.C = C.LLVMCreateTargetData(crep)
 	return
+}
+
+// Adds target data information to a pass manager. This does not take ownership
+// of the target data.
+// See the method llvm::PassManagerBase::add.
+func (pm PassManager) Add(td TargetData) {
+	C.LLVMAddTargetData(td.C, pm.C)
 }
 
 // Converts target data to a target layout string. The string must be disposed
@@ -258,6 +264,11 @@ func (t Target) CreateTargetMachine(Triple string, CPU string, Features string,
 func (tm TargetMachine) Triple() string {
 	cstr := C.LLVMGetTargetMachineTriple(tm.C)
 	return C.GoString(cstr)
+}
+
+// TargetData returns the TargetData for the machine.
+func (tm TargetMachine) TargetData() TargetData {
+	return TargetData{C.LLVMGetTargetMachineData(tm.C)}
 }
 
 func (tm TargetMachine) EmitToMemoryBuffer(m Module, ft CodeGenFileType) (MemoryBuffer, error) {

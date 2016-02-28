@@ -56,9 +56,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   ObjCContainersChecker.cpp
   ObjCMissingSuperCallChecker.cpp
   ObjCSelfInitChecker.cpp
-  ObjCSuperDeallocChecker.cpp
   ObjCUnusedIVarsChecker.cpp
-  PaddingChecker.cpp
   PointerArithChecker.cpp
   PointerSubChecker.cpp
   PthreadLockChecker.cpp
@@ -78,7 +76,6 @@ add_clang_library(clangStaticAnalyzerCheckers
   UndefinedAssignmentChecker.cpp
   UnixAPIChecker.cpp
   UnreachableCodeChecker.cpp
-  VforkChecker.cpp
   VLASizeChecker.cpp
   VirtualCallChecker.cpp
 

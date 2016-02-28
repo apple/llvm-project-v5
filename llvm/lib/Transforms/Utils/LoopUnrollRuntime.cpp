@@ -63,7 +63,7 @@ static void ConnectProlog(Loop *L, Value *BECount, unsigned Count,
                           BasicBlock *LastPrologBB, BasicBlock *PrologEnd,
                           BasicBlock *OrigPH, BasicBlock *NewPH,
                           ValueToValueMapTy &VMap, DominatorTree *DT,
-                          LoopInfo *LI, bool PreserveLCSSA) {
+                          LoopInfo *LI, Pass *P) {
   BasicBlock *Latch = L->getLoopLatch();
   assert(Latch && "Loop must have a latch");
 
@@ -110,7 +110,7 @@ static void ConnectProlog(Loop *L, Value *BECount, unsigned Count,
     }
   }
 
-  // Create a branch around the original loop, which is taken if there are no
+  // Create a branch around the orignal loop, which is taken if there are no
   // iterations remaining to be executed after running the prologue.
   Instruction *InsertPt = PrologEnd->getTerminator();
   IRBuilder<> B(InsertPt);
@@ -128,7 +128,7 @@ static void ConnectProlog(Loop *L, Value *BECount, unsigned Count,
   // Split the exit to maintain loop canonicalization guarantees
   SmallVector<BasicBlock*, 4> Preds(pred_begin(Exit), pred_end(Exit));
   SplitBlockPredecessors(Exit, Preds, ".unr-lcssa", DT, LI,
-                         PreserveLCSSA);
+                         P->mustPreserveAnalysisID(LCSSAID));
   // Add the branch to the exit block (around the unrolled loop)
   B.CreateCondBr(BrLoopExit, Exit, NewPH);
   InsertPt->eraseFromParent();
@@ -176,8 +176,8 @@ static void CloneLoopBlocks(Loop *L, Value *NewIter, const bool UnrollProlog,
       // For the first block, add a CFG connection to this newly
       // created block.
       InsertTop->getTerminator()->setSuccessor(0, NewBB);
-    }
 
+    }
     if (Latch == *BB) {
       // For the last block, if UnrollProlog is true, create a direct jump to
       // InsertBot. If not, create a loop back to cloned head.
@@ -258,7 +258,7 @@ static void CloneLoopBlocks(Loop *L, Value *NewIter, const bool UnrollProlog,
 /// run-time trip-count.
 ///
 /// This method assumes that the loop unroll factor is total number
-/// of loop bodies in the loop after unrolling. (Some folks refer
+/// of loop bodes in the loop after unrolling. (Some folks refer
 /// to the unroll factor as the number of *extra* copies added).
 /// We assume also that the loop unroll factor is a power-of-two. So, after
 /// unrolling the loop, the number of loop bodies executed is 2,
@@ -279,9 +279,8 @@ static void CloneLoopBlocks(Loop *L, Value *NewIter, const bool UnrollProlog,
 ///
 bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
                                    bool AllowExpensiveTripCount, LoopInfo *LI,
-                                   ScalarEvolution *SE, DominatorTree *DT,
-                                   bool PreserveLCSSA) {
-  // For now, only unroll loops that contain a single exit.
+                                   LPPassManager *LPM) {
+  // for now, only unroll loops that contain a single exit
   if (!L->getExitingBlock())
     return false;
 
@@ -290,33 +289,34 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
   if (!L->isLoopSimplifyForm() || !L->getUniqueExitBlock())
     return false;
 
-  // Use Scalar Evolution to compute the trip count. This allows more loops to
-  // be unrolled than relying on induction var simplification.
-  if (!SE)
+  // Use Scalar Evolution to compute the trip count.  This allows more
+  // loops to be unrolled than relying on induction var simplification
+  if (!LPM)
     return false;
+  auto *SEWP = LPM->getAnalysisIfAvailable<ScalarEvolutionWrapperPass>();
+  if (!SEWP)
+    return false;
+  ScalarEvolution &SE = SEWP->getSE();
 
-  // Only unroll loops with a computable trip count, and the trip count needs
-  // to be an int value (allowing a pointer type is a TODO item).
-  const SCEV *BECountSC = SE->getBackedgeTakenCount(L);
+  // Only unroll loops with a computable trip count and the trip count needs
+  // to be an int value (allowing a pointer type is a TODO item)
+  const SCEV *BECountSC = SE.getBackedgeTakenCount(L);
   if (isa<SCEVCouldNotCompute>(BECountSC) ||
       !BECountSC->getType()->isIntegerTy())
     return false;
 
   unsigned BEWidth = cast<IntegerType>(BECountSC->getType())->getBitWidth();
 
-  // Add 1 since the backedge count doesn't include the first loop iteration.
+  // Add 1 since the backedge count doesn't include the first loop iteration
   const SCEV *TripCountSC =
-      SE->getAddExpr(BECountSC, SE->getConstant(BECountSC->getType(), 1));
+      SE.getAddExpr(BECountSC, SE.getConstant(BECountSC->getType(), 1));
   if (isa<SCEVCouldNotCompute>(TripCountSC))
     return false;
 
   BasicBlock *Header = L->getHeader();
-  BasicBlock *PH = L->getLoopPreheader();
-  BranchInst *PreHeaderBR = cast<BranchInst>(PH->getTerminator());
   const DataLayout &DL = Header->getModule()->getDataLayout();
-  SCEVExpander Expander(*SE, DL, "loop-unroll");
-  if (!AllowExpensiveTripCount &&
-      Expander.isHighCostExpansion(TripCountSC, L, PreHeaderBR))
+  SCEVExpander Expander(SE, DL, "loop-unroll");
+  if (!AllowExpensiveTripCount && Expander.isHighCostExpansion(TripCountSC, L))
     return false;
 
   // We only handle cases when the unroll factor is a power of 2.
@@ -329,17 +329,22 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
   if (Log2_32(Count) > BEWidth)
     return false;
 
-  // If this loop is nested, then the loop unroller changes the code in the
-  // parent loop, so the Scalar Evolution pass needs to be run again.
+  // If this loop is nested, then the loop unroller changes the code in
+  // parent loop, so the Scalar Evolution pass needs to be run again
   if (Loop *ParentLoop = L->getParentLoop())
-    SE->forgetLoop(ParentLoop);
+    SE.forgetLoop(ParentLoop);
 
+  // Grab analyses that we preserve.
+  auto *DTWP = LPM->getAnalysisIfAvailable<DominatorTreeWrapperPass>();
+  auto *DT = DTWP ? &DTWP->getDomTree() : nullptr;
+
+  BasicBlock *PH = L->getLoopPreheader();
   BasicBlock *Latch = L->getLoopLatch();
-  // It helps to split the original preheader twice, one for the end of the
-  // prolog code and one for a new loop preheader.
+  // It helps to splits the original preheader twice, one for the end of the
+  // prolog code and one for a new loop preheader
   BasicBlock *PEnd = SplitEdge(PH, Header, DT, LI);
   BasicBlock *NewPH = SplitBlock(PEnd, PEnd->getTerminator(), DT, LI);
-  PreHeaderBR = cast<BranchInst>(PH->getTerminator());
+  BranchInst *PreHeaderBR = cast<BranchInst>(PH->getTerminator());
 
   // Compute the number of extra iterations required, which is:
   //  extra iterations = run-time trip count % (loop unroll factor + 1)
@@ -352,9 +357,9 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
   Value *ModVal = B.CreateAnd(TripCount, Count - 1, "xtraiter");
 
   // If ModVal is zero, we know that either
-  //  1. There are no iterations to be run in the prologue loop.
+  //  1. there are no iteration to be run in the prologue loop
   // OR
-  //  2. The addition computing TripCount overflowed.
+  //  2. the addition computing TripCount overflowed
   //
   // If (2) is true, we know that TripCount really is (1 << BEWidth) and so the
   // number of iterations that remain to be run in the original loop is a
@@ -363,8 +368,8 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
 
   Value *BranchVal = B.CreateIsNotNull(ModVal, "lcmp.mod");
 
-  // Branch to either the extra iterations or the cloned/unrolled loop.
-  // We will fix up the true branch label when adding loop body copies.
+  // Branch to either the extra iterations or the cloned/unrolled loop
+  // We will fix up the true branch label when adding loop body copies
   B.CreateCondBr(BranchVal, PEnd, PEnd);
   assert(PreHeaderBR->isUnconditional() &&
          PreHeaderBR->getSuccessor(0) == PEnd &&
@@ -372,7 +377,7 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
   PreHeaderBR->eraseFromParent();
   Function *F = Header->getParent();
   // Get an ordered list of blocks in the loop to help with the ordering of the
-  // cloned blocks in the prolog code.
+  // cloned blocks in the prolog code
   LoopBlocksDFS LoopBlocks(L);
   LoopBlocks.perform(LI);
 
@@ -392,15 +397,17 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
   CloneLoopBlocks(L, ModVal, UnrollPrologue, PH, PEnd, NewBlocks, LoopBlocks,
                   VMap, LI);
 
-  // Insert the cloned blocks into the function just before the original loop.
+  // Insert the cloned blocks into function just before the original loop
   F->getBasicBlockList().splice(PEnd->getIterator(), F->getBasicBlockList(),
                                 NewBlocks[0]->getIterator(), F->end());
 
-  // Rewrite the cloned instruction operands to use the values created when the
-  // clone is created.
-  for (BasicBlock *BB : NewBlocks) {
-    for (Instruction &I : *BB) {
-      RemapInstruction(&I, VMap,
+  // Rewrite the cloned instruction operands to use the values
+  // created when the clone is created.
+  for (unsigned i = 0, e = NewBlocks.size(); i != e; ++i) {
+    for (BasicBlock::iterator I = NewBlocks[i]->begin(),
+                              E = NewBlocks[i]->end();
+         I != E; ++I) {
+      RemapInstruction(&*I, VMap,
                        RF_NoModuleLevelChanges | RF_IgnoreMissingEntries);
     }
   }
@@ -409,7 +416,7 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count,
   // PHI functions.
   BasicBlock *LastLoopBB = cast<BasicBlock>(VMap[Latch]);
   ConnectProlog(L, BECount, Count, LastLoopBB, PEnd, PH, NewPH, VMap, DT, LI,
-                PreserveLCSSA);
+                LPM->getAsPass());
   NumRuntimeUnrolled++;
   return true;
 }

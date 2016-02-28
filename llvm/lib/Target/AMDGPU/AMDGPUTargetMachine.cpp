@@ -14,7 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPUTargetMachine.h"
-#include "AMDGPUTargetObjectFile.h"
+#include "AMDGPUHSATargetObjectFile.h"
 #include "AMDGPU.h"
 #include "AMDGPUTargetTransformInfo.h"
 #include "R600ISelLowering.h"
@@ -50,19 +50,13 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeSIFixSGPRLiveRangesPass(*PR);
   initializeSIFixControlFlowLiveIntervalsPass(*PR);
   initializeSILoadStoreOptimizerPass(*PR);
-  initializeAMDGPUAnnotateKernelFeaturesPass(*PR);
-  initializeAMDGPUAnnotateUniformValuesPass(*PR);
-  initializeAMDGPUPromoteAllocaPass(*PR);
-  initializeSIAnnotateControlFlowPass(*PR);
-  initializeSIInsertWaitsPass(*PR);
-  initializeSILowerControlFlowPass(*PR);
 }
 
 static std::unique_ptr<TargetLoweringObjectFile> createTLOF(const Triple &TT) {
   if (TT.getOS() == Triple::AMDHSA)
     return make_unique<AMDGPUHSATargetObjectFile>();
 
-  return make_unique<AMDGPUTargetObjectFile>();
+  return make_unique<TargetLoweringObjectFileELF>();
 }
 
 static ScheduleDAGInstrs *createR600MachineScheduler(MachineSchedContext *C) {
@@ -70,12 +64,8 @@ static ScheduleDAGInstrs *createR600MachineScheduler(MachineSchedContext *C) {
 }
 
 static MachineSchedRegistry
-R600SchedRegistry("r600", "Run R600's custom scheduler",
-                   createR600MachineScheduler);
-
-static MachineSchedRegistry
-SISchedRegistry("si", "Run SI's custom scheduler",
-                createSIMachineScheduler);
+SchedCustomRegistry("r600", "Run R600's custom scheduler",
+                    createR600MachineScheduler);
 
 static std::string computeDataLayout(const Triple &TT) {
   std::string Ret = "e-p:32:32";
@@ -91,28 +81,14 @@ static std::string computeDataLayout(const Triple &TT) {
   return Ret;
 }
 
-LLVM_READNONE
-static StringRef getGPUOrDefault(const Triple &TT, StringRef GPU) {
-  if (!GPU.empty())
-    return GPU;
-
-  // HSA only supports CI+, so change the default GPU to a CI for HSA.
-  if (TT.getArch() == Triple::amdgcn)
-    return (TT.getOS() == Triple::AMDHSA) ? "kaveri" : "tahiti";
-
-  return "";
-}
-
 AMDGPUTargetMachine::AMDGPUTargetMachine(const Target &T, const Triple &TT,
                                          StringRef CPU, StringRef FS,
                                          TargetOptions Options, Reloc::Model RM,
                                          CodeModel::Model CM,
                                          CodeGenOpt::Level OptLevel)
-    : LLVMTargetMachine(T, computeDataLayout(TT), TT,
-                        getGPUOrDefault(TT, CPU), FS, Options, RM, CM,
+    : LLVMTargetMachine(T, computeDataLayout(TT), TT, CPU, FS, Options, RM, CM,
                         OptLevel),
-      TLOF(createTLOF(getTargetTriple())),
-      Subtarget(TT, getTargetCPU(), FS, *this),
+      TLOF(createTLOF(getTargetTriple())), Subtarget(TT, CPU, FS, *this),
       IntrinsicInfo() {
   setRequiresStructuredCFG(true);
   initAsmInfo();
@@ -125,20 +101,20 @@ AMDGPUTargetMachine::~AMDGPUTargetMachine() { }
 //===----------------------------------------------------------------------===//
 
 R600TargetMachine::R600TargetMachine(const Target &T, const Triple &TT,
-                                     StringRef CPU, StringRef FS,
+                                     StringRef FS, StringRef CPU,
                                      TargetOptions Options, Reloc::Model RM,
                                      CodeModel::Model CM, CodeGenOpt::Level OL)
-    : AMDGPUTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL) {}
+    : AMDGPUTargetMachine(T, TT, FS, CPU, Options, RM, CM, OL) {}
 
 //===----------------------------------------------------------------------===//
 // GCN Target Machine (SI+)
 //===----------------------------------------------------------------------===//
 
 GCNTargetMachine::GCNTargetMachine(const Target &T, const Triple &TT,
-                                   StringRef CPU, StringRef FS,
+                                   StringRef FS, StringRef CPU,
                                    TargetOptions Options, Reloc::Model RM,
                                    CodeModel::Model CM, CodeGenOpt::Level OL)
-    : AMDGPUTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL) {}
+    : AMDGPUTargetMachine(T, TT, FS, CPU, Options, RM, CM, OL) {}
 
 //===----------------------------------------------------------------------===//
 // AMDGPU Pass Setup
@@ -165,8 +141,6 @@ public:
     const AMDGPUSubtarget &ST = *getAMDGPUTargetMachine().getSubtargetImpl();
     if (ST.getGeneration() <= AMDGPUSubtarget::NORTHERN_ISLANDS)
       return createR600MachineScheduler(C);
-    else if (ST.enableSIScheduler())
-      return createSIMachineScheduler(C);
     return nullptr;
   }
 
@@ -221,18 +195,15 @@ void AMDGPUPassConfig::addIRPasses() {
   // functions, then we will generate code for the first function
   // without ever running any passes on the second.
   addPass(createBarrierNoopPass());
-
   // Handle uses of OpenCL image2d_t, image3d_t and sampler_t arguments.
   addPass(createAMDGPUOpenCLImageTypeLoweringPass());
-
   TargetPassConfig::addIRPasses();
 }
 
 void AMDGPUPassConfig::addCodeGenPrepare() {
-  const AMDGPUTargetMachine &TM = getAMDGPUTargetMachine();
-  const AMDGPUSubtarget &ST = *TM.getSubtargetImpl();
-  if (TM.getOptLevel() > CodeGenOpt::None && ST.isPromoteAllocaEnabled()) {
-    addPass(createAMDGPUPromoteAlloca(&TM));
+  const AMDGPUSubtarget &ST = *getAMDGPUTargetMachine().getSubtargetImpl();
+  if (ST.isPromoteAllocaEnabled()) {
+    addPass(createAMDGPUPromoteAlloca(ST));
     addPass(createSROAPass());
   }
   TargetPassConfig::addCodeGenPrepare();
@@ -240,7 +211,10 @@ void AMDGPUPassConfig::addCodeGenPrepare() {
 
 bool
 AMDGPUPassConfig::addPreISel() {
+  const AMDGPUSubtarget &ST = *getAMDGPUTargetMachine().getSubtargetImpl();
   addPass(createFlattenCFGPass());
+  if (ST.IsIRStructurizerEnabled())
+    addPass(createStructurizeCFGPass());
   return false;
 }
 
@@ -260,9 +234,6 @@ bool AMDGPUPassConfig::addGCPasses() {
 
 bool R600PassConfig::addPreISel() {
   AMDGPUPassConfig::addPreISel();
-  const AMDGPUSubtarget &ST = *getAMDGPUTargetMachine().getSubtargetImpl();
-  if (ST.IsIRStructurizerEnabled())
-    addPass(createStructurizeCFGPass());
   addPass(createR600TextureIntrinsicsReplacer());
   return false;
 }
@@ -297,16 +268,9 @@ TargetPassConfig *R600TargetMachine::createPassConfig(PassManagerBase &PM) {
 
 bool GCNPassConfig::addPreISel() {
   AMDGPUPassConfig::addPreISel();
-
-  // FIXME: We need to run a pass to propagate the attributes when calls are
-  // supported.
-  addPass(&AMDGPUAnnotateKernelFeaturesID);
-  addPass(createStructurizeCFGPass(true)); // true -> SkipUniformRegions
   addPass(createSinkingPass());
   addPass(createSITypeRewriter());
-  addPass(createAMDGPUAnnotateUniformValues());
   addPass(createSIAnnotateControlFlowPass());
-
   return false;
 }
 
@@ -355,6 +319,7 @@ void GCNPassConfig::addOptimizedRegAlloc(FunctionPass *RegAllocPass) {
 }
 
 void GCNPassConfig::addPostRegAlloc() {
+  addPass(createSIPrepareScratchRegs(), false);
   addPass(createSIShrinkInstructionsPass(), false);
 }
 
@@ -362,8 +327,8 @@ void GCNPassConfig::addPreSched2() {
 }
 
 void GCNPassConfig::addPreEmitPass() {
-  addPass(createSIInsertWaitsPass(), false);
-  addPass(createSILowerControlFlowPass(), false);
+  addPass(createSIInsertWaits(*TM), false);
+  addPass(createSILowerControlFlowPass(*TM), false);
 }
 
 TargetPassConfig *GCNTargetMachine::createPassConfig(PassManagerBase &PM) {

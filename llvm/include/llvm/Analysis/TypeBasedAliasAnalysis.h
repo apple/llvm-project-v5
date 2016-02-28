@@ -49,10 +49,20 @@ private:
 };
 
 /// Analysis pass providing a never-invalidated alias analysis result.
-struct TypeBasedAA : AnalysisBase<TypeBasedAA> {
+class TypeBasedAA {
+public:
   typedef TypeBasedAAResult Result;
 
+  /// \brief Opaque, unique identifier for this analysis pass.
+  static void *ID() { return (void *)&PassID; }
+
   TypeBasedAAResult run(Function &F, AnalysisManager<Function> *AM);
+
+  /// \brief Provide access to a name for this pass for debugging purposes.
+  static StringRef name() { return "TypeBasedAA"; }
+
+private:
+  static char PassID;
 };
 
 /// Legacy wrapper pass to provide the TypeBasedAAResult object.

@@ -8,10 +8,8 @@
 //===----------------------------------------------------------------------===//
 //
 // This file contains a pass (at IR level) to replace atomic instructions with
-// target specific instruction which implement the same semantics in a way
-// which better fits the target backend.  This can include the use of either
-// (intrinsic-based) load-linked/store-conditional loops, AtomicCmpXchg, or
-// type coercions.
+// either (intrinsic-based) load-linked/store-conditional loops or
+// AtomicCmpXchg.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,7 +22,6 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
@@ -49,18 +46,12 @@ namespace {
   private:
     bool bracketInstWithFences(Instruction *I, AtomicOrdering Order,
                                bool IsStore, bool IsLoad);
-    IntegerType *getCorrespondingIntegerType(Type *T, const DataLayout &DL);
-    LoadInst *convertAtomicLoadToIntegerType(LoadInst *LI);
     bool tryExpandAtomicLoad(LoadInst *LI);
     bool expandAtomicLoadToLL(LoadInst *LI);
     bool expandAtomicLoadToCmpXchg(LoadInst *LI);
-    StoreInst *convertAtomicStoreToIntegerType(StoreInst *SI);
     bool expandAtomicStore(StoreInst *SI);
     bool tryExpandAtomicRMW(AtomicRMWInst *AI);
-    bool expandAtomicOpToLLSC(
-        Instruction *I, Value *Addr, AtomicOrdering MemOpOrder,
-        std::function<Value *(IRBuilder<> &, Value *)> PerformOp);
-    AtomicCmpXchgInst *convertCmpXchgToIntegerType(AtomicCmpXchgInst *CI);
+    bool expandAtomicRMWToLLSC(AtomicRMWInst *AI);
     bool expandAtomicCmpXchg(AtomicCmpXchgInst *CI);
     bool isIdempotentRMW(AtomicRMWInst *AI);
     bool simplifyIdempotentRMW(AtomicRMWInst *AI);
@@ -100,9 +91,9 @@ bool AtomicExpand::runOnFunction(Function &F) {
     assert((LI || SI || RMWI || CASI || isa<FenceInst>(I)) &&
            "Unknown atomic instruction");
 
+    auto FenceOrdering = Monotonic;
+    bool IsStore, IsLoad;
     if (TLI->getInsertFencesForAtomic()) {
-      auto FenceOrdering = Monotonic;
-      bool IsStore, IsLoad;
       if (LI && isAtLeastAcquire(LI->getOrdering())) {
         FenceOrdering = LI->getOrdering();
         LI->setOrdering(Monotonic);
@@ -137,27 +128,9 @@ bool AtomicExpand::runOnFunction(Function &F) {
     }
 
     if (LI) {
-      if (LI->getType()->isFloatingPointTy()) {
-        // TODO: add a TLI hook to control this so that each target can
-        // convert to lowering the original type one at a time.
-        LI = convertAtomicLoadToIntegerType(LI);
-        assert(LI->getType()->isIntegerTy() && "invariant broken");
-        MadeChange = true;
-      }
-      
       MadeChange |= tryExpandAtomicLoad(LI);
-    } else if (SI) {
-      if (SI->getValueOperand()->getType()->isFloatingPointTy()) {
-        // TODO: add a TLI hook to control this so that each target can
-        // convert to lowering the original type one at a time.
-        SI = convertAtomicStoreToIntegerType(SI);
-        assert(SI->getValueOperand()->getType()->isIntegerTy() &&
-               "invariant broken");
-        MadeChange = true;
-      }
-
-      if (TLI->shouldExpandAtomicStoreInIR(SI))
-        MadeChange |= expandAtomicStore(SI);
+    } else if (SI && TLI->shouldExpandAtomicStoreInIR(SI)) {
+      MadeChange |= expandAtomicStore(SI);
     } else if (RMWI) {
       // There are two different ways of expanding RMW instructions:
       // - into a load if it is idempotent
@@ -169,22 +142,8 @@ bool AtomicExpand::runOnFunction(Function &F) {
       } else {
         MadeChange |= tryExpandAtomicRMW(RMWI);
       }
-    } else if (CASI) {
-      // TODO: when we're ready to make the change at the IR level, we can
-      // extend convertCmpXchgToInteger for floating point too.
-      assert(!CASI->getCompareOperand()->getType()->isFloatingPointTy() &&
-             "unimplemented - floating point not legal at IR level");
-      if (CASI->getCompareOperand()->getType()->isPointerTy() ) {
-        // TODO: add a TLI hook to control this so that each target can
-        // convert to lowering the original type one at a time.
-        CASI = convertCmpXchgToIntegerType(CASI);
-        assert(CASI->getCompareOperand()->getType()->isIntegerTy() &&
-               "invariant broken");
-        MadeChange = true;
-      }
-      
-      if (TLI->shouldExpandAtomicCmpXchgInIR(CASI))
-        MadeChange |= expandAtomicCmpXchg(CASI);
+    } else if (CASI && TLI->shouldExpandAtomicCmpXchgInIR(CASI)) {
+      MadeChange |= expandAtomicCmpXchg(CASI);
     }
   }
   return MadeChange;
@@ -211,54 +170,16 @@ bool AtomicExpand::bracketInstWithFences(Instruction *I, AtomicOrdering Order,
   return (LeadingFence || TrailingFence);
 }
 
-/// Get the iX type with the same bitwidth as T.
-IntegerType *AtomicExpand::getCorrespondingIntegerType(Type *T,
-                                                       const DataLayout &DL) {
-  EVT VT = TLI->getValueType(DL, T);
-  unsigned BitWidth = VT.getStoreSizeInBits();
-  assert(BitWidth == VT.getSizeInBits() && "must be a power of two");
-  return IntegerType::get(T->getContext(), BitWidth);
-}
-
-/// Convert an atomic load of a non-integral type to an integer load of the
-/// equivalent bitwidth.  See the function comment on
-/// convertAtomicStoreToIntegerType for background.  
-LoadInst *AtomicExpand::convertAtomicLoadToIntegerType(LoadInst *LI) {
-  auto *M = LI->getModule();
-  Type *NewTy = getCorrespondingIntegerType(LI->getType(),
-                                            M->getDataLayout());
-
-  IRBuilder<> Builder(LI);
-  
-  Value *Addr = LI->getPointerOperand();
-  Type *PT = PointerType::get(NewTy,
-                              Addr->getType()->getPointerAddressSpace());
-  Value *NewAddr = Builder.CreateBitCast(Addr, PT);
-  
-  auto *NewLI = Builder.CreateLoad(NewAddr);
-  NewLI->setAlignment(LI->getAlignment());
-  NewLI->setVolatile(LI->isVolatile());
-  NewLI->setAtomic(LI->getOrdering(), LI->getSynchScope());
-  DEBUG(dbgs() << "Replaced " << *LI << " with " << *NewLI << "\n");
-  
-  Value *NewVal = Builder.CreateBitCast(NewLI, LI->getType());
-  LI->replaceAllUsesWith(NewVal);
-  LI->eraseFromParent();
-  return NewLI;
-}
-
 bool AtomicExpand::tryExpandAtomicLoad(LoadInst *LI) {
   switch (TLI->shouldExpandAtomicLoadInIR(LI)) {
   case TargetLoweringBase::AtomicExpansionKind::None:
     return false;
-  case TargetLoweringBase::AtomicExpansionKind::LLSC:
-    return expandAtomicOpToLLSC(
-        LI, LI->getPointerOperand(), LI->getOrdering(),
-        [](IRBuilder<> &Builder, Value *Loaded) { return Loaded; });
-  case TargetLoweringBase::AtomicExpansionKind::LLOnly:
+  case TargetLoweringBase::AtomicExpansionKind::LLSC: {
     return expandAtomicLoadToLL(LI);
-  case TargetLoweringBase::AtomicExpansionKind::CmpXChg:
+  }
+  case TargetLoweringBase::AtomicExpansionKind::CmpXChg: {
     return expandAtomicLoadToCmpXchg(LI);
+  }
   }
   llvm_unreachable("Unhandled case in tryExpandAtomicLoad");
 }
@@ -271,7 +192,6 @@ bool AtomicExpand::expandAtomicLoadToLL(LoadInst *LI) {
   // to be single-copy atomic by ARM is an ldrexd (A3.5.3).
   Value *Val =
       TLI->emitLoadLinked(Builder, LI->getPointerOperand(), LI->getOrdering());
-  TLI->emitAtomicCmpXchgNoStoreLLBalance(Builder);
 
   LI->replaceAllUsesWith(Val);
   LI->eraseFromParent();
@@ -295,35 +215,6 @@ bool AtomicExpand::expandAtomicLoadToCmpXchg(LoadInst *LI) {
   LI->eraseFromParent();
 
   return true;
-}
-
-/// Convert an atomic store of a non-integral type to an integer store of the
-/// equivalent bitwidth.  We used to not support floating point or vector
-/// atomics in the IR at all.  The backends learned to deal with the bitcast
-/// idiom because that was the only way of expressing the notion of a atomic
-/// float or vector store.  The long term plan is to teach each backend to
-/// instruction select from the original atomic store, but as a migration
-/// mechanism, we convert back to the old format which the backends understand.
-/// Each backend will need individual work to recognize the new format.
-StoreInst *AtomicExpand::convertAtomicStoreToIntegerType(StoreInst *SI) {
-  IRBuilder<> Builder(SI);
-  auto *M = SI->getModule();
-  Type *NewTy = getCorrespondingIntegerType(SI->getValueOperand()->getType(),
-                                            M->getDataLayout());
-  Value *NewVal = Builder.CreateBitCast(SI->getValueOperand(), NewTy);
-  
-  Value *Addr = SI->getPointerOperand();
-  Type *PT = PointerType::get(NewTy,
-                              Addr->getType()->getPointerAddressSpace());
-  Value *NewAddr = Builder.CreateBitCast(Addr, PT);
-
-  StoreInst *NewSI = Builder.CreateStore(NewVal, NewAddr);
-  NewSI->setAlignment(SI->getAlignment());
-  NewSI->setVolatile(SI->isVolatile());
-  NewSI->setAtomic(SI->getOrdering(), SI->getSynchScope());
-  DEBUG(dbgs() << "Replaced " << *SI << " with " << *NewSI << "\n");
-  SI->eraseFromParent();
-  return NewSI;
 }
 
 bool AtomicExpand::expandAtomicStore(StoreInst *SI) {
@@ -352,6 +243,20 @@ static void createCmpXchgInstFun(IRBuilder<> &Builder, Value *Addr,
       AtomicCmpXchgInst::getStrongestFailureOrdering(MemOpOrder));
   Success = Builder.CreateExtractValue(Pair, 1, "success");
   NewLoaded = Builder.CreateExtractValue(Pair, 0, "newloaded");
+}
+
+bool AtomicExpand::tryExpandAtomicRMW(AtomicRMWInst *AI) {
+  switch (TLI->shouldExpandAtomicRMWInIR(AI)) {
+  case TargetLoweringBase::AtomicExpansionKind::None:
+    return false;
+  case TargetLoweringBase::AtomicExpansionKind::LLSC: {
+    return expandAtomicRMWToLLSC(AI);
+  }
+  case TargetLoweringBase::AtomicExpansionKind::CmpXChg: {
+    return expandAtomicRMWToCmpXchg(AI, createCmpXchgInstFun);
+  }
+  }
+  llvm_unreachable("Unhandled case in tryExpandAtomicRMW");
 }
 
 /// Emit IR to implement the given atomicrmw operation on values in registers,
@@ -391,28 +296,10 @@ static Value *performAtomicOp(AtomicRMWInst::BinOp Op, IRBuilder<> &Builder,
   }
 }
 
-bool AtomicExpand::tryExpandAtomicRMW(AtomicRMWInst *AI) {
-  switch (TLI->shouldExpandAtomicRMWInIR(AI)) {
-  case TargetLoweringBase::AtomicExpansionKind::None:
-    return false;
-  case TargetLoweringBase::AtomicExpansionKind::LLSC:
-    return expandAtomicOpToLLSC(AI, AI->getPointerOperand(), AI->getOrdering(),
-                                [&](IRBuilder<> &Builder, Value *Loaded) {
-                                  return performAtomicOp(AI->getOperation(),
-                                                         Builder, Loaded,
-                                                         AI->getValOperand());
-                                });
-  case TargetLoweringBase::AtomicExpansionKind::CmpXChg:
-    return expandAtomicRMWToCmpXchg(AI, createCmpXchgInstFun);
-  default:
-    llvm_unreachable("Unhandled case in tryExpandAtomicRMW");
-  }
-}
-
-bool AtomicExpand::expandAtomicOpToLLSC(
-    Instruction *I, Value *Addr, AtomicOrdering MemOpOrder,
-    std::function<Value *(IRBuilder<> &, Value *)> PerformOp) {
-  BasicBlock *BB = I->getParent();
+bool AtomicExpand::expandAtomicRMWToLLSC(AtomicRMWInst *AI) {
+  AtomicOrdering MemOpOrder = AI->getOrdering();
+  Value *Addr = AI->getPointerOperand();
+  BasicBlock *BB = AI->getParent();
   Function *F = BB->getParent();
   LLVMContext &Ctx = F->getContext();
 
@@ -430,11 +317,11 @@ bool AtomicExpand::expandAtomicOpToLLSC(
   // atomicrmw.end:
   //     fence?
   //     [...]
-  BasicBlock *ExitBB = BB->splitBasicBlock(I->getIterator(), "atomicrmw.end");
+  BasicBlock *ExitBB = BB->splitBasicBlock(AI->getIterator(), "atomicrmw.end");
   BasicBlock *LoopBB =  BasicBlock::Create(Ctx, "atomicrmw.start", F, ExitBB);
 
-  // This grabs the DebugLoc from I.
-  IRBuilder<> Builder(I);
+  // This grabs the DebugLoc from AI.
+  IRBuilder<> Builder(AI);
 
   // The split call above "helpfully" added a branch at the end of BB (to the
   // wrong place), but we might want a fence too. It's easiest to just remove
@@ -447,7 +334,8 @@ bool AtomicExpand::expandAtomicOpToLLSC(
   Builder.SetInsertPoint(LoopBB);
   Value *Loaded = TLI->emitLoadLinked(Builder, Addr, MemOpOrder);
 
-  Value *NewVal = PerformOp(Builder, Loaded);
+  Value *NewVal =
+      performAtomicOp(AI->getOperation(), Builder, Loaded, AI->getValOperand());
 
   Value *StoreSuccess =
       TLI->emitStoreConditional(Builder, NewVal, Addr, MemOpOrder);
@@ -457,55 +345,11 @@ bool AtomicExpand::expandAtomicOpToLLSC(
 
   Builder.SetInsertPoint(ExitBB, ExitBB->begin());
 
-  I->replaceAllUsesWith(Loaded);
-  I->eraseFromParent();
+  AI->replaceAllUsesWith(Loaded);
+  AI->eraseFromParent();
 
   return true;
 }
-
-/// Convert an atomic cmpxchg of a non-integral type to an integer cmpxchg of
-/// the equivalent bitwidth.  We used to not support pointer cmpxchg in the
-/// IR.  As a migration step, we convert back to what use to be the standard
-/// way to represent a pointer cmpxchg so that we can update backends one by
-/// one. 
-AtomicCmpXchgInst *AtomicExpand::convertCmpXchgToIntegerType(AtomicCmpXchgInst *CI) {
-  auto *M = CI->getModule();
-  Type *NewTy = getCorrespondingIntegerType(CI->getCompareOperand()->getType(),
-                                            M->getDataLayout());
-
-  IRBuilder<> Builder(CI);
-  
-  Value *Addr = CI->getPointerOperand();
-  Type *PT = PointerType::get(NewTy,
-                              Addr->getType()->getPointerAddressSpace());
-  Value *NewAddr = Builder.CreateBitCast(Addr, PT);
-
-  Value *NewCmp = Builder.CreatePtrToInt(CI->getCompareOperand(), NewTy);
-  Value *NewNewVal = Builder.CreatePtrToInt(CI->getNewValOperand(), NewTy);
-  
-  
-  auto *NewCI = Builder.CreateAtomicCmpXchg(NewAddr, NewCmp, NewNewVal,
-                                            CI->getSuccessOrdering(),
-                                            CI->getFailureOrdering(),
-                                            CI->getSynchScope());
-  NewCI->setVolatile(CI->isVolatile());
-  NewCI->setWeak(CI->isWeak());
-  DEBUG(dbgs() << "Replaced " << *CI << " with " << *NewCI << "\n");
-
-  Value *OldVal = Builder.CreateExtractValue(NewCI, 0);
-  Value *Succ = Builder.CreateExtractValue(NewCI, 1);
-
-  OldVal = Builder.CreateIntToPtr(OldVal, CI->getCompareOperand()->getType());
-
-  Value *Res = UndefValue::get(CI->getType());
-  Res = Builder.CreateInsertValue(Res, OldVal, 0);
-  Res = Builder.CreateInsertValue(Res, Succ, 1);
-
-  CI->replaceAllUsesWith(Res);
-  CI->eraseFromParent();
-  return NewCI;
-}
-
 
 bool AtomicExpand::expandAtomicCmpXchg(AtomicCmpXchgInst *CI) {
   AtomicOrdering SuccessOrder = CI->getSuccessOrdering();
@@ -521,62 +365,30 @@ bool AtomicExpand::expandAtomicCmpXchg(AtomicCmpXchgInst *CI) {
   AtomicOrdering MemOpOrder =
       TLI->getInsertFencesForAtomic() ? Monotonic : SuccessOrder;
 
-  // In implementations which use a barrier to achieve release semantics, we can
-  // delay emitting this barrier until we know a store is actually going to be
-  // attempted. The cost of this delay is that we need 2 copies of the block
-  // emitting the load-linked, affecting code size.
-  //
-  // Ideally, this logic would be unconditional except for the minsize check
-  // since in other cases the extra blocks naturally collapse down to the
-  // minimal loop. Unfortunately, this puts too much stress on later
-  // optimisations so we avoid emitting the extra logic in those cases too.
-  bool HasReleasedLoadBB = !CI->isWeak() && TLI->getInsertFencesForAtomic() &&
-                           SuccessOrder != Monotonic &&
-                           SuccessOrder != Acquire && !F->optForMinSize();
-
-  // There's no overhead for sinking the release barrier in a weak cmpxchg, so
-  // do it even on minsize.
-  bool UseUnconditionalReleaseBarrier = F->optForMinSize() && !CI->isWeak();
-
   // Given: cmpxchg some_op iN* %addr, iN %desired, iN %new success_ord fail_ord
   //
   // The full expansion we produce is:
   //     [...]
-  // cmpxchg.start:
-  //     %unreleasedload = @load.linked(%addr)
-  //     %should_store = icmp eq %unreleasedload, %desired
-  //     br i1 %should_store, label %cmpxchg.fencedstore,
-  //                          label %cmpxchg.nostore
-  // cmpxchg.releasingstore:
   //     fence?
-  //     br label cmpxchg.trystore
+  // cmpxchg.start:
+  //     %loaded = @load.linked(%addr)
+  //     %should_store = icmp eq %loaded, %desired
+  //     br i1 %should_store, label %cmpxchg.trystore,
+  //                          label %cmpxchg.nostore
   // cmpxchg.trystore:
-  //     %loaded.trystore = phi [%unreleasedload, %releasingstore],
-  //                            [%releasedload, %cmpxchg.releasedload]
   //     %stored = @store_conditional(%new, %addr)
   //     %success = icmp eq i32 %stored, 0
-  //     br i1 %success, label %cmpxchg.success,
-  //                     label %cmpxchg.releasedload/%cmpxchg.failure
-  // cmpxchg.releasedload:
-  //     %releasedload = @load.linked(%addr)
-  //     %should_store = icmp eq %releasedload, %desired
-  //     br i1 %should_store, label %cmpxchg.trystore,
-  //                          label %cmpxchg.failure
+  //     br i1 %success, label %cmpxchg.success, label %loop/%cmpxchg.failure
   // cmpxchg.success:
   //     fence?
   //     br label %cmpxchg.end
   // cmpxchg.nostore:
-  //     %loaded.nostore = phi [%unreleasedload, %cmpxchg.start],
-  //                           [%releasedload,
-  //                               %cmpxchg.releasedload/%cmpxchg.trystore]
   //     @load_linked_fail_balance()?
   //     br label %cmpxchg.failure
   // cmpxchg.failure:
   //     fence?
   //     br label %cmpxchg.end
   // cmpxchg.end:
-  //     %loaded = phi [%loaded.nostore, %cmpxchg.failure],
-  //                   [%loaded.trystore, %cmpxchg.trystore]
   //     %success = phi i1 [true, %cmpxchg.success], [false, %cmpxchg.failure]
   //     %restmp = insertvalue { iN, i1 } undef, iN %loaded, 0
   //     %res = insertvalue { iN, i1 } %restmp, i1 %success, 1
@@ -585,13 +397,8 @@ bool AtomicExpand::expandAtomicCmpXchg(AtomicCmpXchgInst *CI) {
   auto FailureBB = BasicBlock::Create(Ctx, "cmpxchg.failure", F, ExitBB);
   auto NoStoreBB = BasicBlock::Create(Ctx, "cmpxchg.nostore", F, FailureBB);
   auto SuccessBB = BasicBlock::Create(Ctx, "cmpxchg.success", F, NoStoreBB);
-  auto ReleasedLoadBB =
-      BasicBlock::Create(Ctx, "cmpxchg.releasedload", F, SuccessBB);
-  auto TryStoreBB =
-      BasicBlock::Create(Ctx, "cmpxchg.trystore", F, ReleasedLoadBB);
-  auto ReleasingStoreBB =
-      BasicBlock::Create(Ctx, "cmpxchg.fencedstore", F, TryStoreBB);
-  auto StartBB = BasicBlock::Create(Ctx, "cmpxchg.start", F, ReleasingStoreBB);
+  auto TryStoreBB = BasicBlock::Create(Ctx, "cmpxchg.trystore", F, SuccessBB);
+  auto LoopBB = BasicBlock::Create(Ctx, "cmpxchg.start", F, TryStoreBB);
 
   // This grabs the DebugLoc from CI
   IRBuilder<> Builder(CI);
@@ -601,51 +408,29 @@ bool AtomicExpand::expandAtomicCmpXchg(AtomicCmpXchgInst *CI) {
   // the branch entirely.
   std::prev(BB->end())->eraseFromParent();
   Builder.SetInsertPoint(BB);
-  if (UseUnconditionalReleaseBarrier)
-    TLI->emitLeadingFence(Builder, SuccessOrder, /*IsStore=*/true,
-                          /*IsLoad=*/true);
-  Builder.CreateBr(StartBB);
+  TLI->emitLeadingFence(Builder, SuccessOrder, /*IsStore=*/true,
+                        /*IsLoad=*/true);
+  Builder.CreateBr(LoopBB);
 
   // Start the main loop block now that we've taken care of the preliminaries.
-  Builder.SetInsertPoint(StartBB);
-  Value *UnreleasedLoad = TLI->emitLoadLinked(Builder, Addr, MemOpOrder);
-  Value *ShouldStore = Builder.CreateICmpEQ(
-      UnreleasedLoad, CI->getCompareOperand(), "should_store");
+  Builder.SetInsertPoint(LoopBB);
+  Value *Loaded = TLI->emitLoadLinked(Builder, Addr, MemOpOrder);
+  Value *ShouldStore =
+      Builder.CreateICmpEQ(Loaded, CI->getCompareOperand(), "should_store");
 
   // If the cmpxchg doesn't actually need any ordering when it fails, we can
   // jump straight past that fence instruction (if it exists).
-  Builder.CreateCondBr(ShouldStore, ReleasingStoreBB, NoStoreBB);
-
-  Builder.SetInsertPoint(ReleasingStoreBB);
-  if (!UseUnconditionalReleaseBarrier)
-    TLI->emitLeadingFence(Builder, SuccessOrder, /*IsStore=*/true,
-                          /*IsLoad=*/true);
-  Builder.CreateBr(TryStoreBB);
+  Builder.CreateCondBr(ShouldStore, TryStoreBB, NoStoreBB);
 
   Builder.SetInsertPoint(TryStoreBB);
   Value *StoreSuccess = TLI->emitStoreConditional(
       Builder, CI->getNewValOperand(), Addr, MemOpOrder);
   StoreSuccess = Builder.CreateICmpEQ(
       StoreSuccess, ConstantInt::get(Type::getInt32Ty(Ctx), 0), "success");
-  BasicBlock *RetryBB = HasReleasedLoadBB ? ReleasedLoadBB : StartBB;
   Builder.CreateCondBr(StoreSuccess, SuccessBB,
-                       CI->isWeak() ? FailureBB : RetryBB);
+                       CI->isWeak() ? FailureBB : LoopBB);
 
-  Builder.SetInsertPoint(ReleasedLoadBB);
-  Value *SecondLoad;
-  if (HasReleasedLoadBB) {
-    SecondLoad = TLI->emitLoadLinked(Builder, Addr, MemOpOrder);
-    ShouldStore = Builder.CreateICmpEQ(SecondLoad, CI->getCompareOperand(),
-                                       "should_store");
-
-    // If the cmpxchg doesn't actually need any ordering when it fails, we can
-    // jump straight past that fence instruction (if it exists).
-    Builder.CreateCondBr(ShouldStore, TryStoreBB, NoStoreBB);
-  } else
-    Builder.CreateUnreachable();
-
-  // Make sure later instructions don't get reordered with a fence if
-  // necessary.
+  // Make sure later instructions don't get reordered with a fence if necessary.
   Builder.SetInsertPoint(SuccessBB);
   TLI->emitTrailingFence(Builder, SuccessOrder, /*IsStore=*/true,
                          /*IsLoad=*/true);
@@ -665,35 +450,13 @@ bool AtomicExpand::expandAtomicCmpXchg(AtomicCmpXchgInst *CI) {
 
   // Finally, we have control-flow based knowledge of whether the cmpxchg
   // succeeded or not. We expose this to later passes by converting any
-  // subsequent "icmp eq/ne %loaded, %oldval" into a use of an appropriate
-  // PHI.
+  // subsequent "icmp eq/ne %loaded, %oldval" into a use of an appropriate PHI.
+
+  // Setup the builder so we can create any PHIs we need.
   Builder.SetInsertPoint(ExitBB, ExitBB->begin());
   PHINode *Success = Builder.CreatePHI(Type::getInt1Ty(Ctx), 2);
   Success->addIncoming(ConstantInt::getTrue(Ctx), SuccessBB);
   Success->addIncoming(ConstantInt::getFalse(Ctx), FailureBB);
-
-  // Setup the builder so we can create any PHIs we need.
-  Value *Loaded;
-  if (!HasReleasedLoadBB)
-    Loaded = UnreleasedLoad;
-  else {
-    Builder.SetInsertPoint(TryStoreBB, TryStoreBB->begin());
-    PHINode *TryStoreLoaded = Builder.CreatePHI(UnreleasedLoad->getType(), 2);
-    TryStoreLoaded->addIncoming(UnreleasedLoad, ReleasingStoreBB);
-    TryStoreLoaded->addIncoming(SecondLoad, ReleasedLoadBB);
-
-    Builder.SetInsertPoint(NoStoreBB, NoStoreBB->begin());
-    PHINode *NoStoreLoaded = Builder.CreatePHI(UnreleasedLoad->getType(), 2);
-    NoStoreLoaded->addIncoming(UnreleasedLoad, StartBB);
-    NoStoreLoaded->addIncoming(SecondLoad, ReleasedLoadBB);
-
-    Builder.SetInsertPoint(ExitBB, ++ExitBB->begin());
-    PHINode *ExitLoaded = Builder.CreatePHI(UnreleasedLoad->getType(), 2);
-    ExitLoaded->addIncoming(TryStoreLoaded, SuccessBB);
-    ExitLoaded->addIncoming(NoStoreLoaded, FailureBB);
-
-    Loaded = ExitLoaded;
-  }
 
   // Look for any users of the cmpxchg that are just comparing the loaded value
   // against the desired one, and replace them with the CFG-derived version.

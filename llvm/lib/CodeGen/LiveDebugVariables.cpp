@@ -172,10 +172,8 @@ public:
       return L1;
     // Splice L2 before L1's members.
     UserValue *End = L2;
-    while (End->next) {
-      End->leader = L1;
-      End = End->next;
-    }
+    while (End->next)
+      End->leader = L1, End = End->next;
     End->leader = L1;
     End->next = L1->next;
     L1->next = L2;
@@ -520,10 +518,9 @@ bool LDVImpl::collectDebugValues(MachineFunction &mf) {
         continue;
       }
       // DBG_VALUE has no slot index, use the previous instruction instead.
-      SlotIndex Idx =
-          MBBI == MBB->begin()
-              ? LIS->getMBBStartIdx(MBB)
-              : LIS->getInstructionIndex(*std::prev(MBBI)).getRegSlot();
+      SlotIndex Idx = MBBI == MBB->begin() ?
+        LIS->getMBBStartIdx(MBB) :
+        LIS->getInstructionIndex(std::prev(MBBI)).getRegSlot();
       // Handle consecutive DBG_VALUE instructions with the same slot index.
       do {
         if (handleDebugValue(MBBI, Idx)) {
@@ -537,53 +534,65 @@ bool LDVImpl::collectDebugValues(MachineFunction &mf) {
   return Changed;
 }
 
-/// We only propagate DBG_VALUES locally here. LiveDebugValues performs a
-/// data-flow analysis to propagate them beyond basic block boundaries.
-void UserValue::extendDef(SlotIndex Idx, unsigned LocNo, LiveRange *LR,
-                          const VNInfo *VNI, SmallVectorImpl<SlotIndex> *Kills,
+void UserValue::extendDef(SlotIndex Idx, unsigned LocNo,
+                          LiveRange *LR, const VNInfo *VNI,
+                          SmallVectorImpl<SlotIndex> *Kills,
                           LiveIntervals &LIS, MachineDominatorTree &MDT,
                           UserValueScopes &UVS) {
-  SlotIndex Start = Idx;
-  MachineBasicBlock *MBB = LIS.getMBBFromIndex(Start);
-  SlotIndex Stop = LIS.getMBBEndIdx(MBB);
-  LocMap::iterator I = locInts.find(Start);
+  SmallVector<SlotIndex, 16> Todo;
+  Todo.push_back(Idx);
+  do {
+    SlotIndex Start = Todo.pop_back_val();
+    MachineBasicBlock *MBB = LIS.getMBBFromIndex(Start);
+    SlotIndex Stop = LIS.getMBBEndIdx(MBB);
+    LocMap::iterator I = locInts.find(Start);
 
-  // Limit to VNI's live range.
-  bool ToEnd = true;
-  if (LR && VNI) {
-    LiveInterval::Segment *Segment = LR->getSegmentContaining(Start);
-    if (!Segment || Segment->valno != VNI) {
-      if (Kills)
-        Kills->push_back(Start);
-      return;
+    // Limit to VNI's live range.
+    bool ToEnd = true;
+    if (LR && VNI) {
+      LiveInterval::Segment *Segment = LR->getSegmentContaining(Start);
+      if (!Segment || Segment->valno != VNI) {
+        if (Kills)
+          Kills->push_back(Start);
+        continue;
+      }
+      if (Segment->end < Stop)
+        Stop = Segment->end, ToEnd = false;
     }
-    if (Segment->end < Stop) {
-      Stop = Segment->end;
-      ToEnd = false;
+
+    // There could already be a short def at Start.
+    if (I.valid() && I.start() <= Start) {
+      // Stop when meeting a different location or an already extended interval.
+      Start = Start.getNextSlot();
+      if (I.value() != LocNo || I.stop() != Start)
+        continue;
+      // This is a one-slot placeholder. Just skip it.
+      ++I;
     }
-  }
 
-  // There could already be a short def at Start.
-  if (I.valid() && I.start() <= Start) {
-    // Stop when meeting a different location or an already extended interval.
-    Start = Start.getNextSlot();
-    if (I.value() != LocNo || I.stop() != Start)
-      return;
-    // This is a one-slot placeholder. Just skip it.
-    ++I;
-  }
+    // Limited by the next def.
+    if (I.valid() && I.start() < Stop)
+      Stop = I.start(), ToEnd = false;
+    // Limited by VNI's live range.
+    else if (!ToEnd && Kills)
+      Kills->push_back(Stop);
 
-  // Limited by the next def.
-  if (I.valid() && I.start() < Stop) {
-    Stop = I.start();
-    ToEnd = false;
-  }
-  // Limited by VNI's live range.
-  else if (!ToEnd && Kills)
-    Kills->push_back(Stop);
+    if (Start >= Stop)
+      continue;
 
-  if (Start < Stop)
     I.insert(Start, Stop, LocNo);
+
+    // If we extended to the MBB end, propagate down the dominator tree.
+    if (!ToEnd)
+      continue;
+    const std::vector<MachineDomTreeNode*> &Children =
+      MDT.getNode(MBB)->getChildren();
+    for (unsigned i = 0, e = Children.size(); i != e; ++i) {
+      MachineBasicBlock *MBB = Children[i]->getBlock();
+      if (UVS.dominates(MBB))
+        Todo.push_back(LIS.getMBBStartIdx(MBB));
+    }
+  } while (!Todo.empty());
 }
 
 void
@@ -615,7 +624,7 @@ UserValue::addDefsFromCopies(LiveInterval *LI, unsigned LocNo,
 
     // Is LocNo extended to reach this copy? If not, another def may be blocking
     // it, or we are looking at a wrong value of LI.
-    SlotIndex Idx = LIS.getInstructionIndex(*MI);
+    SlotIndex Idx = LIS.getInstructionIndex(MI);
     LocMap::iterator I = locInts.find(Idx.getRegSlot(true));
     if (!I.valid() || I.value() != LocNo)
       continue;
@@ -1040,7 +1049,7 @@ bool LiveDebugVariables::doInitialization(Module &M) {
 }
 
 #ifndef NDEBUG
-LLVM_DUMP_METHOD void LiveDebugVariables::dump() {
+void LiveDebugVariables::dump() {
   if (pImpl)
     static_cast<LDVImpl*>(pImpl)->print(dbgs());
 }

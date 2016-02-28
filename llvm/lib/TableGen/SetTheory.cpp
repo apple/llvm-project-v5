@@ -302,12 +302,12 @@ const RecVec *SetTheory::expand(Record *Set) {
     return &I->second;
 
   // This is the first time we see Set. Find a suitable expander.
-  ArrayRef<std::pair<Record *, SMRange>> SC = Set->getSuperClasses();
-  for (const auto &SCPair : SC) {
+  ArrayRef<Record *> SC = Set->getSuperClasses();
+  for (unsigned i = 0, e = SC.size(); i != e; ++i) {
     // Skip unnamed superclasses.
-    if (!isa<StringInit>(SCPair.first->getNameInit()))
+    if (!dyn_cast<StringInit>(SC[i]->getNameInit()))
       continue;
-    auto I = Expanders.find(SCPair.first->getName());
+    auto I = Expanders.find(SC[i]->getName());
     if (I != Expanders.end()) {
       // This breaks recursive definitions.
       RecVec &EltVec = Expansions[Set];

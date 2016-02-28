@@ -86,7 +86,7 @@ IntRecTy IntRecTy::Shared;
 StringRecTy StringRecTy::Shared;
 DagRecTy DagRecTy::Shared;
 
-LLVM_DUMP_METHOD void RecTy::dump() const { print(errs()); }
+void RecTy::dump() const { print(errs()); }
 
 ListRecTy *RecTy::getListTy() {
   if (!ListTy)
@@ -167,8 +167,8 @@ bool RecordRecTy::typeIsConvertibleTo(const RecTy *RHS) const {
   if (RTy->getRecord() == Rec || Rec->isSubClassOf(RTy->getRecord()))
     return true;
 
-  for (const auto &SCPair : RTy->getRecord()->getSuperClasses())
-    if (Rec->isSubClassOf(SCPair.first))
+  for (Record *SC : RTy->getRecord()->getSuperClasses())
+    if (Rec->isSubClassOf(SC))
       return true;
 
   return false;
@@ -186,8 +186,8 @@ RecTy *llvm::resolveTypes(RecTy *T1, RecTy *T2) {
   // If one is a Record type, check superclasses
   if (RecordRecTy *RecTy1 = dyn_cast<RecordRecTy>(T1)) {
     // See if T2 inherits from a type T1 also inherits from
-    for (const auto &SuperPair1 : RecTy1->getRecord()->getSuperClasses()) {
-      RecordRecTy *SuperRecTy1 = RecordRecTy::get(SuperPair1.first);
+    for (Record *SuperRec1 : RecTy1->getRecord()->getSuperClasses()) {
+      RecordRecTy *SuperRecTy1 = RecordRecTy::get(SuperRec1);
       RecTy *NewType1 = resolveTypes(SuperRecTy1, T2);
       if (NewType1)
         return NewType1;
@@ -195,8 +195,8 @@ RecTy *llvm::resolveTypes(RecTy *T1, RecTy *T2) {
   }
   if (RecordRecTy *RecTy2 = dyn_cast<RecordRecTy>(T2)) {
     // See if T1 inherits from a type T2 also inherits from
-    for (const auto &SuperPair2 : RecTy2->getRecord()->getSuperClasses()) {
-      RecordRecTy *SuperRecTy2 = RecordRecTy::get(SuperPair2.first);
+    for (Record *SuperRec2 : RecTy2->getRecord()->getSuperClasses()) {
+      RecordRecTy *SuperRecTy2 = RecordRecTy::get(SuperRec2);
       RecTy *NewType2 = resolveTypes(T1, SuperRecTy2);
       if (NewType2)
         return NewType2;
@@ -211,7 +211,7 @@ RecTy *llvm::resolveTypes(RecTy *T1, RecTy *T2) {
 //===----------------------------------------------------------------------===//
 
 void Init::anchor() { }
-LLVM_DUMP_METHOD void Init::dump() const { return print(errs()); }
+void Init::dump() const { return print(errs()); }
 
 UnsetInit *UnsetInit::get() {
   static UnsetInit TheInit;
@@ -274,17 +274,14 @@ BitsInit *BitsInit::get(ArrayRef<Init *> Range) {
   if (BitsInit *I = ThePool.FindNodeOrInsertPos(ID, IP))
     return I;
 
-  void *Mem = ::operator new (totalSizeToAlloc<Init *>(Range.size()));
-  BitsInit *I = new (Mem) BitsInit(Range.size());
-  std::uninitialized_copy(Range.begin(), Range.end(),
-                          I->getTrailingObjects<Init *>());
+  BitsInit *I = new BitsInit(Range);
   ThePool.InsertNode(I, IP);
   TheActualPool.push_back(std::unique_ptr<BitsInit>(I));
   return I;
 }
 
 void BitsInit::Profile(FoldingSetNodeID &ID) const {
-  ProfileBitsInit(ID, makeArrayRef(getTrailingObjects<Init *>(), NumBits));
+  ProfileBitsInit(ID, Bits);
 }
 
 Init *BitsInit::convertInitializerTo(RecTy *Ty) const {
@@ -358,7 +355,7 @@ Init *BitsInit::resolveReferences(Record &R, const RecordVal *RV) const {
   bool CachedBitVarChanged = false;
 
   for (unsigned i = 0, e = getNumBits(); i != e; ++i) {
-    Init *CurBit = getBit(i);
+    Init *CurBit = Bits[i];
     Init *CurBitVar = CurBit->getBitVar();
 
     NewBits[i] = CurBit;
@@ -489,10 +486,7 @@ ListInit *ListInit::get(ArrayRef<Init *> Range, RecTy *EltTy) {
   if (ListInit *I = ThePool.FindNodeOrInsertPos(ID, IP))
     return I;
 
-  void *Mem = ::operator new (totalSizeToAlloc<Init *>(Range.size()));
-  ListInit *I = new (Mem) ListInit(Range.size(), EltTy);
-  std::uninitialized_copy(Range.begin(), Range.end(),
-                          I->getTrailingObjects<Init *>());
+  ListInit *I = new ListInit(Range, EltTy);
   ThePool.InsertNode(I, IP);
   TheActualPool.push_back(std::unique_ptr<ListInit>(I));
   return I;
@@ -501,7 +495,7 @@ ListInit *ListInit::get(ArrayRef<Init *> Range, RecTy *EltTy) {
 void ListInit::Profile(FoldingSetNodeID &ID) const {
   RecTy *EltTy = cast<ListRecTy>(getType())->getElementType();
 
-  ProfileListInit(ID, getValues(), EltTy);
+  ProfileListInit(ID, Values, EltTy);
 }
 
 Init *ListInit::convertInitializerTo(RecTy *Ty) const {
@@ -535,8 +529,8 @@ ListInit::convertInitListSlice(const std::vector<unsigned> &Elements) const {
 }
 
 Record *ListInit::getElementAsRecord(unsigned i) const {
-  assert(i < NumValues && "List element index out of range!");
-  DefInit *DI = dyn_cast<DefInit>(getElement(i));
+  assert(i < Values.size() && "List element index out of range!");
+  DefInit *DI = dyn_cast<DefInit>(Values[i]);
   if (!DI)
     PrintFatalError("Expected record in list!");
   return DI->getDef();
@@ -578,9 +572,9 @@ Init *ListInit::resolveListElementReference(Record &R, const RecordVal *IRV,
 
 std::string ListInit::getAsString() const {
   std::string Result = "[";
-  for (unsigned i = 0, e = NumValues; i != e; ++i) {
+  for (unsigned i = 0, e = Values.size(); i != e; ++i) {
     if (i) Result += ", ";
-    Result += getElement(i)->getAsString();
+    Result += Values[i]->getAsString();
   }
   return Result + "]";
 }
@@ -609,32 +603,15 @@ Init *OpInit::getBit(unsigned Bit) const {
   return VarBitInit::get(const_cast<OpInit*>(this), Bit);
 }
 
-static void
-ProfileUnOpInit(FoldingSetNodeID &ID, unsigned Opcode, Init *Op, RecTy *Type) {
-  ID.AddInteger(Opcode);
-  ID.AddPointer(Op);
-  ID.AddPointer(Type);
-}
+UnOpInit *UnOpInit::get(UnaryOp opc, Init *lhs, RecTy *Type) {
+  typedef std::pair<std::pair<unsigned, Init *>, RecTy *> Key;
+  static DenseMap<Key, std::unique_ptr<UnOpInit>> ThePool;
 
-UnOpInit *UnOpInit::get(UnaryOp Opc, Init *LHS, RecTy *Type) {
-  static FoldingSet<UnOpInit> ThePool;
-  static std::vector<std::unique_ptr<UnOpInit>> TheActualPool;
+  Key TheKey(std::make_pair(std::make_pair(opc, lhs), Type));
 
-  FoldingSetNodeID ID;
-  ProfileUnOpInit(ID, Opc, LHS, Type);
-
-  void *IP = nullptr;
-  if (UnOpInit *I = ThePool.FindNodeOrInsertPos(ID, IP))
-    return I;
-
-  UnOpInit *I = new UnOpInit(Opc, LHS, Type);
-  ThePool.InsertNode(I, IP);
-  TheActualPool.push_back(std::unique_ptr<UnOpInit>(I));
-  return I;
-}
-
-void UnOpInit::Profile(FoldingSetNodeID &ID) const {
-  ProfileUnOpInit(ID, getOpcode(), getOperand(), getType());
+  std::unique_ptr<UnOpInit> &I = ThePool[TheKey];
+  if (!I) I.reset(new UnOpInit(opc, lhs, Type));
+  return I.get();
 }
 
 Init *UnOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
@@ -745,7 +722,7 @@ Init *UnOpInit::resolveReferences(Record &R, const RecordVal *RV) const {
 
 std::string UnOpInit::getAsString() const {
   std::string Result;
-  switch (getOpcode()) {
+  switch (Opc) {
   case CAST: Result = "!cast<" + getType()->getAsString() + ">"; break;
   case HEAD: Result = "!head"; break;
   case TAIL: Result = "!tail"; break;
@@ -754,35 +731,21 @@ std::string UnOpInit::getAsString() const {
   return Result + "(" + LHS->getAsString() + ")";
 }
 
-static void
-ProfileBinOpInit(FoldingSetNodeID &ID, unsigned Opcode, Init *LHS, Init *RHS,
-                 RecTy *Type) {
-  ID.AddInteger(Opcode);
-  ID.AddPointer(LHS);
-  ID.AddPointer(RHS);
-  ID.AddPointer(Type);
-}
+BinOpInit *BinOpInit::get(BinaryOp opc, Init *lhs,
+                          Init *rhs, RecTy *Type) {
+  typedef std::pair<
+    std::pair<std::pair<unsigned, Init *>, Init *>,
+    RecTy *
+    > Key;
 
-BinOpInit *BinOpInit::get(BinaryOp Opc, Init *LHS,
-                          Init *RHS, RecTy *Type) {
-  static FoldingSet<BinOpInit> ThePool;
-  static std::vector<std::unique_ptr<BinOpInit>> TheActualPool;
+  static DenseMap<Key, std::unique_ptr<BinOpInit>> ThePool;
 
-  FoldingSetNodeID ID;
-  ProfileBinOpInit(ID, Opc, LHS, RHS, Type);
+  Key TheKey(std::make_pair(std::make_pair(std::make_pair(opc, lhs), rhs),
+                            Type));
 
-  void *IP = nullptr;
-  if (BinOpInit *I = ThePool.FindNodeOrInsertPos(ID, IP))
-    return I;
-
-  BinOpInit *I = new BinOpInit(Opc, LHS, RHS, Type);
-  ThePool.InsertNode(I, IP);
-  TheActualPool.push_back(std::unique_ptr<BinOpInit>(I));
-  return I;
-}
-
-void BinOpInit::Profile(FoldingSetNodeID &ID) const {
-  ProfileBinOpInit(ID, getOpcode(), getLHS(), getRHS(), getType());
+  std::unique_ptr<BinOpInit> &I = ThePool[TheKey];
+  if (!I) I.reset(new BinOpInit(opc, lhs, rhs, Type));
+  return I.get();
 }
 
 Init *BinOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
@@ -887,7 +850,7 @@ Init *BinOpInit::resolveReferences(Record &R, const RecordVal *RV) const {
 
 std::string BinOpInit::getAsString() const {
   std::string Result;
-  switch (getOpcode()) {
+  switch (Opc) {
   case CONCAT: Result = "!con"; break;
   case ADD: Result = "!add"; break;
   case AND: Result = "!and"; break;
@@ -901,36 +864,27 @@ std::string BinOpInit::getAsString() const {
   return Result + "(" + LHS->getAsString() + ", " + RHS->getAsString() + ")";
 }
 
-static void
-ProfileTernOpInit(FoldingSetNodeID &ID, unsigned Opcode, Init *LHS, Init *MHS,
-                  Init *RHS, RecTy *Type) {
-  ID.AddInteger(Opcode);
-  ID.AddPointer(LHS);
-  ID.AddPointer(MHS);
-  ID.AddPointer(RHS);
-  ID.AddPointer(Type);
-}
-
-TernOpInit *TernOpInit::get(TernaryOp Opc, Init *LHS, Init *MHS, Init *RHS,
+TernOpInit *TernOpInit::get(TernaryOp opc, Init *lhs, Init *mhs, Init *rhs,
                             RecTy *Type) {
-  static FoldingSet<TernOpInit> ThePool;
-  static std::vector<std::unique_ptr<TernOpInit>> TheActualPool;
+  typedef std::pair<
+    std::pair<
+      std::pair<std::pair<unsigned, RecTy *>, Init *>,
+      Init *
+      >,
+    Init *
+    > Key;
 
-  FoldingSetNodeID ID;
-  ProfileTernOpInit(ID, Opc, LHS, MHS, RHS, Type);
+  static DenseMap<Key, std::unique_ptr<TernOpInit>> ThePool;
 
-  void *IP = nullptr;
-  if (TernOpInit *I = ThePool.FindNodeOrInsertPos(ID, IP))
-    return I;
+  Key TheKey(std::make_pair(std::make_pair(std::make_pair(std::make_pair(opc,
+                                                                         Type),
+                                                          lhs),
+                                           mhs),
+                            rhs));
 
-  TernOpInit *I = new TernOpInit(Opc, LHS, MHS, RHS, Type);
-  ThePool.InsertNode(I, IP);
-  TheActualPool.push_back(std::unique_ptr<TernOpInit>(I));
-  return I;
-}
-
-void TernOpInit::Profile(FoldingSetNodeID &ID) const {
-  ProfileTernOpInit(ID, getOpcode(), getLHS(), getMHS(), getRHS(), getType());
+  std::unique_ptr<TernOpInit> &I = ThePool[TheKey];
+  if (!I) I.reset(new TernOpInit(opc, lhs, mhs, rhs, Type));
+  return I.get();
 }
 
 static Init *ForeachHelper(Init *LHS, Init *MHS, Init *RHS, RecTy *Type,
@@ -1100,7 +1054,7 @@ Init *TernOpInit::resolveReferences(Record &R,
                                     const RecordVal *RV) const {
   Init *lhs = LHS->resolveReferences(R, RV);
 
-  if (getOpcode() == IF && lhs != LHS) {
+  if (Opc == IF && lhs != LHS) {
     IntInit *Value = dyn_cast<IntInit>(lhs);
     if (Init *I = lhs->convertInitializerTo(IntRecTy::get()))
       Value = dyn_cast<IntInit>(I);
@@ -1128,7 +1082,7 @@ Init *TernOpInit::resolveReferences(Record &R,
 
 std::string TernOpInit::getAsString() const {
   std::string Result;
-  switch (getOpcode()) {
+  switch (Opc) {
   case SUBST: Result = "!subst"; break;
   case FOREACH: Result = "!foreach"; break;
   case IF: Result = "!if"; break;
@@ -1597,7 +1551,7 @@ const std::string &RecordVal::getName() const {
   return cast<StringInit>(getNameInit())->getValue();
 }
 
-LLVM_DUMP_METHOD void RecordVal::dump() const { errs() << *this; }
+void RecordVal::dump() const { errs() << *this; }
 
 void RecordVal::print(raw_ostream &OS, bool PrintSem) const {
   if (getPrefix()) OS << "field ";
@@ -1682,7 +1636,7 @@ void Record::resolveReferencesTo(const RecordVal *RV) {
   }
 }
 
-LLVM_DUMP_METHOD void Record::dump() const { errs() << *this; }
+void Record::dump() const { errs() << *this; }
 
 raw_ostream &llvm::operator<<(raw_ostream &OS, const Record &R) {
   OS << R.getNameInitAsString();
@@ -1702,11 +1656,11 @@ raw_ostream &llvm::operator<<(raw_ostream &OS, const Record &R) {
   }
 
   OS << " {";
-  ArrayRef<std::pair<Record *, SMRange>> SC = R.getSuperClasses();
+  ArrayRef<Record *> SC = R.getSuperClasses();
   if (!SC.empty()) {
     OS << "\t//";
-    for (const auto &SuperPair : SC)
-      OS << " " << SuperPair.first->getNameInitAsString();
+    for (const Record *Super : SC)
+      OS << " " << Super->getNameInitAsString();
   }
   OS << "\n";
 
@@ -1916,7 +1870,7 @@ DagInit *Record::getValueAsDag(StringRef FieldName) const {
 }
 
 
-LLVM_DUMP_METHOD void MultiClass::dump() const {
+void MultiClass::dump() const {
   errs() << "Record:\n";
   Rec.dump();
 
@@ -1926,7 +1880,7 @@ LLVM_DUMP_METHOD void MultiClass::dump() const {
 }
 
 
-LLVM_DUMP_METHOD void RecordKeeper::dump() const { errs() << *this; }
+void RecordKeeper::dump() const { errs() << *this; }
 
 raw_ostream &llvm::operator<<(raw_ostream &OS, const RecordKeeper &RK) {
   OS << "------------- Classes -----------------\n";

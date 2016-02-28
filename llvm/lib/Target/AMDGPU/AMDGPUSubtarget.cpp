@@ -16,7 +16,6 @@
 #include "R600ISelLowering.h"
 #include "R600InstrInfo.h"
 #include "R600MachineScheduler.h"
-#include "SIFrameLowering.h"
 #include "SIISelLowering.h"
 #include "SIInstrInfo.h"
 #include "SIMachineFunctionInfo.h"
@@ -45,9 +44,10 @@ AMDGPUSubtarget::initializeSubtargetDependencies(const Triple &TT,
   // disable it.
 
   SmallString<256> FullFS("+promote-alloca,+fp64-denormals,");
-  if (isAmdHsaOS()) // Turn on FlatForGlobal for HSA.
-    FullFS += "+flat-for-global,";
   FullFS += FS;
+
+  if (GPU == "" && TT.getArch() == Triple::amdgcn)
+    GPU = "SI";
 
   ParseSubtargetFeatures(GPU, FullFS);
 
@@ -58,56 +58,35 @@ AMDGPUSubtarget::initializeSubtargetDependencies(const Triple &TT,
     FP32Denormals = false;
     FP64Denormals = false;
   }
-
-  // Set defaults if needed.
-  if (MaxPrivateElementSize == 0)
-    MaxPrivateElementSize = 16;
-
   return *this;
 }
 
 AMDGPUSubtarget::AMDGPUSubtarget(const Triple &TT, StringRef GPU, StringRef FS,
                                  TargetMachine &TM)
-    : AMDGPUGenSubtargetInfo(TT, GPU, FS),
+    : AMDGPUGenSubtargetInfo(TT, GPU, FS), DevName(GPU), Is64bit(false),
       DumpCode(false), R600ALUInst(false), HasVertexCache(false),
       TexVTXClauseSize(0), Gen(AMDGPUSubtarget::R600), FP64(false),
-      FP64Denormals(false), FP32Denormals(false), FPExceptions(false),
-      FastFMAF32(false), HalfRate64Ops(false), CaymanISA(false),
-      FlatAddressSpace(false), FlatForGlobal(false), EnableIRStructurizer(true),
-      EnablePromoteAlloca(false),
-      EnableIfCvt(true), EnableLoadStoreOpt(false),
+      FP64Denormals(false), FP32Denormals(false), FastFMAF32(false),
+      CaymanISA(false), FlatAddressSpace(false), EnableIRStructurizer(true),
+      EnablePromoteAlloca(false), EnableIfCvt(true), EnableLoadStoreOpt(false),
       EnableUnsafeDSOffsetFolding(false),
-      EnableXNACK(false),
-      WavefrontSize(0), CFALUBug(false),
-      LocalMemorySize(0), MaxPrivateElementSize(0),
+      WavefrontSize(0), CFALUBug(false), LocalMemorySize(0),
       EnableVGPRSpilling(false), SGPRInitBug(false), IsGCN(false),
-      GCN1Encoding(false), GCN3Encoding(false), CIInsts(false),
-      HasSMemRealTime(false), Has16BitInsts(false),
-      LDSBankCount(0),
-      IsaVersion(ISAVersion0_0_0),
-      EnableSIScheduler(false), FrameLowering(nullptr),
+      GCN1Encoding(false), GCN3Encoding(false), CIInsts(false), LDSBankCount(0),
+      IsaVersion(ISAVersion0_0_0), EnableHugeScratchBuffer(false),
+      FrameLowering(TargetFrameLowering::StackGrowsUp,
+                    64 * 16, // Maximum stack alignment (long16)
+                    0),
       InstrItins(getInstrItineraryForCPU(GPU)), TargetTriple(TT) {
 
   initializeSubtargetDependencies(TT, GPU, FS);
 
-  const unsigned MaxStackAlign = 64 * 16; // Maximum stack alignment (long16)
-
   if (getGeneration() <= AMDGPUSubtarget::NORTHERN_ISLANDS) {
     InstrInfo.reset(new R600InstrInfo(*this));
     TLInfo.reset(new R600TargetLowering(TM, *this));
-
-    // FIXME: Should have R600 specific FrameLowering
-    FrameLowering.reset(new AMDGPUFrameLowering(
-                          TargetFrameLowering::StackGrowsUp,
-                          MaxStackAlign,
-                          0));
   } else {
     InstrInfo.reset(new SIInstrInfo(*this));
     TLInfo.reset(new SITargetLowering(TM, *this));
-    FrameLowering.reset(new SIFrameLowering(
-                          TargetFrameLowering::StackGrowsUp,
-                          MaxStackAlign,
-                          0));
   }
 }
 

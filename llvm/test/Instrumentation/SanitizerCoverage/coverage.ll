@@ -6,14 +6,12 @@
 ; RUN: opt < %s -sancov -sanitizer-coverage-level=2 -sanitizer-coverage-block-threshold=1  -S | FileCheck %s --check-prefix=CHECK_WITH_CHECK
 ; RUN: opt < %s -sancov -sanitizer-coverage-level=3 -sanitizer-coverage-block-threshold=10 -S | FileCheck %s --check-prefix=CHECK3
 ; RUN: opt < %s -sancov -sanitizer-coverage-level=4 -S | FileCheck %s --check-prefix=CHECK4
-; RUN: opt < %s -sancov -sanitizer-coverage-level=4 -sanitizer-coverage-trace-pc  -S | FileCheck %s --check-prefix=CHECK_TRACE_PC_INDIR
 ; RUN: opt < %s -sancov -sanitizer-coverage-level=3 -sanitizer-coverage-8bit-counters=1  -S | FileCheck %s --check-prefix=CHECK-8BIT
 
 ; RUN: opt < %s -sancov -sanitizer-coverage-level=2 -sanitizer-coverage-block-threshold=10 \
 ; RUN:      -S | FileCheck %s --check-prefix=CHECK2
 ; RUN: opt < %s -sancov -sanitizer-coverage-level=2 -sanitizer-coverage-block-threshold=1 \
 ; RUN:      -S | FileCheck %s --check-prefix=CHECK_WITH_CHECK
-; RUN: opt < %s -sancov -sanitizer-coverage-level=2 -sanitizer-coverage-prune-blocks=1 -S | FileCheck %s --check-prefix=CHECKPRUNE
 
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-unknown-linux-gnu"
@@ -31,8 +29,8 @@ entry:
 }
 
 ; CHECK0-NOT: @llvm.global_ctors = {{.*}}{ i32 2, void ()* @sancov.module_ctor }
-; CHECK1: @llvm.global_ctors = {{.*}}{ i32 2, void ()* @sancov.module_ctor, i8* null }
-; CHECK2: @llvm.global_ctors = {{.*}}{ i32 2, void ()* @sancov.module_ctor, i8* null }
+; CHECK1: @llvm.global_ctors = {{.*}}{ i32 2, void ()* @sancov.module_ctor }
+; CHECK2: @llvm.global_ctors = {{.*}}{ i32 2, void ()* @sancov.module_ctor }
 
 ; CHECK0-NOT: call void @__sanitizer_cov(
 ; CHECK0-NOT: call void @__sanitizer_cov_module_init(
@@ -122,11 +120,6 @@ entry:
 ; CHECK4-NOT: call void @__sanitizer_cov_indir_call16({{.*}},[[CACHE]])
 ; CHECK4: ret void
 
-; CHECK_TRACE_PC_INDIR-LABEL: define void @CallViaVptr
-; CHECK_TRACE_PC_INDIR: call void @__sanitizer_cov_trace_pc_indir
-; CHECK_TRACE_PC_INDIR: call void @__sanitizer_cov_trace_pc_indir
-; CHECK_TRACE_PC_INDIR: ret void
-
 define void @call_unreachable() uwtable sanitize_address {
 entry:
   unreachable
@@ -135,11 +128,3 @@ entry:
 ; CHECK4-LABEL: define void @call_unreachable
 ; CHECK4-NOT: __sanitizer_cov
 ; CHECK4: unreachable
-
-; CHECKPRUNE-LABEL: define void @foo
-; CHECKPRUNE: call void @__sanitizer_cov
-; CHECKPRUNE: call void asm sideeffect "", ""()
-; CHECKPRUNE: call void @__sanitizer_cov
-; CHECKPRUNE: call void asm sideeffect "", ""()
-; CHECKPRUNE-NOT: call void @__sanitizer_cov
-; CHECKPRUNE: ret void

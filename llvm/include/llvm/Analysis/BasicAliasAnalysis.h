@@ -178,10 +178,20 @@ private:
 };
 
 /// Analysis pass providing a never-invalidated alias analysis result.
-struct BasicAA : AnalysisBase<BasicAA> {
+class BasicAA {
+public:
   typedef BasicAAResult Result;
 
+  /// \brief Opaque, unique identifier for this analysis pass.
+  static void *ID() { return (void *)&PassID; }
+
   BasicAAResult run(Function &F, AnalysisManager<Function> *AM);
+
+  /// \brief Provide access to a name for this pass for debugging purposes.
+  static StringRef name() { return "BasicAliasAnalysis"; }
+
+private:
+  static char PassID;
 };
 
 /// Legacy wrapper pass to provide the BasicAAResult object.

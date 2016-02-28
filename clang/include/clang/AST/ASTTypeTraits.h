@@ -62,9 +62,7 @@ public:
   /// \}
 
   /// \brief Returns \c true if \c this and \c Other represent the same kind.
-  bool isSame(ASTNodeKind Other) const {
-    return KindId != NKI_None && KindId == Other.KindId;
-  }
+  bool isSame(ASTNodeKind Other) const;
 
   /// \brief Returns \c true only for the default \c ASTNodeKind()
   bool isNone() const { return KindId == NKI_None; }
@@ -272,10 +270,6 @@ public:
   bool operator<(const DynTypedNode &Other) const {
     if (!NodeKind.isSame(Other.NodeKind))
       return NodeKind < Other.NodeKind;
-
-    if (ASTNodeKind::getFromNodeKind<QualType>().isSame(NodeKind))
-      return getUnchecked<QualType>().getAsOpaquePtr() <
-             Other.getUnchecked<QualType>().getAsOpaquePtr();
 
     if (ASTNodeKind::getFromNodeKind<TypeLoc>().isSame(NodeKind)) {
       auto TLA = getUnchecked<TypeLoc>();

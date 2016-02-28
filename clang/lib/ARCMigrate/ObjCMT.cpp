@@ -177,13 +177,12 @@ protected:
   }
 };
 
-} // end anonymous namespace
+}
 
-ObjCMigrateAction::ObjCMigrateAction(
-                                  std::unique_ptr<FrontendAction> WrappedAction,
+ObjCMigrateAction::ObjCMigrateAction(FrontendAction *WrappedAction,
                                      StringRef migrateDir,
                                      unsigned migrateAction)
-  : WrapperFrontendAction(std::move(WrappedAction)), MigrateDir(migrateDir),
+  : WrapperFrontendAction(WrappedAction), MigrateDir(migrateDir),
     ObjCMigAction(migrateAction),
     CompInst(nullptr) {
   if (MigrateDir.empty())
@@ -307,6 +306,7 @@ namespace {
     }
     return true;
   }
+  
 
 class ObjCMigrator : public RecursiveASTVisitor<ObjCMigrator> {
   ObjCMigrateASTConsumer &Consumer;
@@ -369,7 +369,7 @@ public:
     return true;
   }
 };
-} // end anonymous namespace
+}
 
 void ObjCMigrateASTConsumer::migrateDecl(Decl *D) {
   if (!D)
@@ -588,7 +588,7 @@ void ObjCMigrateASTConsumer::migrateObjCContainerDecl(ASTContext &Ctx,
   if (!(ASTMigrateActions & FrontendOptions::ObjCMT_ReturnsInnerPointerProperty))
     return;
   
-  for (auto *Prop : D->instance_properties()) {
+  for (auto *Prop : D->properties()) {
     if ((ASTMigrateActions & FrontendOptions::ObjCMT_Annotation) &&
         !Prop->isDeprecated())
       migratePropertyNsReturnsInnerPointer(Ctx, Prop);
@@ -605,7 +605,7 @@ ClassImplementsAllMethodsAndProperties(ASTContext &Ctx,
   // in class interface.
   bool HasAtleastOneRequiredProperty = false;
   if (const ObjCProtocolDecl *PDecl = Protocol->getDefinition())
-    for (const auto *Property : PDecl->instance_properties()) {
+    for (const auto *Property : PDecl->properties()) {
       if (Property->getPropertyImplementation() == ObjCPropertyDecl::Optional)
         continue;
       HasAtleastOneRequiredProperty = true;
@@ -615,8 +615,7 @@ ClassImplementsAllMethodsAndProperties(ASTContext &Ctx,
         // or dynamic declaration. Class is implementing a property coming from
         // another protocol. This still makes the target protocol as conforming.
         if (!ImpDecl->FindPropertyImplDecl(
-                                  Property->getDeclName().getAsIdentifierInfo(),
-                                  Property->getQueryKind()))
+                                  Property->getDeclName().getAsIdentifierInfo()))
           return false;
       }
       else if (ObjCPropertyDecl *ClassProperty = dyn_cast<ObjCPropertyDecl>(R[0])) {
@@ -1105,6 +1104,7 @@ static bool AvailabilityAttrsMatch(Attr *At1, Attr *At2) {
           versionsMatch(Deprecated1, Deprecated2) &&
           versionsMatch(Obsoleted1, Obsoleted2) &&
           IsUnavailable1 == IsUnavailable2);
+  
 }
 
 static bool MatchTwoAttributeLists(const AttrVec &Attrs1, const AttrVec &Attrs2,
@@ -1509,6 +1509,7 @@ void ObjCMigrateASTConsumer::AddCFAnnotations(ASTContext &Ctx,
   }
 }
 
+
 ObjCMigrateASTConsumer::CF_BRIDGING_KIND
   ObjCMigrateASTConsumer::migrateAddFunctionAnnotation(
                                                   ASTContext &Ctx,
@@ -1523,7 +1524,7 @@ ObjCMigrateASTConsumer::CF_BRIDGING_KIND
                                 FuncDecl->hasAttr<NSReturnsNotRetainedAttr>() ||
                                 FuncDecl->hasAttr<NSReturnsAutoreleasedAttr>());
   
-  // Trivial case of when function is annotated and has no argument.
+  // Trivial case of when funciton is annotated and has no argument.
   if (FuncIsReturnAnnotated && FuncDecl->getNumParams() == 0)
     return CF_BRIDGING_NONE;
   
@@ -1652,7 +1653,7 @@ void ObjCMigrateASTConsumer::migrateAddMethodAnnotation(
     Editor->commit(commit);
   }
   
-  // Trivial case of when function is annotated and has no argument.
+  // Trivial case of when funciton is annotated and has no argument.
   if (MethodIsReturnAnnotated &&
       (MethodDecl->param_begin() == MethodDecl->param_end()))
     return;
@@ -1682,6 +1683,7 @@ void ObjCMigrateASTConsumer::migrateAddMethodAnnotation(
       return;
     }
   }
+  return;
 }
 
 namespace {
@@ -1698,7 +1700,7 @@ public:
     return true;
   }
 };
-} // end anonymous namespace
+} // anonymous namespace
 
 static bool hasSuperInitCall(const ObjCMethodDecl *MD) {
   return !SuperInitChecker().TraverseStmt(MD->getBody());
@@ -1839,7 +1841,7 @@ private:
   }
 };
 
-} // end anonymous namespace
+}
 
 void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
   
@@ -2040,7 +2042,7 @@ struct EditEntry {
 
   EditEntry() : File(), Offset(), RemoveLen() {}
 };
-} // end anonymous namespace
+}
 
 namespace llvm {
 template<> struct DenseMapInfo<EditEntry> {
@@ -2069,7 +2071,7 @@ template<> struct DenseMapInfo<EditEntry> {
         LHS.Text == RHS.Text;
   }
 };
-} // end namespace llvm
+}
 
 namespace {
 class RemapFileParser {
@@ -2151,7 +2153,7 @@ private:
       Entries.push_back(Entry);
   }
 };
-} // end anonymous namespace
+}
 
 static bool reportDiag(const Twine &Err, DiagnosticsEngine &Diag) {
   Diag.Report(Diag.getCustomDiagID(DiagnosticsEngine::Error, "%0"))

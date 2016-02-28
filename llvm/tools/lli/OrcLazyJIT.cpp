@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "OrcLazyJIT.h"
-#include "llvm/ExecutionEngine/Orc/OrcArchitectureSupport.h"
+#include "llvm/ExecutionEngine/Orc/OrcTargetSupport.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include <cstdio>
@@ -51,13 +51,8 @@ OrcLazyJIT::createCompileCallbackMgr(Triple T) {
   switch (T.getArch()) {
     default: return nullptr;
 
-    case Triple::x86: {
-      typedef orc::LocalJITCompileCallbackManager<orc::OrcI386> CCMgrT;
-      return llvm::make_unique<CCMgrT>(0);
-    }
-
     case Triple::x86_64: {
-      typedef orc::LocalJITCompileCallbackManager<orc::OrcX86_64> CCMgrT;
+      typedef orc::JITCompileCallbackManager<orc::OrcX86_64> CCMgrT;
       return llvm::make_unique<CCMgrT>(0);
     }
   }
@@ -68,16 +63,9 @@ OrcLazyJIT::createIndirectStubsMgrBuilder(Triple T) {
   switch (T.getArch()) {
     default: return nullptr;
 
-    case Triple::x86:
-      return [](){
-        return llvm::make_unique<
-                       orc::LocalIndirectStubsManager<orc::OrcI386>>();
-      };
-
     case Triple::x86_64:
       return [](){
-        return llvm::make_unique<
-                       orc::LocalIndirectStubsManager<orc::OrcX86_64>>();
+        return llvm::make_unique<orc::IndirectStubsManager<orc::OrcX86_64>>();
       };
   }
 }

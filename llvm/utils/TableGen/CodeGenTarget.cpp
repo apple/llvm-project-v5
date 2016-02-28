@@ -76,8 +76,6 @@ std::string llvm::getEnumName(MVT::SimpleValueType T) {
   case MVT::v16i1:    return "MVT::v16i1";
   case MVT::v32i1:    return "MVT::v32i1";
   case MVT::v64i1:    return "MVT::v64i1";
-  case MVT::v512i1:   return "MVT::v512i1";
-  case MVT::v1024i1:  return "MVT::v1024i1";
   case MVT::v1i8:     return "MVT::v1i8";
   case MVT::v2i8:     return "MVT::v2i8";
   case MVT::v4i8:     return "MVT::v4i8";
@@ -85,29 +83,22 @@ std::string llvm::getEnumName(MVT::SimpleValueType T) {
   case MVT::v16i8:    return "MVT::v16i8";
   case MVT::v32i8:    return "MVT::v32i8";
   case MVT::v64i8:    return "MVT::v64i8";
-  case MVT::v128i8:   return "MVT::v128i8";
-  case MVT::v256i8:   return "MVT::v256i8";
   case MVT::v1i16:    return "MVT::v1i16";
   case MVT::v2i16:    return "MVT::v2i16";
   case MVT::v4i16:    return "MVT::v4i16";
   case MVT::v8i16:    return "MVT::v8i16";
   case MVT::v16i16:   return "MVT::v16i16";
   case MVT::v32i16:   return "MVT::v32i16";
-  case MVT::v64i16:   return "MVT::v64i16";
-  case MVT::v128i16:  return "MVT::v128i16";
   case MVT::v1i32:    return "MVT::v1i32";
   case MVT::v2i32:    return "MVT::v2i32";
   case MVT::v4i32:    return "MVT::v4i32";
   case MVT::v8i32:    return "MVT::v8i32";
   case MVT::v16i32:   return "MVT::v16i32";
-  case MVT::v32i32:   return "MVT::v32i32";
-  case MVT::v64i32:   return "MVT::v64i32";
   case MVT::v1i64:    return "MVT::v1i64";
   case MVT::v2i64:    return "MVT::v2i64";
   case MVT::v4i64:    return "MVT::v4i64";
   case MVT::v8i64:    return "MVT::v8i64";
   case MVT::v16i64:   return "MVT::v16i64";
-  case MVT::v32i64:   return "MVT::v32i64";
   case MVT::v1i128:   return "MVT::v1i128";
   case MVT::v2f16:    return "MVT::v2f16";
   case MVT::v4f16:    return "MVT::v4f16";
@@ -162,7 +153,7 @@ const std::string &CodeGenTarget::getName() const {
 }
 
 std::string CodeGenTarget::getInstNamespace() const {
-  for (const CodeGenInstruction *Inst : getInstructionsByEnumValue()) {
+  for (const CodeGenInstruction *Inst : instructions()) {
     // Make sure not to pick up "TargetOpcode" by accidentally getting
     // the namespace off the PHI instruction or something.
     if (Inst->Namespace != "TargetOpcode")
@@ -262,7 +253,7 @@ void CodeGenTarget::ReadLegalValueTypes() const {
     LegalValueTypes.insert(LegalValueTypes.end(), RC.VTs.begin(), RC.VTs.end());
 
   // Remove duplicates.
-  array_pod_sort(LegalValueTypes.begin(), LegalValueTypes.end());
+  std::sort(LegalValueTypes.begin(), LegalValueTypes.end());
   LegalValueTypes.erase(std::unique(LegalValueTypes.begin(),
                                     LegalValueTypes.end()),
                         LegalValueTypes.end());
@@ -300,9 +291,14 @@ GetInstByName(const char *Name,
 /// \brief Return all of the instructions defined by the target, ordered by
 /// their enum value.
 void CodeGenTarget::ComputeInstrsByEnum() const {
+  // The ordering here must match the ordering in TargetOpcodes.h.
   static const char *const FixedInstrs[] = {
-#define HANDLE_TARGET_OPCODE(OPC, NUM) #OPC,
-#include "llvm/Target/TargetOpcodes.def"
+      "PHI",          "INLINEASM",     "CFI_INSTRUCTION",  "EH_LABEL",
+      "GC_LABEL",     "KILL",          "EXTRACT_SUBREG",   "INSERT_SUBREG",
+      "IMPLICIT_DEF", "SUBREG_TO_REG", "COPY_TO_REGCLASS", "DBG_VALUE",
+      "REG_SEQUENCE", "COPY",          "BUNDLE",           "LIFETIME_START",
+      "LIFETIME_END", "STACKMAP",      "PATCHPOINT",       "LOAD_STACK_GUARD",
+      "STATEPOINT",   "LOCAL_ESCAPE",   "FAULTING_LOAD_OP",
       nullptr};
   const auto &Insts = getInstructions();
   for (const char *const *p = FixedInstrs; *p; ++p) {
@@ -431,17 +427,12 @@ std::vector<CodeGenIntrinsic> llvm::LoadIntrinsics(const RecordKeeper &RC,
   std::vector<Record*> I = RC.getAllDerivedDefinitions("Intrinsic");
 
   std::vector<CodeGenIntrinsic> Result;
-  Result.reserve(I.size());
 
   for (unsigned i = 0, e = I.size(); i != e; ++i) {
     bool isTarget = I[i]->getValueAsBit("isTarget");
     if (isTarget == TargetOnly)
       Result.push_back(CodeGenIntrinsic(I[i]));
   }
-  std::sort(Result.begin(), Result.end(),
-            [](const CodeGenIntrinsic& LHS, const CodeGenIntrinsic& RHS) {
-              return LHS.Name < RHS.Name;
-            });
   return Result;
 }
 
@@ -565,7 +556,7 @@ CodeGenIntrinsic::CodeGenIntrinsic(Record *R) {
   }
 
   // Parse the intrinsic properties.
-  ListInit *PropList = R->getValueAsListInit("IntrProperties");
+  ListInit *PropList = R->getValueAsListInit("Properties");
   for (unsigned i = 0, e = PropList->size(); i != e; ++i) {
     Record *Property = PropList->getElementAsRecord(i);
     assert(Property->isSubClassOf("IntrinsicProperty") &&

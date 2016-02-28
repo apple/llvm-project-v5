@@ -53,6 +53,7 @@ struct ContextDecision {
 #define debug(s) do { } while (0)
 #endif
 
+
 /*
  * contextForAttrs - Client for the instruction context table.  Takes a set of
  *   attributes and returns the appropriate decode context.
@@ -275,6 +276,8 @@ static void dbgprintf(struct InternalInstruction* insn,
   va_end(ap);
 
   insn->dlog(insn->dlogArg, buffer);
+
+  return;
 }
 
 /*
@@ -358,7 +361,7 @@ static int readPrefixes(struct InternalInstruction* insn) {
        * then it should be disassembled as a xacquire/xrelease not repne/rep.
        */
       if ((byte == 0xf2 || byte == 0xf3) &&
-          ((nextByte == 0xf0) ||
+          ((nextByte == 0xf0) |
           ((nextByte & 0xfe) == 0x86 || (nextByte & 0xf8) == 0x90)))
         insn->xAcquireRelease = true;
       /*
@@ -1482,14 +1485,11 @@ static int readModRM(struct InternalInstruction* insn) {
     case TYPE_XMM128:                                     \
     case TYPE_XMM64:                                      \
     case TYPE_XMM32:                                      \
+    case TYPE_XMM:                                        \
       return prefix##_XMM0 + index;                       \
     case TYPE_VK1:                                        \
-    case TYPE_VK2:                                        \
-    case TYPE_VK4:                                        \
     case TYPE_VK8:                                        \
     case TYPE_VK16:                                       \
-    case TYPE_VK32:                                       \
-    case TYPE_VK64:                                       \
       if (index > 7)                                      \
         *valid = 0;                                       \
       return prefix##_K0 + index;                         \
@@ -1759,6 +1759,14 @@ static int readOperands(struct InternalInstruction* insn) {
       if (Op.encoding != ENCODING_REG && insn->eaDisplacement == EA_DISP_8)
         insn->displacement *= 1 << (Op.encoding - ENCODING_RM);
       break;
+    case ENCODING_CB:
+    case ENCODING_CW:
+    case ENCODING_CD:
+    case ENCODING_CP:
+    case ENCODING_CO:
+    case ENCODING_CT:
+      dbgprintf(insn, "We currently don't hande code-offset encodings");
+      return -1;
     case ENCODING_IB:
       if (sawRegImm) {
         /* Saw a register immediate so don't read again and instead split the

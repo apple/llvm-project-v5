@@ -27,7 +27,7 @@ ScaledNumber<uint64_t> BlockMass::toScaled() const {
   return ScaledNumber<uint64_t>(getMass() + 1, -64);
 }
 
-LLVM_DUMP_METHOD void BlockMass::dump() const { print(dbgs()); }
+void BlockMass::dump() const { print(dbgs()); }
 
 static char getHexDigit(int N) {
   assert(N < 16);
@@ -35,7 +35,6 @@ static char getHexDigit(int N) {
     return '0' + N;
   return 'a' + N - 10;
 }
-
 raw_ostream &BlockMass::print(raw_ostream &OS) const {
   for (int Digits = 0; Digits < 16; ++Digits)
     OS << getHexDigit(Mass >> (60 - Digits * 4) & 0xf);
@@ -79,7 +78,7 @@ struct DitheringDistributer {
   BlockMass takeMass(uint32_t Weight);
 };
 
-} // end anonymous namespace
+} // end namespace
 
 DitheringDistributer::DitheringDistributer(Distribution &Dist,
                                            const BlockMass &Mass) {
@@ -131,7 +130,6 @@ static void combineWeight(Weight &W, const Weight &OtherW) {
   else
     W.Amount += OtherW.Amount;
 }
-
 static void combineWeightsBySorting(WeightList &Weights) {
   // Sort so edges to the same node are adjacent.
   std::sort(Weights.begin(), Weights.end(),
@@ -151,8 +149,8 @@ static void combineWeightsBySorting(WeightList &Weights) {
 
   // Erase extra entries.
   Weights.erase(O, Weights.end());
+  return;
 }
-
 static void combineWeightsByHashing(WeightList &Weights) {
   // Collect weights into a DenseMap.
   typedef DenseMap<BlockNode::IndexType, Weight> HashTable;
@@ -170,7 +168,6 @@ static void combineWeightsByHashing(WeightList &Weights) {
   for (const auto &I : Combined)
     Weights.push_back(I.second);
 }
-
 static void combineWeights(WeightList &Weights) {
   // Use a hash table for many successors to keep this linear.
   if (Weights.size() > 128) {
@@ -180,7 +177,6 @@ static void combineWeights(WeightList &Weights) {
 
   combineWeightsBySorting(Weights);
 }
-
 static uint64_t shiftRightAndRound(uint64_t N, int Shift) {
   assert(Shift >= 0);
   assert(Shift < 64);
@@ -188,7 +184,6 @@ static uint64_t shiftRightAndRound(uint64_t N, int Shift) {
     return N;
   return (N >> Shift) + (UINT64_C(1) & N >> (Shift - 1));
 }
-
 void Distribution::normalize() {
   // Early exit for termination nodes.
   if (Weights.empty())
@@ -528,7 +523,6 @@ BlockFrequencyInfoImplBase::getBlockFreq(const BlockNode &Node) const {
     return 0;
   return Freqs[Node.Index].Integer;
 }
-
 Scaled64
 BlockFrequencyInfoImplBase::getFloatingBlockFreq(const BlockNode &Node) const {
   if (!Node.isValid())
@@ -547,7 +541,6 @@ std::string
 BlockFrequencyInfoImplBase::getBlockName(const BlockNode &Node) const {
   return std::string();
 }
-
 std::string
 BlockFrequencyInfoImplBase::getLoopName(const LoopData &Loop) const {
   return getBlockName(Loop.getHeader()) + (Loop.isIrreducible() ? "**" : "*");
@@ -575,7 +568,6 @@ void IrreducibleGraph::addNodesInLoop(const BFIBase::LoopData &OuterLoop) {
     addNode(N);
   indexNodes();
 }
-
 void IrreducibleGraph::addNodesInFunction() {
   Start = 0;
   for (uint32_t Index = 0; Index < BFI.Working.size(); ++Index)
@@ -583,12 +575,10 @@ void IrreducibleGraph::addNodesInFunction() {
       addNode(Index);
   indexNodes();
 }
-
 void IrreducibleGraph::indexNodes() {
   for (auto &I : Nodes)
     Lookup[I.Node.Index] = &I;
 }
-
 void IrreducibleGraph::addEdge(IrrNode &Irr, const BlockNode &Succ,
                                const BFIBase::LoopData *OuterLoop) {
   if (OuterLoop && OuterLoop->isHeader(Succ))
@@ -615,7 +605,7 @@ template <> struct GraphTraits<IrreducibleGraph> {
   static ChildIteratorType child_begin(NodeType *N) { return N->succ_begin(); }
   static ChildIteratorType child_end(NodeType *N) { return N->succ_end(); }
 };
-} // end namespace llvm
+}
 
 /// \brief Find extra irreducible headers.
 ///

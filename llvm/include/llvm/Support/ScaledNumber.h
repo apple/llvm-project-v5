@@ -859,6 +859,7 @@ template <class DigitsT> void ScaledNumber<DigitsT>::shiftLeft(int32_t Shift) {
   }
 
   Digits <<= Shift;
+  return;
 }
 
 template <class DigitsT> void ScaledNumber<DigitsT>::shiftRight(int32_t Shift) {
@@ -885,6 +886,7 @@ template <class DigitsT> void ScaledNumber<DigitsT>::shiftRight(int32_t Shift) {
   }
 
   Digits >>= Shift;
+  return;
 }
 
 template <typename T> struct isPodLike;
@@ -894,4 +896,4 @@ template <typename T> struct isPodLike<ScaledNumber<T>> {
 
 } // end namespace llvm
 
-#endif // LLVM_SUPPORT_SCALEDNUMBER_H
+#endif

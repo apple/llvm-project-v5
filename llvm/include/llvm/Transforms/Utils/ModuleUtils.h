@@ -34,12 +34,10 @@ template <class PtrType> class SmallPtrSetImpl;
 /// This wraps the function in the appropriate structure and stores it along
 /// side other global constructors. For details see
 /// http://llvm.org/docs/LangRef.html#intg_global_ctors
-void appendToGlobalCtors(Module &M, Function *F, int Priority,
-                         Constant *Data = nullptr);
+void appendToGlobalCtors(Module &M, Function *F, int Priority);
 
 /// Same as appendToGlobalCtors(), but for global dtors.
-void appendToGlobalDtors(Module &M, Function *F, int Priority,
-                         Constant *Data = nullptr);
+void appendToGlobalDtors(Module &M, Function *F, int Priority);
 
 /// \brief Given "llvm.used" or "llvm.compiler.used" as a global name, collect
 /// the initializer elements of that global in Set and return the global itself.

@@ -33,6 +33,7 @@ public:
   FORWARD_SYMBOL_METHOD(getLocationType)
   FORWARD_SYMBOL_METHOD(getName)
   FORWARD_SYMBOL_METHOD(getRelativeVirtualAddress)
+  FORWARD_SYMBOL_METHOD(getSymIndexId)
   FORWARD_SYMBOL_METHOD(getVirtualAddress)
 };
 }

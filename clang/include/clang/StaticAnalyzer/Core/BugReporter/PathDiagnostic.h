@@ -774,8 +774,8 @@ public:
 
   void appendToDesc(StringRef S) {
     if (!ShortDesc.empty())
-      ShortDesc += S;
-    VerboseDesc += S;
+      ShortDesc.append(S);
+    VerboseDesc.append(S);
   }
 
   void resetPath() {

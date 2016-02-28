@@ -40,8 +40,7 @@ class MipsTargetMachine;
                                   const TargetMachine &TM) const;
 
     MCSection *getSectionForConstant(const DataLayout &DL, SectionKind Kind,
-                                     const Constant *C,
-                                     unsigned &Align) const override;
+                                     const Constant *C) const override;
   };
 } // end namespace llvm
 

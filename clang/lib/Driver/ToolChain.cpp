@@ -9,7 +9,6 @@
 
 #include "Tools.h"
 #include "clang/Basic/ObjCRuntime.h"
-#include "clang/Config/config.h"
 #include "clang/Driver/Action.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
@@ -334,6 +333,7 @@ Tool *ToolChain::SelectTool(const JobAction &JA) const {
 
 std::string ToolChain::GetFilePath(const char *Name) const {
   return D.GetFilePath(Name, *this);
+
 }
 
 std::string ToolChain::GetProgramPath(const char *Name) const {
@@ -360,7 +360,7 @@ std::string ToolChain::GetLinkerPath() const {
     return "";
   }
 
-  return GetProgramPath(DefaultLinker);
+  return GetProgramPath("ld");
 }
 
 types::ID ToolChain::LookupTypeForExtension(const char *Ext) const {
@@ -516,6 +516,7 @@ void ToolChain::addProfileRTLibs(const llvm::opt::ArgList &Args,
   if (!needsProfileRT(Args)) return;
 
   CmdArgs.push_back(getCompilerRTArgString(Args, "profile"));
+  return;
 }
 
 ToolChain::RuntimeLibType ToolChain::GetRuntimeLibType(
@@ -533,34 +534,18 @@ ToolChain::RuntimeLibType ToolChain::GetRuntimeLibType(
   return GetDefaultRuntimeLibType();
 }
 
-static bool ParseCXXStdlibType(const StringRef& Name,
-                               ToolChain::CXXStdlibType& Type) {
-  if (Name == "libc++")
-    Type = ToolChain::CST_Libcxx;
-  else if (Name == "libstdc++")
-    Type = ToolChain::CST_Libstdcxx;
-  else
-    return false;
-
-  return true;
-}
-
 ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
-  ToolChain::CXXStdlibType Type;
-  bool HasValidType = false;
-
-  const Arg *A = Args.getLastArg(options::OPT_stdlib_EQ);
-  if (A) {
-    HasValidType = ParseCXXStdlibType(A->getValue(), Type);
-    if (!HasValidType)
-      getDriver().Diag(diag::err_drv_invalid_stdlib_name)
-        << A->getAsString(Args);
+  if (Arg *A = Args.getLastArg(options::OPT_stdlib_EQ)) {
+    StringRef Value = A->getValue();
+    if (Value == "libc++")
+      return ToolChain::CST_Libcxx;
+    if (Value == "libstdc++")
+      return ToolChain::CST_Libstdcxx;
+    getDriver().Diag(diag::err_drv_invalid_stdlib_name)
+      << A->getAsString(Args);
   }
 
-  if (!HasValidType && !ParseCXXStdlibType(CLANG_DEFAULT_CXX_STDLIB, Type))
-    Type = GetDefaultCXXStdlibType();
-
-  return Type;
+  return ToolChain::CST_Libstdcxx;
 }
 
 /// \brief Utility function to add a system include directory to CC1 arguments.
@@ -632,13 +617,6 @@ void ToolChain::AddCXXStdlibLibArgs(const ArgList &Args,
   }
 }
 
-void ToolChain::AddFilePathLibArgs(const ArgList &Args,
-                                   ArgStringList &CmdArgs) const {
-  for (const auto &LibPath : getFilePaths())
-    if(LibPath.length() > 0)
-      CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + LibPath));
-}
-
 void ToolChain::AddCCKextLibArgs(const ArgList &Args,
                                  ArgStringList &CmdArgs) const {
   CmdArgs.push_back("-lcc_kext");
@@ -679,6 +657,3 @@ SanitizerMask ToolChain::getSupportedSanitizers() const {
     Res |= CFIICall;
   return Res;
 }
-
-void ToolChain::AddCudaIncludeArgs(const ArgList &DriverArgs,
-                                   ArgStringList &CC1Args) const {}

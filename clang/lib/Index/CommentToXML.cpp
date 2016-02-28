@@ -592,8 +592,9 @@ void getSourceTextOfDeclaration(const DeclInfo *ThisDecl,
 
 void CommentASTToXMLConverter::formatTextOfDeclaration(
     const DeclInfo *DI, SmallString<128> &Declaration) {
-  // Formatting API expects null terminated input string.
-  StringRef StringDecl(Declaration.c_str(), Declaration.size());
+  // FIXME. formatting API expects null terminated input string.
+  // There might be more efficient way of doing this.
+  std::string StringDecl = Declaration.str();
 
   // Formatter specific code.
   // Form a unique in memory buffer name.

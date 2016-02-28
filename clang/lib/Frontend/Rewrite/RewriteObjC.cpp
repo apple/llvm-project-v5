@@ -37,6 +37,7 @@ using llvm::utostr;
 namespace {
   class RewriteObjC : public ASTConsumer {
   protected:
+    
     enum {
       BLOCK_FIELD_IS_OBJECT   =  3,  /* id, NSObject, __attribute__((NSObject)),
                                         block, ... */
@@ -157,15 +158,14 @@ namespace {
         : R(R), SavedValue(R.DisableReplaceStmt) {
         R.DisableReplaceStmt = true;
       }
-
       ~DisableReplaceStmtScope() {
         R.DisableReplaceStmt = SavedValue;
       }
     };
-
     void InitializeCommon(ASTContext &context);
 
   public:
+
     // Top Level Driver code.
     bool HandleTopLevelDecl(DeclGroupRef D) override {
       for (DeclGroupRef::iterator I = D.begin(), E = D.end(); I != E; ++I) {
@@ -187,7 +187,6 @@ namespace {
       }
       return true;
     }
-
     void HandleTopLevelSingleDecl(Decl *D);
     void HandleDeclInMainFile(Decl *D);
     RewriteObjC(std::string inFile, raw_ostream *OS,
@@ -506,6 +505,7 @@ namespace {
   
   class RewriteObjCFragileABI : public RewriteObjC {
   public:
+    
     RewriteObjCFragileABI(std::string inFile, raw_ostream *OS,
                 DiagnosticsEngine &D, const LangOptions &LOpts,
                 bool silenceMacroWarn) : RewriteObjC(inFile, OS,
@@ -540,7 +540,7 @@ namespace {
                                       std::string &Result) override;
     Stmt *RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV) override;
   };
-} // end anonymous namespace
+}
 
 void RewriteObjC::RewriteBlocksInFunctionProtoType(QualType funcType,
                                                    NamedDecl *D) {
@@ -969,7 +969,7 @@ void RewriteObjC::RewriteCategoryDecl(ObjCCategoryDecl *CatDecl) {
   // FIXME: handle category headers that are declared across multiple lines.
   ReplaceText(LocStart, 0, "// ");
 
-  for (auto *I : CatDecl->instance_properties())
+  for (auto *I : CatDecl->properties())
     RewriteProperty(I);  
   for (auto *I : CatDecl->instance_methods())
     RewriteMethodDeclaration(I);
@@ -992,7 +992,7 @@ void RewriteObjC::RewriteProtocolDecl(ObjCProtocolDecl *PDecl) {
     RewriteMethodDeclaration(I);
   for (auto *I : PDecl->class_methods())
     RewriteMethodDeclaration(I);
-  for (auto *I : PDecl->instance_properties())
+  for (auto *I : PDecl->properties())
     RewriteProperty(I);
   
   // Lastly, comment out the @end.
@@ -1159,7 +1159,6 @@ void RewriteObjC::RewriteObjCMethodDecl(const ObjCInterfaceDecl *IDecl,
     }
   }
 }
-
 void RewriteObjC::RewriteImplementationDecl(Decl *OID) {
   ObjCImplementationDecl *IMD = dyn_cast<ObjCImplementationDecl>(OID);
   ObjCCategoryImplDecl *CID = dyn_cast<ObjCCategoryImplDecl>(OID);
@@ -1211,7 +1210,7 @@ void RewriteObjC::RewriteInterfaceDecl(ObjCInterfaceDecl *ClassDecl) {
   }
   RewriteObjCInternalStruct(ClassDecl, ResultStr);
 
-  for (auto *I : ClassDecl->instance_properties())
+  for (auto *I : ClassDecl->properties())
     RewriteProperty(I);
   for (auto *I : ClassDecl->instance_methods())
     RewriteMethodDeclaration(I);
@@ -1721,6 +1720,7 @@ void RewriteObjC::WarnAboutReturnGotoStmts(Stmt *S)
     Diags.Report(Context->getFullLoc(S->getLocStart()),
                  TryFinallyContainsReturnDiag);
   }
+  return;
 }
 
 void RewriteObjC::HasReturnStmts(Stmt *S, bool &hasReturns) 
@@ -1730,29 +1730,32 @@ void RewriteObjC::HasReturnStmts(Stmt *S, bool &hasReturns)
     if (SubStmt)
       HasReturnStmts(SubStmt, hasReturns);
 
-  if (isa<ReturnStmt>(S))
-    hasReturns = true;
+ if (isa<ReturnStmt>(S))
+   hasReturns = true;
+ return;
 }
 
 void RewriteObjC::RewriteTryReturnStmts(Stmt *S) {
-  // Perform a bottom up traversal of all children.
-  for (Stmt *SubStmt : S->children())
-    if (SubStmt) {
-      RewriteTryReturnStmts(SubStmt);
-    }
-  if (isa<ReturnStmt>(S)) {
-    SourceLocation startLoc = S->getLocStart();
-    const char *startBuf = SM->getCharacterData(startLoc);
-    const char *semiBuf = strchr(startBuf, ';');
-    assert((*semiBuf == ';') && "RewriteTryReturnStmts: can't find ';'");
-    SourceLocation onePastSemiLoc = startLoc.getLocWithOffset(semiBuf-startBuf+1);
+ // Perform a bottom up traversal of all children.
+ for (Stmt *SubStmt : S->children())
+   if (SubStmt) {
+     RewriteTryReturnStmts(SubStmt);
+   }
+ if (isa<ReturnStmt>(S)) {
+   SourceLocation startLoc = S->getLocStart();
+   const char *startBuf = SM->getCharacterData(startLoc);
 
-    std::string buf;
-    buf = "{ objc_exception_try_exit(&_stack); return";
+   const char *semiBuf = strchr(startBuf, ';');
+   assert((*semiBuf == ';') && "RewriteTryReturnStmts: can't find ';'");
+   SourceLocation onePastSemiLoc = startLoc.getLocWithOffset(semiBuf-startBuf+1);
+
+   std::string buf;
+   buf = "{ objc_exception_try_exit(&_stack); return";
    
-    ReplaceText(startLoc, 6, buf);
-    InsertText(onePastSemiLoc, "}");
-  }
+   ReplaceText(startLoc, 6, buf);
+   InsertText(onePastSemiLoc, "}");
+ }
+ return;
 }
 
 void RewriteObjC::RewriteSyncReturnStmts(Stmt *S, std::string syncExitBuf) {
@@ -1777,6 +1780,7 @@ void RewriteObjC::RewriteSyncReturnStmts(Stmt *S, std::string syncExitBuf) {
     ReplaceText(startLoc, 6, buf);
     InsertText(onePastSemiLoc, "}");
   }
+  return;
 }
 
 Stmt *RewriteObjC::RewriteObjCTryStmt(ObjCAtTryStmt *S) {
@@ -2283,6 +2287,7 @@ void RewriteObjC::RewriteBlockPointerTypeVariable(std::string& Str,
   }
 }
 
+
 void RewriteObjC::RewriteBlockLiteralFunctionDecl(FunctionDecl *FD) {
   SourceLocation FunLocStart = FD->getTypeSpecStartLoc();
   const FunctionType *funcType = FD->getType()->getAs<FunctionType>();
@@ -2610,7 +2615,9 @@ CallExpr *RewriteObjC::SynthMsgSendStretCallExpr(FunctionDecl *MsgSendStretFlavo
   CallExpr *STCE = new (Context) CallExpr(
       *Context, PE, MsgExprs, FT->getReturnType(), VK_RValue, SourceLocation());
   return STCE;
+  
 }
+
 
 Stmt *RewriteObjC::SynthMessageExpr(ObjCMessageExpr *Exp,
                                     SourceLocation StartLoc,
@@ -3052,6 +3059,7 @@ Stmt *RewriteObjC::RewriteObjCProtocolExpr(ObjCProtocolExpr *Exp) {
   ProtocolExprDecls.insert(Exp->getProtocol()->getCanonicalDecl());
   // delete Exp; leak for now, see RewritePropertyOrImplicitSetter() usage for more info.
   return castExpr;
+
 }
 
 bool RewriteObjC::BufferContainsPPDirectives(const char *startBuf,
@@ -3215,6 +3223,7 @@ void RewriteObjC::RewriteObjCInternalStruct(ObjCInterfaceDecl *CDecl,
 //===----------------------------------------------------------------------===//
 // Meta Data Emission
 //===----------------------------------------------------------------------===//
+
 
 /// RewriteImplementations - This routine rewrites all method implementations
 /// and emits meta-data.
@@ -3656,6 +3665,8 @@ void RewriteObjC::GetBlockDeclRefExprs(Stmt *S) {
         HasLocalVariableExternalStorage(DRE->getDecl()))
       // FIXME: Handle enums.
       BlockDeclRefs.push_back(DRE);
+
+  return;
 }
 
 void RewriteObjC::GetInnerBlockDeclRefExprs(Stmt *S,
@@ -3683,6 +3694,8 @@ void RewriteObjC::GetInnerBlockDeclRefExprs(Stmt *S,
           ImportedLocalExternalDecls.insert(Var);
     }
   }
+  
+  return;
 }
 
 /// convertFunctionTypeOfBlocks - This routine converts a function type
@@ -3918,6 +3931,7 @@ void RewriteObjC::RewriteCastExpr(CStyleCastExpr *CE) {
       break;
     }
   }
+  return;
 }
 
 void RewriteObjC::RewriteBlockPointerFunctionArgs(FunctionDecl *FD) {
@@ -3952,6 +3966,7 @@ void RewriteObjC::RewriteBlockPointerFunctionArgs(FunctionDecl *FD) {
       break;
     }
   }
+  return;
 }
 
 bool RewriteObjC::PointerTypeTakesAnyBlockArguments(QualType QT) {
@@ -4088,7 +4103,10 @@ void RewriteObjC::RewriteBlockPointerDecl(NamedDecl *ND) {
     OrigLength++;
   }
   ReplaceText(Start, OrigLength, buf);
+  
+  return;
 }
+
 
 /// SynthesizeByrefCopyDestroyHelper - This routine synthesizes:
 /// void __Block_byref_id_object_copy(struct Block_byref_id_object *dst,
@@ -4310,6 +4328,7 @@ void RewriteObjC::RewriteByRefVar(VarDecl *ND) {
 
     InsertText(semiLoc, "}");
   }
+  return;
 }
 
 void RewriteObjC::CollectBlockDeclRefInfo(BlockExpr *Exp) {
@@ -4475,6 +4494,7 @@ Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp,
           Exp = new (Context) UnaryOperator(Exp, UO_AddrOf, QT, VK_RValue,
                                             OK_Ordinary, SourceLocation());
         }
+        
       }
       InitExprs.push_back(Exp);
     }
@@ -5221,6 +5241,7 @@ void RewriteObjCFragileABI::RewriteObjCProtocolMetaData(
   // Mark this protocol as having been generated.
   if (!ObjCSynthesizedProtocols.insert(PDecl->getCanonicalDecl()).second)
     llvm_unreachable("protocol already synthesized");
+  
 }
 
 void RewriteObjCFragileABI::RewriteObjCProtocolListMetaData(
@@ -5889,4 +5910,4 @@ Stmt *RewriteObjCFragileABI::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV) {
   return Replacement;  
 }
 
-#endif // CLANG_ENABLE_OBJC_REWRITER
+#endif

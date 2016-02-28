@@ -9,8 +9,6 @@
 #ifndef LLVM_TOOLS_DSYMUTIL_NONRELOCATABLESTRINGPOOL_H
 #define LLVM_TOOLS_DSYMUTIL_NONRELOCATABLESTRINGPOOL_H
 
-#include "llvm/ADT/StringMap.h"
-
 namespace llvm {
 namespace dsymutil {
 

@@ -11,8 +11,6 @@
 
 let SIAssemblerPredicate = DisableInst, SubtargetPredicate = isVI in {
 
-let DisableSIDecoder = 1 in {
-
 //===----------------------------------------------------------------------===//
 // VOP1 Instructions
 //===----------------------------------------------------------------------===//
@@ -75,8 +73,6 @@ defm V_MIN_I16 : VOP2Inst <vop2<0,0x32>, "v_min_i16", VOP_I16_I16_I16>;
 } // End isCommutable = 1
 defm V_LDEXP_F16 : VOP2Inst <vop2<0,0x33>, "v_ldexp_f16", VOP_F16_F16_I16>;
 
-} // let DisableSIDecoder = 1
-
 // Aliases to simplify matching of floating-point instructions that
 // are VOP2 on SI and VOP3 on VI.
 
@@ -103,10 +99,11 @@ def S_DCACHE_WB : SMEM_Inval <0x21,
 def S_DCACHE_WB_VOL : SMEM_Inval <0x23,
   "s_dcache_wb_vol", int_amdgcn_s_dcache_wb_vol>;
 
-def S_MEMREALTIME : SMEM_Ret<0x25,
-  "s_memrealtime", int_amdgcn_s_memrealtime>;
-
 } // End SIAssemblerPredicate = DisableInst, SubtargetPredicate = isVI
+
+//===----------------------------------------------------------------------===//
+// SMEM Patterns
+//===----------------------------------------------------------------------===//
 
 let Predicates = [isVI] in {
 
@@ -116,24 +113,46 @@ def : Pat <
   (S_BUFFER_LOAD_DWORD_IMM $sbase, (as_i32imm $offset))
 >;
 
-//===----------------------------------------------------------------------===//
-// DPP Patterns
-//===----------------------------------------------------------------------===//
-
-def : Pat <
-  (int_amdgcn_mov_dpp i32:$src, imm:$dpp_ctrl, imm:$bound_ctrl,
-                      imm:$bank_mask, imm:$row_mask),
-  (V_MOV_B32_dpp $src, (as_i32imm $dpp_ctrl), (as_i1imm $bound_ctrl),
-                       (as_i32imm $bank_mask), (as_i32imm $row_mask))
+// Patterns for global loads with no offset
+class FlatLoadPat <FLAT inst, SDPatternOperator node, ValueType vt> : Pat <
+  (vt (node i64:$addr)),
+  (inst $addr, 0, 0, 0)
 >;
 
-//===----------------------------------------------------------------------===//
-// Misc Patterns
-//===----------------------------------------------------------------------===//
+def : FlatLoadPat <FLAT_LOAD_UBYTE, az_extloadi8_global, i32>;
+def : FlatLoadPat <FLAT_LOAD_SBYTE, sextloadi8_global, i32>;
+def : FlatLoadPat <FLAT_LOAD_USHORT, az_extloadi16_global, i32>;
+def : FlatLoadPat <FLAT_LOAD_SSHORT, sextloadi16_global, i32>;
+def : FlatLoadPat <FLAT_LOAD_DWORD, global_load, i32>;
+def : FlatLoadPat <FLAT_LOAD_DWORDX2, global_load, v2i32>;
+def : FlatLoadPat <FLAT_LOAD_DWORDX4, global_load, v4i32>;
 
-def : Pat <
-  (i64 (readcyclecounter)),
-  (S_MEMREALTIME)
+class FlatStorePat <FLAT inst, SDPatternOperator node, ValueType vt> : Pat <
+  (node vt:$data, i64:$addr),
+  (inst $data, $addr, 0, 0, 0)
 >;
+
+def : FlatStorePat <FLAT_STORE_BYTE, truncstorei8_global, i32>;
+def : FlatStorePat <FLAT_STORE_SHORT, truncstorei16_global, i32>;
+def : FlatStorePat <FLAT_STORE_DWORD, global_store, i32>;
+def : FlatStorePat <FLAT_STORE_DWORDX2, global_store, v2i32>;
+def : FlatStorePat <FLAT_STORE_DWORDX4, global_store, v4i32>;
+
+class FlatAtomicPat <FLAT inst, SDPatternOperator node, ValueType vt> : Pat <
+  (vt (node i64:$addr, vt:$data)),
+  (inst $addr, $data, 0, 0)
+>;
+
+def : FlatAtomicPat <FLAT_ATOMIC_ADD_RTN, atomic_add_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_AND_RTN, atomic_and_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_SUB_RTN, atomic_sub_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_SMAX_RTN, atomic_max_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_UMAX_RTN, atomic_umax_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_SMIN_RTN, atomic_min_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_UMIN_RTN, atomic_umin_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_OR_RTN, atomic_or_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_SWAP_RTN, atomic_swap_global, i32>;
+def : FlatAtomicPat <FLAT_ATOMIC_XOR_RTN, atomic_xor_global, i32>;
+
 
 } // End Predicates = [isVI]

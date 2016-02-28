@@ -467,9 +467,6 @@ static AvailabilityResult CheckAvailability(ASTContext &Context,
 }
 
 AvailabilityResult Decl::getAvailability(std::string *Message) const {
-  if (auto *FTD = dyn_cast<FunctionTemplateDecl>(this))
-    return FTD->getTemplatedDecl()->getAvailability(Message);
-
   AvailabilityResult Result = AR_Available;
   std::string ResultMessage;
 
@@ -572,6 +569,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Var:
     case ImplicitParam:
     case ParmVar:
+    case NonTypeTemplateParm:
     case ObjCMethod:
     case ObjCProperty:
     case MSProperty:
@@ -580,12 +578,6 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
       return IDNS_Label;
     case IndirectField:
       return IDNS_Ordinary | IDNS_Member;
-
-    case NonTypeTemplateParm:
-      // Non-type template parameters are not found by lookups that ignore
-      // non-types, but they are found by redeclaration lookups for tag types,
-      // so we include them in the tag namespace.
-      return IDNS_Ordinary | IDNS_Tag;
 
     case ObjCCompatibleAlias:
     case ObjCInterface:
@@ -658,7 +650,6 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case ObjCCategoryImpl:
     case Import:
     case OMPThreadPrivate:
-    case OMPCapturedExpr:
     case Empty:
       // Never looked up by name.
       return 0;
@@ -1219,16 +1210,13 @@ void DeclContext::removeDecl(Decl *D) {
     // Remove only decls that have a name
     if (!ND->getDeclName()) return;
 
-    auto *DC = this;
-    do {
-      StoredDeclsMap *Map = DC->getPrimaryContext()->LookupPtr;
-      if (Map) {
-        StoredDeclsMap::iterator Pos = Map->find(ND->getDeclName());
-        assert(Pos != Map->end() && "no lookup entry for decl");
-        if (Pos->second.getAsVector() || Pos->second.getAsDecl() == ND)
-          Pos->second.remove(ND);
-      }
-    } while (DC->isTransparentContext() && (DC = DC->getParent()));
+    StoredDeclsMap *Map = getPrimaryContext()->LookupPtr;
+    if (!Map) return;
+
+    StoredDeclsMap::iterator Pos = Map->find(ND->getDeclName());
+    assert(Pos != Map->end() && "no lookup entry for decl");
+    if (Pos->second.getAsVector() || Pos->second.getAsDecl() == ND)
+      Pos->second.remove(ND);
   }
 }
 

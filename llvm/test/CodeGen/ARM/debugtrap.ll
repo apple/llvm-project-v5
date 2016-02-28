@@ -10,7 +10,7 @@ define void @test() nounwind {
 entry:
   ; CHECK: bl foo
   ; CHECK-NEXT: pop
-  ; CHECK-NEXT: .inst 0xe7ffdefe
+  ; CHECK-NEXT: trap
   call void @foo()
   call void @llvm.debugtrap()
   ret void

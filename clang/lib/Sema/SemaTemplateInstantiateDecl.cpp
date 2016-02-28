@@ -227,14 +227,6 @@ static void instantiateDependentCUDALaunchBoundsAttr(
                         Attr.getSpellingListIndex());
 }
 
-static void
-instantiateDependentModeAttr(Sema &S,
-                             const MultiLevelTemplateArgumentList &TemplateArgs,
-                             const ModeAttr &Attr, Decl *New) {
-  S.AddModeAttr(Attr.getRange(), New, Attr.getMode(),
-                Attr.getSpellingListIndex(), /*InInstantiation=*/true);
-}
-
 void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
                             const Decl *Tmpl, Decl *New,
                             LateInstantiatedAttrVec *LateAttrs,
@@ -270,11 +262,6 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
             dyn_cast<CUDALaunchBoundsAttr>(TmplAttr)) {
       instantiateDependentCUDALaunchBoundsAttr(*this, TemplateArgs,
                                                *CUDALaunchBounds, New);
-      continue;
-    }
-
-    if (const ModeAttr *Mode = dyn_cast<ModeAttr>(TmplAttr)) {
-      instantiateDependentModeAttr(*this, TemplateArgs, *Mode, New);
       continue;
     }
 
@@ -503,6 +490,13 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
 
 Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
                                              bool InstantiatingVarTemplate) {
+
+  // If this is the variable for an anonymous struct or union,
+  // instantiate the anonymous struct/union type first.
+  if (const RecordType *RecordTy = D->getType()->getAs<RecordType>())
+    if (RecordTy->getDecl()->isAnonymousStructOrUnion())
+      if (!VisitCXXRecordDecl(cast<CXXRecordDecl>(RecordTy->getDecl())))
+        return nullptr;
 
   // Do substitution on the type of the declaration
   TypeSourceInfo *DI = SemaRef.SubstType(D->getTypeSourceInfo(),
@@ -2110,8 +2104,6 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
     Param->setInvalidDecl();
 
   if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
-    EnterExpressionEvaluationContext ConstantEvaluated(SemaRef,
-                                                       Sema::ConstantEvaluated);
     ExprResult Value = SemaRef.SubstExpr(D->getDefaultArgument(), TemplateArgs);
     if (!Value.isInvalid())
       Param->setDefaultArgument(Value.get());
@@ -2485,11 +2477,6 @@ Decl *TemplateDeclInstantiator::VisitOMPThreadPrivateDecl(
   return TD;
 }
 
-Decl *TemplateDeclInstantiator::VisitOMPCapturedExprDecl(
-    OMPCapturedExprDecl * /*D*/) {
-  llvm_unreachable("Should not be met in templates");
-}
-
 Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D) {
   return VisitFunctionDecl(D, nullptr);
 }
@@ -2686,6 +2673,13 @@ Decl *TemplateDeclInstantiator::VisitVarTemplateSpecializationDecl(
     const TemplateArgumentListInfo &TemplateArgsInfo,
     ArrayRef<TemplateArgument> Converted) {
 
+  // If this is the variable for an anonymous struct or union,
+  // instantiate the anonymous struct/union type first.
+  if (const RecordType *RecordTy = D->getType()->getAs<RecordType>())
+    if (RecordTy->getDecl()->isAnonymousStructOrUnion())
+      if (!VisitCXXRecordDecl(cast<CXXRecordDecl>(RecordTy->getDecl())))
+        return nullptr;
+
   // Do substitution on the type of the declaration
   TypeSourceInfo *DI =
       SemaRef.SubstType(D->getTypeSourceInfo(), TemplateArgs,
@@ -2773,7 +2767,7 @@ TemplateDeclInstantiator::SubstTemplateParams(TemplateParameterList *L) {
 
   TemplateParameterList *InstL
     = TemplateParameterList::Create(SemaRef.Context, L->getTemplateLoc(),
-                                    L->getLAngleLoc(), Params,
+                                    L->getLAngleLoc(), &Params.front(), N,
                                     L->getRAngleLoc());
   return InstL;
 }

@@ -24,14 +24,10 @@
 #ifndef __CUDA_BUILTIN_VARS_H
 #define __CUDA_BUILTIN_VARS_H
 
-// Forward declares from vector_types.h.
-struct uint3;
-struct dim3;
-
 // The file implements built-in CUDA variables using __declspec(property).
 // https://msdn.microsoft.com/en-us/library/yhfk0thd.aspx
 // All read accesses of built-in variable fields get converted into calls to a
-// getter function which in turn calls the appropriate builtin to fetch the
+// getter function which in turn would call appropriate builtin to fetch the
 // value.
 //
 // Example:
@@ -67,9 +63,6 @@ struct __cuda_builtin_threadIdx_t {
   __CUDA_DEVICE_BUILTIN(x,__builtin_ptx_read_tid_x());
   __CUDA_DEVICE_BUILTIN(y,__builtin_ptx_read_tid_y());
   __CUDA_DEVICE_BUILTIN(z,__builtin_ptx_read_tid_z());
-  // threadIdx should be convertible to uint3 (in fact in nvcc, it *is* a
-  // uint3).  This function is defined after we pull in vector_types.h.
-  __attribute__((device)) operator uint3() const;
 private:
   __CUDA_DISALLOW_BUILTINVAR_ACCESS(__cuda_builtin_threadIdx_t);
 };
@@ -78,9 +71,6 @@ struct __cuda_builtin_blockIdx_t {
   __CUDA_DEVICE_BUILTIN(x,__builtin_ptx_read_ctaid_x());
   __CUDA_DEVICE_BUILTIN(y,__builtin_ptx_read_ctaid_y());
   __CUDA_DEVICE_BUILTIN(z,__builtin_ptx_read_ctaid_z());
-  // blockIdx should be convertible to uint3 (in fact in nvcc, it *is* a
-  // uint3).  This function is defined after we pull in vector_types.h.
-  __attribute__((device)) operator uint3() const;
 private:
   __CUDA_DISALLOW_BUILTINVAR_ACCESS(__cuda_builtin_blockIdx_t);
 };
@@ -89,9 +79,6 @@ struct __cuda_builtin_blockDim_t {
   __CUDA_DEVICE_BUILTIN(x,__builtin_ptx_read_ntid_x());
   __CUDA_DEVICE_BUILTIN(y,__builtin_ptx_read_ntid_y());
   __CUDA_DEVICE_BUILTIN(z,__builtin_ptx_read_ntid_z());
-  // blockDim should be convertible to dim3 (in fact in nvcc, it *is* a
-  // dim3).  This function is defined after we pull in vector_types.h.
-  __attribute__((device)) operator dim3() const;
 private:
   __CUDA_DISALLOW_BUILTINVAR_ACCESS(__cuda_builtin_blockDim_t);
 };
@@ -100,9 +87,6 @@ struct __cuda_builtin_gridDim_t {
   __CUDA_DEVICE_BUILTIN(x,__builtin_ptx_read_nctaid_x());
   __CUDA_DEVICE_BUILTIN(y,__builtin_ptx_read_nctaid_y());
   __CUDA_DEVICE_BUILTIN(z,__builtin_ptx_read_nctaid_z());
-  // gridDim should be convertible to dim3 (in fact in nvcc, it *is* a
-  // dim3).  This function is defined after we pull in vector_types.h.
-  __attribute__((device)) operator dim3() const;
 private:
   __CUDA_DISALLOW_BUILTINVAR_ACCESS(__cuda_builtin_gridDim_t);
 };

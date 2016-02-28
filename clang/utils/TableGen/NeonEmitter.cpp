@@ -1195,12 +1195,12 @@ void Intrinsic::emitReverseVariable(Variable &Dest, Variable &Src) {
     emitNewLine();
 
     for (unsigned K = 0; K < Dest.getType().getNumVectors(); ++K) {
-      OS << "  " << Dest.getName() << ".val[" << K << "] = "
+      OS << "  " << Dest.getName() << ".val[" << utostr(K) << "] = "
          << "__builtin_shufflevector("
-         << Src.getName() << ".val[" << K << "], "
-         << Src.getName() << ".val[" << K << "]";
+         << Src.getName() << ".val[" << utostr(K) << "], "
+         << Src.getName() << ".val[" << utostr(K) << "]";
       for (int J = Dest.getType().getNumElements() - 1; J >= 0; --J)
-        OS << ", " << J;
+        OS << ", " << utostr(J);
       OS << ");";
       emitNewLine();
     }
@@ -1208,7 +1208,7 @@ void Intrinsic::emitReverseVariable(Variable &Dest, Variable &Src) {
     OS << "  " << Dest.getName()
        << " = __builtin_shufflevector(" << Src.getName() << ", " << Src.getName();
     for (int J = Dest.getType().getNumElements() - 1; J >= 0; --J)
-      OS << ", " << J;
+      OS << ", " << utostr(J);
     OS << ");";
     emitNewLine();
   }
@@ -1926,7 +1926,7 @@ void NeonEmitter::createIntrinsic(Record *R,
 
   ClassKind CK = ClassNone;
   if (R->getSuperClasses().size() >= 2)
-    CK = ClassMap[R->getSuperClasses()[1].first];
+    CK = ClassMap[R->getSuperClasses()[1]];
 
   std::vector<std::pair<TypeSpec, TypeSpec>> NewTypeSpecs;
   for (auto TS : TypeSpecs) {

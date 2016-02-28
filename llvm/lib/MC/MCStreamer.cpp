@@ -174,41 +174,11 @@ MCDwarfFrameInfo *MCStreamer::getCurrentDwarfFrameInfo() {
   return &DwarfFrameInfos.back();
 }
 
-bool MCStreamer::hasUnfinishedDwarfFrameInfo() {
-  MCDwarfFrameInfo *CurFrame = getCurrentDwarfFrameInfo();
-  return CurFrame && !CurFrame->End;
-}
-
 void MCStreamer::EnsureValidDwarfFrame() {
   MCDwarfFrameInfo *CurFrame = getCurrentDwarfFrameInfo();
   if (!CurFrame || CurFrame->End)
     report_fatal_error("No open frame");
 }
-
-unsigned MCStreamer::EmitCVFileDirective(unsigned FileNo, StringRef Filename) {
-  return getContext().getCVFile(Filename, FileNo);
-}
-
-void MCStreamer::EmitCVLocDirective(unsigned FunctionId, unsigned FileNo,
-                                    unsigned Line, unsigned Column,
-                                    bool PrologueEnd, bool IsStmt,
-                                    StringRef FileName) {
-  getContext().setCurrentCVLoc(FunctionId, FileNo, Line, Column, PrologueEnd,
-                               IsStmt);
-}
-
-void MCStreamer::EmitCVLinetableDirective(unsigned FunctionId,
-                                          const MCSymbol *Begin,
-                                          const MCSymbol *End) {}
-
-void MCStreamer::EmitCVInlineLinetableDirective(
-    unsigned PrimaryFunctionId, unsigned SourceFileId, unsigned SourceLineNum,
-    const MCSymbol *FnStartSym, const MCSymbol *FnEndSym,
-    ArrayRef<unsigned> SecondaryFunctionIds) {}
-
-void MCStreamer::EmitCVDefRangeDirective(
-    ArrayRef<std::pair<const MCSymbol *, const MCSymbol *>> Ranges,
-    StringRef FixedSizePortion) {}
 
 void MCStreamer::EmitEHSymAttributes(const MCSymbol *Symbol,
                                      MCSymbol *EHSymbol) {
@@ -243,7 +213,8 @@ void MCStreamer::EmitCFISections(bool EH, bool Debug) {
 }
 
 void MCStreamer::EmitCFIStartProc(bool IsSimple) {
-  if (hasUnfinishedDwarfFrameInfo())
+  MCDwarfFrameInfo *CurFrame = getCurrentDwarfFrameInfo();
+  if (CurFrame && !CurFrame->End)
     report_fatal_error("Starting a frame before finishing the previous one!");
 
   MCDwarfFrameInfo Frame;

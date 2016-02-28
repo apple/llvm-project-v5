@@ -99,7 +99,7 @@ protected:
         //                         %RM<imp-use>; VSLRC:%vreg16,%vreg18,%vreg9
         // and we remove: %vreg5<def> = COPY %vreg9; VSLRC:%vreg5,%vreg9
 
-        SlotIndex FMAIdx = LIS->getInstructionIndex(*MI);
+        SlotIndex FMAIdx = LIS->getInstructionIndex(MI);
 
         VNInfo *AddendValNo =
           LIS->getInterval(MI->getOperand(1).getReg()).Query(FMAIdx).valueIn();
@@ -168,32 +168,21 @@ protected:
         if (OtherUsers || KillsAddendSrc)
           continue;
 
-
-        // The transformation doesn't work well with things like:
-        //    %vreg5 = A-form-op %vreg5, %vreg11, %vreg5;
-        // unless vreg11 is also a kill, so skip when it is not,
-        // and check operand 3 to see it is also a kill to handle the case:
-        //   %vreg5 = A-form-op %vreg5, %vreg5, %vreg11;
-        // where vreg5 and vreg11 are both kills. This case would be skipped
-        // otherwise.
-        unsigned OldFMAReg = MI->getOperand(0).getReg();
-
         // Find one of the product operands that is killed by this instruction.
+
         unsigned KilledProdOp = 0, OtherProdOp = 0;
-        unsigned Reg2 = MI->getOperand(2).getReg();
-        unsigned Reg3 = MI->getOperand(3).getReg();
-        if (LIS->getInterval(Reg2).Query(FMAIdx).isKill()
-            && Reg2 != OldFMAReg) {
+        if (LIS->getInterval(MI->getOperand(2).getReg())
+                     .Query(FMAIdx).isKill()) {
           KilledProdOp = 2;
           OtherProdOp  = 3;
-        } else if (LIS->getInterval(Reg3).Query(FMAIdx).isKill()
-            && Reg3 != OldFMAReg) {
+        } else if (LIS->getInterval(MI->getOperand(3).getReg())
+                     .Query(FMAIdx).isKill()) {
           KilledProdOp = 3;
           OtherProdOp  = 2;
         }
 
-        // If there are no usable killed product operands, then this
-        // transformation is likely not profitable.
+        // If there are no killed product operands, then this transformation is
+        // likely not profitable.
         if (!KilledProdOp)
           continue;
 
@@ -223,12 +212,12 @@ protected:
         bool KilledProdRegUndef = MI->getOperand(KilledProdOp).isUndef();
         bool OtherProdRegUndef  = MI->getOperand(OtherProdOp).isUndef();
 
-        // If there isn't a class that fits, we can't perform the transform.
-        // This is needed for correctness with a mixture of VSX and Altivec
-        // instructions to make sure that a low VSX register is not assigned to
-        // the Altivec instruction.
-        if (!MRI.constrainRegClass(KilledProdReg,
-                                   MRI.getRegClass(OldFMAReg)))
+        unsigned OldFMAReg = MI->getOperand(0).getReg();
+
+        // The transformation doesn't work well with things like:
+        //    %vreg5 = A-form-op %vreg5, %vreg11, %vreg5;
+        // so leave such things alone.
+        if (OldFMAReg == KilledProdReg)
           continue;
 
         assert(OldFMAReg == AddendMI->getOperand(0).getReg() &&
@@ -239,32 +228,22 @@ protected:
         MI->getOperand(0).setReg(KilledProdReg);
         MI->getOperand(1).setReg(KilledProdReg);
         MI->getOperand(3).setReg(AddendSrcReg);
+        MI->getOperand(2).setReg(OtherProdReg);
 
         MI->getOperand(0).setSubReg(KilledProdSubReg);
         MI->getOperand(1).setSubReg(KilledProdSubReg);
         MI->getOperand(3).setSubReg(AddSubReg);
+        MI->getOperand(2).setSubReg(OtherProdSubReg);
 
         MI->getOperand(1).setIsKill(KilledProdRegKill);
         MI->getOperand(3).setIsKill(AddRegKill);
+        MI->getOperand(2).setIsKill(OtherProdRegKill);
 
         MI->getOperand(1).setIsUndef(KilledProdRegUndef);
         MI->getOperand(3).setIsUndef(AddRegUndef);
+        MI->getOperand(2).setIsUndef(OtherProdRegUndef);
 
         MI->setDesc(TII->get(AltOpc));
-
-        // If the addend is also a multiplicand, replace it with the addend
-        // source in both places.
-        if (OtherProdReg == AddendMI->getOperand(0).getReg()) {
-          MI->getOperand(2).setReg(AddendSrcReg);
-          MI->getOperand(2).setSubReg(AddSubReg);
-          MI->getOperand(2).setIsKill(AddRegKill);
-          MI->getOperand(2).setIsUndef(AddRegUndef);
-        } else {
-          MI->getOperand(2).setReg(OtherProdReg);
-          MI->getOperand(2).setSubReg(OtherProdSubReg);
-          MI->getOperand(2).setIsKill(OtherProdRegKill);
-          MI->getOperand(2).setIsUndef(OtherProdRegUndef);
-        }
 
         DEBUG(dbgs() << " -> " << *MI);
 
@@ -283,7 +262,8 @@ protected:
           if (UseMI == AddendMI)
             continue;
 
-          UseMO.substVirtReg(KilledProdReg, KilledProdSubReg, *TRI);
+          UseMO.setReg(KilledProdReg);
+          UseMO.setSubReg(KilledProdSubReg);
         }
 
         // Extend the live intervals of the killed product operand to hold the
@@ -325,7 +305,7 @@ protected:
         // Remove the (now unused) copy.
 
         DEBUG(dbgs() << "  removing: " << *AddendMI << '\n');
-        LIS->RemoveMachineInstrFromMaps(*AddendMI);
+        LIS->RemoveMachineInstrFromMaps(AddendMI);
         AddendMI->eraseFromParent();
 
         Changed = true;

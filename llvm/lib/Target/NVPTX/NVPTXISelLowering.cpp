@@ -273,10 +273,6 @@ NVPTXTargetLowering::NVPTXTargetLowering(const NVPTXTargetMachine &TM,
   // PTX does not directly support SELP of i1, so promote to i32 first
   setOperationAction(ISD::SELECT, MVT::i1, Custom);
 
-  // PTX cannot multiply two i64s in a single instruction.
-  setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
-  setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
-
   // We have some custom DAG combine patterns for these nodes
   setTargetDAGCombine(ISD::ADD);
   setTargetDAGCombine(ISD::AND);
@@ -3944,8 +3940,9 @@ static SDValue PerformADDCombine(SDNode *N,
   SDValue N1 = N->getOperand(1);
 
   // First try with the default operand order.
-  if (SDValue Result =
-          PerformADDCombineWithOperands(N, N0, N1, DCI, Subtarget, OptLevel))
+  SDValue Result = PerformADDCombineWithOperands(N, N0, N1, DCI, Subtarget,
+                                                 OptLevel);
+  if (Result.getNode())
     return Result;
 
   // If that didn't work, try again with the operands commuted.
@@ -4233,7 +4230,8 @@ static SDValue PerformMULCombine(SDNode *N,
                                  CodeGenOpt::Level OptLevel) {
   if (OptLevel > 0) {
     // Try mul.wide combining at OptLevel > 0
-    if (SDValue Ret = TryMULWIDECombine(N, DCI))
+    SDValue Ret = TryMULWIDECombine(N, DCI);
+    if (Ret.getNode())
       return Ret;
   }
 
@@ -4246,7 +4244,8 @@ static SDValue PerformSHLCombine(SDNode *N,
                                  CodeGenOpt::Level OptLevel) {
   if (OptLevel > 0) {
     // Try mul.wide combining at OptLevel > 0
-    if (SDValue Ret = TryMULWIDECombine(N, DCI))
+    SDValue Ret = TryMULWIDECombine(N, DCI);
+    if (Ret.getNode())
       return Ret;
   }
 
@@ -4550,7 +4549,6 @@ NVPTXTargetObjectFile::~NVPTXTargetObjectFile() {
   delete static_cast<NVPTXSection *>(DwarfLocSection);
   delete static_cast<NVPTXSection *>(DwarfARangesSection);
   delete static_cast<NVPTXSection *>(DwarfRangesSection);
-  delete static_cast<NVPTXSection *>(DwarfMacinfoSection);
 }
 
 MCSection *

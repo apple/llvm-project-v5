@@ -1,13 +1,13 @@
 ; RUN: llc < %s -march=xcore | FileCheck %s
 
-; CHECK: .p2align 2
+; CHECK: .align 4
 ; CHECK-LABEL: f:
 define void @f() nounwind {
 entry:
   ret void
 }
 
-; CHECK: .p2align 1
+; CHECK: .align 2
 ; CHECK-LABEL: g:
 define void @g() nounwind optsize {
 entry:

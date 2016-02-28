@@ -10,10 +10,9 @@
 ; SI: s_andn2_b64
 ; s_cbranch_execnz [[LOOP_LABEL]]
 ; SI: s_endpgm
-define void @break_inserted_outside_of_loop(i32 addrspace(1)* %out, i32 %a) {
+define void @break_inserted_outside_of_loop(i32 addrspace(1)* %out, i32 %a, i32 %b) {
 main_body:
-  %tid = call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0) #0
-  %0 = and i32 %a, %tid
+  %0 = and i32 %a, %b
   %1 = trunc i32 %0 to i1
   br label %ENDIF
 
@@ -40,10 +39,9 @@ ENDIF:
 ; SI: s_cbranch_execnz [[LOOP_LABEL]]
 ; SI: s_endpgm
 
-define void @phi_cond_outside_loop(i32 %b) {
+define void @phi_cond_outside_loop(i32 %a, i32 %b) {
 entry:
-  %tid = call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0) #0
-  %0 = icmp eq i32 %tid , 0
+  %0 = icmp eq i32 %a , 0
   br i1 %0, label %if, label %else
 
 if:
@@ -63,7 +61,3 @@ loop:
 exit:
   ret void
 }
-
-declare i32 @llvm.amdgcn.mbcnt.lo(i32, i32) #0
-
-attributes #0 = { nounwind readnone }

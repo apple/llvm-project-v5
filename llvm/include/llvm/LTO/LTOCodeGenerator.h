@@ -39,9 +39,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/Linker/Linker.h"
 #include "llvm/Target/TargetOptions.h"
 #include <string>
 #include <vector>
@@ -49,7 +47,7 @@
 namespace llvm {
   class LLVMContext;
   class DiagnosticInfo;
-  class Linker;
+  class GlobalValue;
   class Mangler;
   class MemoryBuffer;
   class TargetLibraryInfo;
@@ -63,7 +61,8 @@ namespace llvm {
 struct LTOCodeGenerator {
   static const char *getVersionString();
 
-  LTOCodeGenerator(LLVMContext &Context);
+  LTOCodeGenerator();
+  LTOCodeGenerator(std::unique_ptr<LLVMContext> Context);
   ~LTOCodeGenerator();
 
   /// Merge given module.  Return true on success.
@@ -75,10 +74,6 @@ struct LTOCodeGenerator {
   void setTargetOptions(TargetOptions Options);
   void setDebugInfo(lto_debug_model);
   void setCodePICModel(Reloc::Model Model) { RelocModel = Model; }
-  
-  /// Set the file type to be emitted (assembly or object code).
-  /// The default is TargetMachine::CGFT_ObjectFile. 
-  void setFileType(TargetMachine::CodeGenFileType FT) { FileType = FT; }
 
   void setCpu(const char *MCpu) { this->MCpu = MCpu; }
   void setAttr(const char *MAttr) { this->MAttr = MAttr; }
@@ -86,22 +81,6 @@ struct LTOCodeGenerator {
 
   void setShouldInternalize(bool Value) { ShouldInternalize = Value; }
   void setShouldEmbedUselists(bool Value) { ShouldEmbedUselists = Value; }
-
-  /// Restore linkage of globals
-  ///
-  /// When set, the linkage of globals will be restored prior to code
-  /// generation. That is, a global symbol that had external linkage prior to
-  /// LTO will be emitted with external linkage again; and a local will remain
-  /// local. Note that this option only affects the end result - globals may
-  /// still be internalized in the process of LTO and may be modified and/or
-  /// deleted where legal.
-  ///
-  /// The default behavior will internalize globals (unless on the preserve
-  /// list) and, if parallel code generation is enabled, will externalize
-  /// all locals.
-  void setShouldRestoreGlobalsLinkage(bool Value) {
-    ShouldRestoreGlobalsLinkage = Value;
-  }
 
   void addMustPreserveSymbol(StringRef Sym) { MustPreserveSymbols[Sym] = 1; }
 
@@ -122,81 +101,77 @@ struct LTOCodeGenerator {
 
   /// Write the merged module to the file specified by the given path.  Return
   /// true on success.
-  bool writeMergedModules(const char *Path);
+  bool writeMergedModules(const char *Path, std::string &ErrMsg);
 
-  /// Compile the merged module into a *single* output file; the path to output
+  /// Compile the merged module into a *single* object file; the path to object
   /// file is returned to the caller via argument "name". Return true on
   /// success.
   ///
-  /// \note It is up to the linker to remove the intermediate output file.  Do
+  /// \note It is up to the linker to remove the intermediate object file.  Do
   /// not try to remove the object file in LTOCodeGenerator's destructor as we
-  /// don't who (LTOCodeGenerator or the output file) will last longer.
+  /// don't who (LTOCodeGenerator or the obj file) will last longer.
   bool compile_to_file(const char **Name, bool DisableVerify,
                        bool DisableInline, bool DisableGVNLoadPRE,
-                       bool DisableVectorization);
+                       bool DisableVectorization, std::string &ErrMsg);
 
   /// As with compile_to_file(), this function compiles the merged module into
-  /// single output file. Instead of returning the output file path to the
-  /// caller (linker), it brings the output to a buffer, and returns the buffer
-  /// to the caller. This function should delete the intermediate file once
+  /// single object file. Instead of returning the object-file-path to the
+  /// caller (linker), it brings the object to a buffer, and return the buffer
+  /// to the caller. This function should delete intermediate object file once
   /// its content is brought to memory. Return NULL if the compilation was not
   /// successful.
   std::unique_ptr<MemoryBuffer> compile(bool DisableVerify, bool DisableInline,
                                         bool DisableGVNLoadPRE,
-                                        bool DisableVectorization);
+                                        bool DisableVectorization,
+                                        std::string &errMsg);
 
   /// Optimizes the merged module.  Returns true on success.
   bool optimize(bool DisableVerify, bool DisableInline, bool DisableGVNLoadPRE,
-                bool DisableVectorization);
+                bool DisableVectorization, std::string &ErrMsg);
 
-  /// Compiles the merged optimized module into a single output file. It brings
-  /// the output to a buffer, and returns the buffer to the caller. Return NULL
+  /// Compiles the merged optimized module into a single object file. It brings
+  /// the object to a buffer, and returns the buffer to the caller. Return NULL
   /// if the compilation was not successful.
-  std::unique_ptr<MemoryBuffer> compileOptimized();
+  std::unique_ptr<MemoryBuffer> compileOptimized(std::string &ErrMsg);
 
-  /// Compile the merged optimized module into out.size() output files each
+  /// Compile the merged optimized module into out.size() object files each
   /// representing a linkable partition of the module. If out contains more
   /// than one element, code generation is done in parallel with out.size()
-  /// threads.  Output files will be written to members of out. Returns true on
+  /// threads.  Object files will be written to members of out. Returns true on
   /// success.
-  bool compileOptimized(ArrayRef<raw_pwrite_stream *> Out);
+  bool compileOptimized(ArrayRef<raw_pwrite_stream *> Out, std::string &ErrMsg);
 
   void setDiagnosticHandler(lto_diagnostic_handler_t, void *);
 
   LLVMContext &getContext() { return Context; }
 
-  void resetMergedModule() { MergedModule.reset(); }
-
 private:
   void initializeLTOPasses();
 
-  bool compileOptimizedToFile(const char **Name);
-  void restoreLinkageForExternals();
+  bool compileOptimizedToFile(const char **Name, std::string &ErrMsg);
   void applyScopeRestrictions();
   void applyRestriction(GlobalValue &GV, ArrayRef<StringRef> Libcalls,
                         std::vector<const char *> &MustPreserveList,
                         SmallPtrSetImpl<GlobalValue *> &AsmUsed,
                         Mangler &Mangler);
-  bool determineTarget();
+  bool determineTarget(std::string &ErrMsg);
 
   static void DiagnosticHandler(const DiagnosticInfo &DI, void *Context);
 
   void DiagnosticHandler2(const DiagnosticInfo &DI);
 
-  void emitError(const std::string &ErrMsg);
-
   typedef StringMap<uint8_t> StringSet;
 
+  std::unique_ptr<LLVMContext> OwnedContext;
   LLVMContext &Context;
   std::unique_ptr<Module> MergedModule;
-  std::unique_ptr<Linker> TheLinker;
+  Linker IRLinker;
   std::unique_ptr<TargetMachine> TargetMach;
   bool EmitDwarfDebugInfo = false;
   bool ScopeRestrictionsDone = false;
   Reloc::Model RelocModel = Reloc::Default;
   StringSet MustPreserveSymbols;
   StringSet AsmUndefinedRefs;
-  StringMap<GlobalValue::LinkageTypes> ExternalSymbols;
   std::vector<std::string> CodegenOptions;
   std::string FeatureStr;
   std::string MCpu;
@@ -209,8 +184,6 @@ private:
   void *DiagContext = nullptr;
   bool ShouldInternalize = true;
   bool ShouldEmbedUselists = false;
-  bool ShouldRestoreGlobalsLinkage = false;
-  TargetMachine::CodeGenFileType FileType = TargetMachine::CGFT_ObjectFile;
 };
 }
 #endif

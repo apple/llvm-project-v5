@@ -28,9 +28,6 @@ class DDIV_MM64R6_ENC : POOL32A_DIVMOD_FM_MMR6<"ddiv", 0b100011000>;
 class DMOD_MM64R6_ENC : POOL32A_DIVMOD_FM_MMR6<"dmod", 0b101011000>;
 class DDIVU_MM64R6_ENC : POOL32A_DIVMOD_FM_MMR6<"ddivu", 0b110011000>;
 class DMODU_MM64R6_ENC : POOL32A_DIVMOD_FM_MMR6<"dmodu", 0b111011000>;
-class DINSU_MM64R6_ENC : POOL32S_EXTBITS_FM_MMR6<0b110100>;
-class DINSM_MM64R6_ENC : POOL32S_EXTBITS_FM_MMR6<0b000100>;
-class DINS_MM64R6_ENC : POOL32S_EXTBITS_FM_MMR6<0b001100>;
 
 //===----------------------------------------------------------------------===//
 //
@@ -58,25 +55,21 @@ class DAHI_MMR6_DESC : DAHI_DATI_DESC_BASE<"dahi", GPR64Opnd>;
 class DATI_MMR6_DESC : DAHI_DATI_DESC_BASE<"dati", GPR64Opnd>;
 
 class EXTBITS_DESC_BASE<string instr_asm, RegisterOperand RO, Operand PosOpnd,
-                        Operand SizeOpnd, SDPatternOperator Op = null_frag>
-    : MMR6Arch<instr_asm>, MipsR6Inst {
+    SDPatternOperator Op = null_frag> : MMR6Arch<instr_asm>, MipsR6Inst {
   dag OutOperandList = (outs RO:$rt);
-  dag InOperandList = (ins RO:$rs, PosOpnd:$pos, SizeOpnd:$size);
+  dag InOperandList = (ins RO:$rs, PosOpnd:$pos, size_ext:$size);
   string AsmString = !strconcat(instr_asm, "\t$rt, $rs, $pos, $size");
   list<dag> Pattern = [(set RO:$rt, (Op RO:$rs, imm:$pos, imm:$size))];
   InstrItinClass Itinerary = II_EXT;
   Format Form = FrmR;
   string BaseOpcode = instr_asm;
 }
-// TODO: Add 'pos + size' constraint check to dext* instructions
-//       DEXT: 0 < pos + size <= 63
-//       DEXTM, DEXTU: 32 < pos + size <= 64
-class DEXT_MMR6_DESC : EXTBITS_DESC_BASE<"dext", GPR64Opnd, uimm5,
-                                         uimm5_plus1, MipsExt>;
-class DEXTM_MMR6_DESC : EXTBITS_DESC_BASE<"dextm", GPR64Opnd, uimm5,
-                                          uimm5_plus33, MipsExt>;
-class DEXTU_MMR6_DESC : EXTBITS_DESC_BASE<"dextu", GPR64Opnd, uimm5_plus32,
-                                          uimm5_plus1, MipsExt>;
+class DEXT_MMR6_DESC : EXTBITS_DESC_BASE<"dext", GPR64Opnd, uimm6,
+                                                 MipsExt>;
+class DEXTM_MMR6_DESC : EXTBITS_DESC_BASE<"dextm", GPR64Opnd, uimm6,
+                                                  MipsExt>;
+class DEXTU_MMR6_DESC : EXTBITS_DESC_BASE<"dextu", GPR64Opnd, uimm6,
+                                                  MipsExt>;
 
 class DALIGN_DESC_BASE<string instr_asm, RegisterOperand GPROpnd,
                       Operand ImmOpnd> : MMR6Arch<instr_asm>, MipsR6Inst {
@@ -92,12 +85,6 @@ class DDIV_MM64R6_DESC : ArithLogicR<"ddiv", GPR32Opnd>;
 class DMOD_MM64R6_DESC : ArithLogicR<"dmod", GPR32Opnd>;
 class DDIVU_MM64R6_DESC : ArithLogicR<"ddivu", GPR32Opnd>;
 class DMODU_MM64R6_DESC : ArithLogicR<"dmodu", GPR32Opnd>;
-
-class DINSU_MM64R6_DESC : InsBase<"dinsu", GPR64Opnd, uimm5_plus32,
-                                  uimm5_inssize_plus1, MipsIns>;
-class DINSM_MM64R6_DESC : InsBase<"dinsm", GPR64Opnd, uimm5, uimm_range_2_64>;
-class DINS_MM64R6_DESC : InsBase<"dins", GPR64Opnd, uimm5, uimm5_inssize_plus1,
-                                 MipsIns>;
 
 //===----------------------------------------------------------------------===//
 //
@@ -125,10 +112,4 @@ let DecoderNamespace = "MicroMipsR6" in {
                      ISA_MICROMIPS64R6;
   def DMODU_MM64R6 : R6MMR6Rel, DMODU_MM64R6_DESC, DMODU_MM64R6_ENC,
                      ISA_MICROMIPS64R6;
-  def DINSU_MM64R6: R6MMR6Rel, DINSU_MM64R6_DESC, DINSU_MM64R6_ENC,
-                    ISA_MICROMIPS64R6;
-  def DINSM_MM64R6: R6MMR6Rel, DINSM_MM64R6_DESC, DINSM_MM64R6_ENC,
-                    ISA_MICROMIPS64R6;
-  def DINS_MM64R6: R6MMR6Rel, DINS_MM64R6_DESC, DINS_MM64R6_ENC,
-                   ISA_MICROMIPS64R6;
 }

@@ -26,7 +26,6 @@
 #include "clang/Frontend/CodeGenOptions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Metadata.h"
-#include "llvm/Transforms/Utils/SanitizerStats.h"
 
 using namespace clang;
 using namespace CodeGen;
@@ -95,7 +94,7 @@ CodeGenModule::getDynamicOffsetAlignment(CharUnits actualBaseAlign,
   // unless we someday add some sort of attribute to change the
   // assumed alignment of 'this'.  So our goal here is pretty much
   // just to allow the user to explicitly say that a pointer is
-  // under-aligned and then safely access its fields and vtables.
+  // under-aligned and then safely access its fields and v-tables.
   if (actualBaseAlign >= expectedBaseAlign) {
     return expectedTargetAlign;
   }
@@ -987,7 +986,7 @@ namespace {
     CodeGenFunction &CGF;
     SanitizerSet OldSanOpts;
   };
-} // end anonymous namespace
+}
  
 namespace {
   class FieldMemcpyizer {
@@ -1072,6 +1071,7 @@ namespace {
     const CXXRecordDecl *ClassDecl;
 
   private:
+
     void emitMemcpyIR(Address DestPtr, Address SrcPtr, CharUnits Size) {
       llvm::PointerType *DPT = DestPtr.getType();
       llvm::Type *DBP =
@@ -1087,12 +1087,13 @@ namespace {
     }
 
     void addInitialField(FieldDecl *F) {
-      FirstField = F;
-      LastField = F;
-      FirstFieldOffset = RecLayout.getFieldOffset(F->getFieldIndex());
-      LastFieldOffset = FirstFieldOffset;
-      LastAddedFieldIndex = F->getFieldIndex();
-    }
+        FirstField = F;
+        LastField = F;
+        FirstFieldOffset = RecLayout.getFieldOffset(F->getFieldIndex());
+        LastFieldOffset = FirstFieldOffset;
+        LastAddedFieldIndex = F->getFieldIndex();
+        return;
+      }
 
     void addNextField(FieldDecl *F) {
       // For the most part, the following invariant will hold:
@@ -1126,6 +1127,7 @@ namespace {
 
   class ConstructorMemcpyizer : public FieldMemcpyizer {
   private:
+
     /// Get source argument for copy constructor. Returns null if not a copy
     /// constructor.
     static const VarDecl *getTrivialCopySource(CodeGenFunction &CGF,
@@ -1230,6 +1232,7 @@ namespace {
 
   class AssignmentMemcpyizer : public FieldMemcpyizer {
   private:
+
     // Returns the memcpyable field copied by the given statement, if one
     // exists. Otherwise returns null.
     FieldDecl *getMemcpyableField(Stmt *S) {
@@ -1303,6 +1306,7 @@ namespace {
     SmallVector<Stmt*, 16> AggregatedStmts;
 
   public:
+
     AssignmentMemcpyizer(CodeGenFunction &CGF, const CXXMethodDecl *AD,
                          FunctionArgList &Args)
       : FieldMemcpyizer(CGF, AD->getParent(), Args[Args.size() - 1]),
@@ -1603,7 +1607,6 @@ void CodeGenFunction::emitImplicitAssignmentOperatorBody(FunctionArgList &Args) 
 
   LexicalScope Scope(*this, RootCS->getSourceRange());
 
-  incrementProfileCounter(RootCS);
   AssignmentMemcpyizer AM(*this, AssignOp, Args);
   for (auto *I : RootCS->body())
     AM.emitAssignment(I);
@@ -1625,7 +1628,6 @@ namespace {
 
   struct CallDtorDeleteConditional final : EHScopeStack::Cleanup {
     llvm::Value *ShouldDeleteCondition;
-
   public:
     CallDtorDeleteConditional(llvm::Value *ShouldDeleteCondition)
         : ShouldDeleteCondition(ShouldDeleteCondition) {
@@ -2287,7 +2289,7 @@ namespace {
                                 /*Delegating=*/false, Addr);
     }
   };
-} // end anonymous namespace
+}
 
 void CodeGenFunction::PushDestructorCleanup(const CXXDestructorDecl *D,
                                             Address Addr) {
@@ -2485,35 +2487,15 @@ LeastDerivedClassWithSameLayout(const CXXRecordDecl *RD) {
       RD->bases_begin()->getType()->getAsCXXRecordDecl());
 }
 
-void CodeGenFunction::EmitBitSetCodeForVCall(const CXXRecordDecl *RD,
-                                             llvm::Value *VTable,
-                                             SourceLocation Loc) {
-  if (CGM.getCodeGenOpts().WholeProgramVTables &&
-      !CGM.IsBitSetBlacklistedRecord(RD)) {
-    llvm::Metadata *MD =
-        CGM.CreateMetadataIdentifierForType(QualType(RD->getTypeForDecl(), 0));
-    llvm::Value *BitSetName =
-        llvm::MetadataAsValue::get(CGM.getLLVMContext(), MD);
-
-    llvm::Value *CastedVTable = Builder.CreateBitCast(VTable, Int8PtrTy);
-    llvm::Value *BitSetTest =
-        Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::bitset_test),
-                           {CastedVTable, BitSetName});
-    Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::assume), BitSetTest);
-  }
-
-  if (SanOpts.has(SanitizerKind::CFIVCall))
-    EmitVTablePtrCheckForCall(RD, VTable, CodeGenFunction::CFITCK_VCall, Loc);
-}
-
-void CodeGenFunction::EmitVTablePtrCheckForCall(const CXXRecordDecl *RD,
+void CodeGenFunction::EmitVTablePtrCheckForCall(const CXXMethodDecl *MD,
                                                 llvm::Value *VTable,
                                                 CFITypeCheckKind TCK,
                                                 SourceLocation Loc) {
+  const CXXRecordDecl *ClassDecl = MD->getParent();
   if (!SanOpts.has(SanitizerKind::CFICastStrict))
-    RD = LeastDerivedClassWithSameLayout(RD);
+    ClassDecl = LeastDerivedClassWithSameLayout(ClassDecl);
 
-  EmitVTablePtrCheck(RD, VTable, TCK, Loc);
+  EmitVTablePtrCheck(ClassDecl, VTable, TCK, Loc);
 }
 
 void CodeGenFunction::EmitVTablePtrCheckForCast(QualType T,
@@ -2565,32 +2547,14 @@ void CodeGenFunction::EmitVTablePtrCheck(const CXXRecordDecl *RD,
                                          llvm::Value *VTable,
                                          CFITypeCheckKind TCK,
                                          SourceLocation Loc) {
-  if (CGM.IsBitSetBlacklistedRecord(RD))
+  if (CGM.IsCFIBlacklistedRecord(RD))
     return;
 
   SanitizerScope SanScope(this);
-  llvm::SanitizerStatKind SSK;
-  switch (TCK) {
-  case CFITCK_VCall:
-    SSK = llvm::SanStat_CFI_VCall;
-    break;
-  case CFITCK_NVCall:
-    SSK = llvm::SanStat_CFI_NVCall;
-    break;
-  case CFITCK_DerivedCast:
-    SSK = llvm::SanStat_CFI_DerivedCast;
-    break;
-  case CFITCK_UnrelatedCast:
-    SSK = llvm::SanStat_CFI_UnrelatedCast;
-    break;
-  case CFITCK_ICall:
-    llvm_unreachable("not expecting CFITCK_ICall");
-  }
-  EmitSanitizerStatReport(SSK);
 
-  llvm::Metadata *MD =
-      CGM.CreateMetadataIdentifierForType(QualType(RD->getTypeForDecl(), 0));
-  llvm::Value *BitSetName = llvm::MetadataAsValue::get(getLLVMContext(), MD);
+  llvm::Value *BitSetName = llvm::MetadataAsValue::get(
+      getLLVMContext(),
+      CGM.CreateMetadataIdentifierForType(QualType(RD->getTypeForDecl(), 0)));
 
   llvm::Value *CastedVTable = Builder.CreateBitCast(VTable, Int8PtrTy);
   llvm::Value *BitSetTest =
@@ -2611,35 +2575,15 @@ void CodeGenFunction::EmitVTablePtrCheck(const CXXRecordDecl *RD,
   case CFITCK_UnrelatedCast:
     M = SanitizerKind::CFIUnrelatedCast;
     break;
-  case CFITCK_ICall:
-    llvm_unreachable("not expecting CFITCK_ICall");
   }
 
   llvm::Constant *StaticData[] = {
-      llvm::ConstantInt::get(Int8Ty, TCK),
-      EmitCheckSourceLocation(Loc),
-      EmitCheckTypeDescriptor(QualType(RD->getTypeForDecl(), 0)),
+    EmitCheckSourceLocation(Loc),
+    EmitCheckTypeDescriptor(QualType(RD->getTypeForDecl(), 0)),
+    llvm::ConstantInt::get(Int8Ty, TCK),
   };
-
-  auto TypeId = CGM.CreateCfiIdForTypeMetadata(MD);
-  if (CGM.getCodeGenOpts().SanitizeCfiCrossDso && TypeId) {
-    EmitCfiSlowPathCheck(M, BitSetTest, TypeId, CastedVTable, StaticData);
-    return;
-  }
-
-  if (CGM.getCodeGenOpts().SanitizeTrap.has(M)) {
-    EmitTrapCheck(BitSetTest);
-    return;
-  }
-
-  llvm::Value *AllVtables = llvm::MetadataAsValue::get(
-      CGM.getLLVMContext(),
-      llvm::MDString::get(CGM.getLLVMContext(), "all-vtables"));
-  llvm::Value *ValidVtable =
-      Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::bitset_test),
-                         {CastedVTable, AllVtables});
-  EmitCheck(std::make_pair(BitSetTest, M), "cfi_check_fail", StaticData,
-            {CastedVTable, ValidVtable});
+  EmitCheck(std::make_pair(BitSetTest, M), "cfi_bad_type", StaticData,
+            CastedVTable);
 }
 
 // FIXME: Ideally Expr::IgnoreParenNoopCasts should do this, but it doesn't do

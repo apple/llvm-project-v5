@@ -22,7 +22,6 @@
 #include "llvm/Transforms/IPO.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
@@ -55,13 +54,11 @@ APIList("internalize-public-api-list", cl::value_desc("list"),
 
 namespace {
   class InternalizePass : public ModulePass {
-    StringSet<> ExternalNames;
-
+    std::set<std::string> ExternalNames;
   public:
     static char ID; // Pass identification, replacement for typeid
     explicit InternalizePass();
     explicit InternalizePass(ArrayRef<const char *> ExportList);
-    explicit InternalizePass(StringSet<> ExportList);
     void LoadFile(const char *Filename);
     bool maybeInternalize(GlobalValue &GV,
                           const std::set<const Comdat *> &ExternalComdats);
@@ -96,9 +93,6 @@ InternalizePass::InternalizePass(ArrayRef<const char *> ExportList)
   }
 }
 
-InternalizePass::InternalizePass(StringSet<> ExportList)
-    : ModulePass(ID), ExternalNames(std::move(ExportList)) {}
-
 void InternalizePass::LoadFile(const char *Filename) {
   // Load the APIFile...
   std::ifstream In(Filename);
@@ -116,7 +110,7 @@ void InternalizePass::LoadFile(const char *Filename) {
 }
 
 static bool isExternallyVisible(const GlobalValue &GV,
-                                const StringSet<> &ExternalNames) {
+                                const std::set<std::string> &ExternalNames) {
   // Function must be defined here
   if (GV.isDeclaration())
     return true;
@@ -272,8 +266,4 @@ ModulePass *llvm::createInternalizePass() { return new InternalizePass(); }
 
 ModulePass *llvm::createInternalizePass(ArrayRef<const char *> ExportList) {
   return new InternalizePass(ExportList);
-}
-
-ModulePass *llvm::createInternalizePass(StringSet<> ExportList) {
-  return new InternalizePass(std::move(ExportList));
 }

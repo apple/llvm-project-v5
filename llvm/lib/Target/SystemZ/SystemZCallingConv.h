@@ -12,15 +12,14 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/CallingConvLower.h"
-#include "llvm/MC/MCRegisterInfo.h"
 
 namespace llvm {
 namespace SystemZ {
   const unsigned NumArgGPRs = 5;
-  extern const MCPhysReg ArgGPRs[NumArgGPRs];
+  extern const unsigned ArgGPRs[NumArgGPRs];
 
   const unsigned NumArgFPRs = 4;
-  extern const MCPhysReg ArgFPRs[NumArgFPRs];
+  extern const unsigned ArgFPRs[NumArgFPRs];
 } // end namespace SystemZ
 
 class SystemZCCState : public CCState {
@@ -79,51 +78,6 @@ public:
   bool IsFixed(unsigned ValNo) { return ArgIsFixed[ValNo]; }
   bool IsShortVector(unsigned ValNo) { return ArgIsShortVector[ValNo]; }
 };
-
-// Handle i128 argument types.  These need to be passed by implicit
-// reference.  This could be as simple as the following .td line:
-//    CCIfType<[i128], CCPassIndirect<i64>>,
-// except that i128 is not a legal type, and therefore gets split by
-// common code into a pair of i64 arguments.
-inline bool CC_SystemZ_I128Indirect(unsigned &ValNo, MVT &ValVT,
-                                    MVT &LocVT,
-                                    CCValAssign::LocInfo &LocInfo,
-                                    ISD::ArgFlagsTy &ArgFlags,
-                                    CCState &State) {
-  SmallVectorImpl<CCValAssign> &PendingMembers = State.getPendingLocs();
-
-  // ArgFlags.isSplit() is true on the first part of a i128 argument;
-  // PendingMembers.empty() is false on all subsequent parts.
-  if (!ArgFlags.isSplit() && PendingMembers.empty())
-    return false;
-
-  // Push a pending Indirect value location for each part.
-  LocVT = MVT::i64;
-  LocInfo = CCValAssign::Indirect;
-  PendingMembers.push_back(CCValAssign::getPending(ValNo, ValVT,
-                                                   LocVT, LocInfo));
-  if (!ArgFlags.isSplitEnd())
-    return true;
-
-  // OK, we've collected all parts in the pending list.  Allocate
-  // the location (register or stack slot) for the indirect pointer.
-  // (This duplicates the usual i64 calling convention rules.)
-  unsigned Reg = State.AllocateReg(SystemZ::ArgGPRs);
-  unsigned Offset = Reg ? 0 : State.AllocateStack(8, 8);
-
-  // Use that same location for all the pending parts.
-  for (auto &It : PendingMembers) {
-    if (Reg)
-      It.convertToReg(Reg);
-    else
-      It.convertToMem(Offset);
-    State.addLoc(It);
-  }
-
-  PendingMembers.clear();
-
-  return true;
-}
 
 } // end namespace llvm
 

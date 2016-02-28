@@ -83,7 +83,7 @@ namespace dr406 { // dr406: yes
   } A;
 }
 
-namespace dr407 { // dr407: 3.8
+namespace dr407 { // dr407: no
   struct S;
   typedef struct S S;
   void f() {
@@ -108,22 +108,22 @@ namespace dr407 { // dr407: 3.8
       struct S s; // expected-error {{ambiguous}}
     }
     namespace D {
+      // FIXME: This is valid.
       using A::S;
-      typedef struct S S;
-      struct S s;
+      typedef struct S S; // expected-note {{here}}
+      struct S s; // expected-error {{refers to a typedef}}
     }
     namespace E {
-      // The standard doesn't say whether this is valid. We interpret
-      // DR407 as meaning "if lookup finds both a tag and a typedef with the
-      // same type, then it's OK in an elaborated-type-specifier".
+      // FIXME: The standard doesn't say whether this is valid.
       typedef A::S S;
       using A::S;
       struct S s;
     }
     namespace F {
-      typedef A::S S;
+      typedef A::S S; // expected-note {{here}}
     }
-    // The standard doesn't say what to do in these cases either.
+    // FIXME: The standard doesn't say what to do in these cases, but
+    // our behavior should not depend on the order of the using-directives.
     namespace G {
       using namespace A;
       using namespace F;
@@ -132,7 +132,7 @@ namespace dr407 { // dr407: 3.8
     namespace H {
       using namespace F;
       using namespace A;
-      struct S s;
+      struct S s; // expected-error {{refers to a typedef}}
     }
   }
 }
@@ -1197,12 +1197,12 @@ namespace dr496 { // dr496: no
   int check6[ __is_trivially_assignable(B, const B&) ? 1 : -1];
 }
 
-namespace dr497 { // dr497: sup 253
+namespace dr497 { // dr497: yes
   void before() {
     struct S {
       mutable int i;
     };
-    const S cs;
+    const S cs; // expected-error {{default initialization}}
     int S::*pm = &S::i;
     cs.*pm = 88; // expected-error {{not assignable}}
   }

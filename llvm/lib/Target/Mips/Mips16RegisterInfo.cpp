@@ -14,6 +14,7 @@
 #include "Mips16RegisterInfo.h"
 #include "Mips.h"
 #include "Mips16InstrInfo.h"
+#include "MipsAnalyzeImmediate.h"
 #include "MipsInstrInfo.h"
 #include "MipsMachineFunction.h"
 #include "MipsSubtarget.h"

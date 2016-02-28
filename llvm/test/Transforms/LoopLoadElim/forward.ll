@@ -1,6 +1,6 @@
 ; RUN: opt -loop-load-elim -S < %s | FileCheck %s
 
-; Simple st->ld forwarding derived from a lexical forward dep.
+; Simple st->ld forwarding derived from a lexical forwrad dep.
 ;
 ;   for (unsigned i = 0; i < 100; i++) {
 ;     A[i+1] = B[i] + 2;
@@ -11,7 +11,7 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 
 define void @f(i32* %A, i32* %B, i32* %C, i64 %N) {
 
-; CHECK:   for.body.lver.check:
+; CHECK:   for.body.lver.memcheck:
 ; CHECK:     %found.conflict{{.*}} =
 ; CHECK-NOT: %found.conflict{{.*}} =
 

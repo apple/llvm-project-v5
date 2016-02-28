@@ -59,6 +59,7 @@
 // We use heuristics to discover the best global grouping we can (cf cl::opts).
 // ===---------------------------------------------------------------------===//
 
+#include "llvm/Transforms/Scalar.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"

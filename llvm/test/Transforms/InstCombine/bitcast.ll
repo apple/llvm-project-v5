@@ -16,61 +16,6 @@ define i32 @test1(i64 %a) {
 ; CHECK: ret i32 0
 }
 
-; Perform the bitwise logic in the source type of the operands to eliminate bitcasts.
-
-define <2 x i32> @xor_two_vector_bitcasts(<1 x i64> %a, <1 x i64> %b) {
-  %t1 = bitcast <1 x i64> %a to <2 x i32>
-  %t2 = bitcast <1 x i64> %b to <2 x i32>
-  %t3 = xor <2 x i32> %t1, %t2
-  ret <2 x i32> %t3
-
-; CHECK-LABEL: @xor_two_vector_bitcasts(
-; CHECK-NEXT:  %t31 = xor <1 x i64> %a, %b
-; CHECK-NEXT:  %t3 = bitcast <1 x i64> %t31 to <2 x i32>
-; CHECK-NEXT:  ret <2 x i32> %t3
-}
-
-; FIXME: Do the logic in the original type for the following 3 tests.
-
-; Verify that 'xor' of vector and constant is done as a vector bitwise op before the bitcast.
-
-define <2 x i32> @xor_bitcast_vec_to_vec(<1 x i64> %a) {
-  %t1 = bitcast <1 x i64> %a to <2 x i32>
-  %t2 = xor <2 x i32> <i32 1, i32 2>, %t1
-  ret <2 x i32> %t2
-
-; CHECK-LABEL: @xor_bitcast_vec_to_vec(
-; CHECK-NEXT:  %t1 = bitcast <1 x i64> %a to <2 x i32>
-; CHECK-NEXT:  %t2 = xor <2 x i32> %t1, <i32 1, i32 2>
-; CHECK-NEXT:  ret <2 x i32> %t2
-}
-
-; Verify that 'and' of integer and constant is done as a vector bitwise op before the bitcast.
-
-define i64 @and_bitcast_vec_to_int(<2 x i32> %a) {
-  %t1 = bitcast <2 x i32> %a to i64
-  %t2 = and i64 %t1, 3
-  ret i64 %t2
-
-; CHECK-LABEL: @and_bitcast_vec_to_int(
-; CHECK-NEXT:  %t1 = bitcast <2 x i32> %a to i64
-; CHECK-NEXT:  %t2 = and i64 %t1, 3
-; CHECK-NEXT:  ret i64 %t2
-}
-
-; Verify that 'or' of vector and constant is done as an integer bitwise op before the bitcast.
-
-define <2 x i32> @or_bitcast_int_to_vec(i64 %a) {
-  %t1 = bitcast i64 %a to <2 x i32>
-  %t2 = or <2 x i32> %t1, <i32 1, i32 2>
-  ret <2 x i32> %t2
-
-; CHECK-LABEL: @or_bitcast_int_to_vec(
-; CHECK-NEXT:  %t1 = bitcast i64 %a to <2 x i32>
-; CHECK-NEXT:  %t2 = or <2 x i32> %t1, <i32 1, i32 2>
-; CHECK-NEXT:  ret <2 x i32> %t2
-}
-
 ; Optimize bitcasts that are extracting low element of vector.  This happens
 ; because of SRoA.
 ; rdar://7892780
@@ -119,61 +64,6 @@ define float @test3(<2 x float> %A, <2 x i64> %B) {
 ; CHECK-NEXT:  ret float %add
 }
 
-; Both bitcasts are unnecessary; change the extractelement.
-
-define float @bitcast_extelt1(<2 x float> %A) {
-  %bc1 = bitcast <2 x float> %A to <2 x i32>
-  %ext = extractelement <2 x i32> %bc1, i32 0
-  %bc2 = bitcast i32 %ext to float
-  ret float %bc2
-
-; CHECK-LABEL: @bitcast_extelt1(
-; CHECK-NEXT:  %bc2 = extractelement <2 x float> %A, i32 0
-; CHECK-NEXT:  ret float %bc2
-}
-
-; Second bitcast can be folded into the first.
-
-define i64 @bitcast_extelt2(<4 x float> %A) {
-  %bc1 = bitcast <4 x float> %A to <2 x double>
-  %ext = extractelement <2 x double> %bc1, i32 1
-  %bc2 = bitcast double %ext to i64
-  ret i64 %bc2
-
-; CHECK-LABEL: @bitcast_extelt2(
-; CHECK-NEXT:  %bc = bitcast <4 x float> %A to <2 x i64>
-; CHECK-NEXT:  %bc2 = extractelement <2 x i64> %bc, i32 1
-; CHECK-NEXT:  ret i64 %bc2
-}
-
-; TODO: This should return %A. 
-
-define <2 x i32> @bitcast_extelt3(<2 x i32> %A) {
-  %bc1 = bitcast <2 x i32> %A to <1 x i64>
-  %ext = extractelement <1 x i64> %bc1, i32 0
-  %bc2 = bitcast i64 %ext to <2 x i32>
-  ret <2 x i32> %bc2
-
-; CHECK-LABEL: @bitcast_extelt3(
-; CHECK-NEXT:  %bc1 = bitcast <2 x i32> %A to <1 x i64>
-; CHECK-NEXT:  %ext = extractelement <1 x i64> %bc1, i32 0
-; CHECK-NEXT:  %bc2 = bitcast i64 %ext to <2 x i32>
-; CHECK-NEXT:  ret <2 x i32> %bc2
-}
-
-; Handle the case where the input is not a vector.
-
-define double @bitcast_extelt4(i128 %A) {
-  %bc1 = bitcast i128 %A to <2 x i64>
-  %ext = extractelement <2 x i64> %bc1, i32 0
-  %bc2 = bitcast i64 %ext to double
-  ret double %bc2
-
-; CHECK-LABEL: @bitcast_extelt4(
-; CHECK-NEXT:  %bc = bitcast i128 %A to <2 x double>
-; CHECK-NEXT:  %bc2 = extractelement <2 x double> %bc, i32 0
-; CHECK-NEXT:  ret double %bc2
-}
 
 define <2 x i32> @test4(i32 %A, i32 %B){
   %tmp38 = zext i32 %A to i64

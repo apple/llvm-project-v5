@@ -1,6 +1,4 @@
 // RUN: %clang_cc1 -verify -fopenmp %s
-// RUN: %clang_cc1 -verify -fopenmp -std=c++98 %s
-// RUN: %clang_cc1 -verify -fopenmp -std=c++11 %s
 
 void foo() {
 }
@@ -57,9 +55,6 @@ public:
   S5(int v) : a(v) {}
 };
 class S6 { // expected-note 2 {{candidate function (the implicit copy assignment operator) not viable: no known conversion from 'int' to 'const S6' for 1st argument}}
-#if __cplusplus >= 201103L // C++11 or later
-// expected-note@-2 2 {{candidate function (the implicit move assignment operator) not viable}}
-#endif
   int a;
 
 public:
@@ -129,13 +124,13 @@ T tmain(T argc) {
 #pragma omp simd reduction(max : h.b) // expected-error {{expected variable name, array element or array section}}
   for (int i = 0; i < 10; ++i)
     foo();
-#pragma omp simd reduction(+ : ba) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp simd reduction(+ : ba) // expected-error {{a reduction list item with array type 'const S2 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
-#pragma omp simd reduction(* : ca) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp simd reduction(* : ca) // expected-error {{a reduction list item with array type 'const S3 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
-#pragma omp simd reduction(- : da) // expected-error {{const-qualified list item cannot be reduction}} expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp simd reduction(- : da) // expected-error {{a reduction list item with array type 'const int [5]'}} expected-error {{a reduction list item with array type 'const float [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp simd reduction(^ : fl) // expected-error {{invalid operands to binary expression ('float' and 'float')}}
@@ -254,13 +249,13 @@ int main(int argc, char **argv) {
 #pragma omp simd reduction(max : h.b) // expected-error {{expected variable name, array element or array section}}
   for (int i = 0; i < 10; ++i)
     foo();
-#pragma omp simd reduction(+ : ba) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp simd reduction(+ : ba) // expected-error {{a reduction list item with array type 'const S2 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
-#pragma omp simd reduction(* : ca) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp simd reduction(* : ca) // expected-error {{a reduction list item with array type 'const S3 [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
-#pragma omp simd reduction(- : da) // expected-error {{const-qualified list item cannot be reduction}}
+#pragma omp simd reduction(- : da) // expected-error {{a reduction list item with array type 'const int [5]'}}
   for (int i = 0; i < 10; ++i)
     foo();
 #pragma omp simd reduction(^ : fl) // expected-error {{invalid operands to binary expression ('float' and 'float')}}

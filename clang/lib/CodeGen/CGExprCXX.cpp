@@ -259,8 +259,7 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
     if (SanOpts.has(SanitizerKind::CFINVCall) &&
         MD->getParent()->isDynamicClass()) {
       llvm::Value *VTable = GetVTablePtr(This, Int8PtrTy, MD->getParent());
-      EmitVTablePtrCheckForCall(MD->getParent(), VTable, CFITCK_NVCall,
-                                CE->getLocStart());
+      EmitVTablePtrCheckForCall(MD, VTable, CFITCK_NVCall, CE->getLocStart());
     }
 
     if (getLangOpts().AppleKext && MD->isVirtual() && HasQualifier)
@@ -1905,7 +1904,6 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
            "destination type must be a record type!");
     Value = CGM.getCXXABI().EmitDynamicCastCall(*this, ThisAddr, SrcRecordTy,
                                                 DestTy, DestRecordTy, CastEnd);
-    CastNotNull = Builder.GetInsertBlock();
   }
 
   if (ShouldNullCheckSrcValue) {

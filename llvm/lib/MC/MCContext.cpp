@@ -12,7 +12,6 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCAsmInfo.h"
-#include "llvm/MC/MCCodeView.h"
 #include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCLabel.h"
 #include "llvm/MC/MCObjectFileInfo.h"
@@ -43,7 +42,7 @@ MCContext::MCContext(const MCAsmInfo *mai, const MCRegisterInfo *mri,
       CurrentDwarfLoc(0, 0, 0, DWARF2_FLAG_IS_STMT, 0, 0), DwarfLocSeen(false),
       GenDwarfForAssembly(false), GenDwarfFileNumber(0), DwarfVersion(4),
       AllowTemporaryLabels(true), DwarfCompileUnitID(0),
-      AutoReset(DoAutoReset), HadError(false) {
+      AutoReset(DoAutoReset) {
 
   std::error_code EC = llvm::sys::fs::current_path(CompilationDir);
   if (EC)
@@ -64,6 +63,9 @@ MCContext::~MCContext() {
 
   // NOTE: The symbols are all allocated out of a bump pointer allocator,
   // we don't need to free them here.
+
+  // If the stream for the .secure_log_unique directive was created free it.
+  delete (raw_ostream *)SecureLog;
 }
 
 //===----------------------------------------------------------------------===//
@@ -76,7 +78,6 @@ void MCContext::reset() {
   ELFAllocator.DestroyAll();
   MachOAllocator.DestroyAll();
 
-  MCSubtargetAllocator.DestroyAll();
   UsedNames.clear();
   Symbols.clear();
   SectionSymbols.clear();
@@ -91,8 +92,6 @@ void MCContext::reset() {
   DwarfCompileUnitID = 0;
   CurrentDwarfLoc = MCDwarfLoc(0, 0, 0, DWARF2_FLAG_IS_STMT, 0, 0);
 
-  CVContext.reset();
-
   MachOUniquingMap.clear();
   ELFUniquingMap.clear();
   COFFUniquingMap.clear();
@@ -102,8 +101,6 @@ void MCContext::reset() {
   DwarfLocSeen = false;
   GenDwarfForAssembly = false;
   GenDwarfFileNumber = 0;
-
-  HadError = false;
 }
 
 //===----------------------------------------------------------------------===//
@@ -442,10 +439,6 @@ MCSectionCOFF *MCContext::getAssociativeCOFFSection(MCSectionCOFF *Sec,
                         COFF::IMAGE_COMDAT_SELECT_ASSOCIATIVE);
 }
 
-MCSubtargetInfo &MCContext::getSubtargetCopy(const MCSubtargetInfo &STI) {
-  return *new (MCSubtargetAllocator.Allocate()) MCSubtargetInfo(STI);
-}
-
 //===----------------------------------------------------------------------===//
 // Dwarf Management
 //===----------------------------------------------------------------------===//
@@ -477,38 +470,14 @@ void MCContext::finalizeDwarfSections(MCStreamer &MCOS) {
       [&](MCSection *Sec) { return !MCOS.mayHaveInstructions(*Sec); });
 }
 
-CodeViewContext &MCContext::getCVContext() {
-  if (!CVContext.get())
-    CVContext.reset(new CodeViewContext);
-  return *CVContext.get();
-}
-
-unsigned MCContext::getCVFile(StringRef FileName, unsigned FileNumber) {
-  return getCVContext().addFile(FileNumber, FileName) ? FileNumber : 0;
-}
-
-bool MCContext::isValidCVFileNumber(unsigned FileNumber) {
-  return getCVContext().isValidFileNumber(FileNumber);
-}
-
-//===----------------------------------------------------------------------===//
-// Error Reporting
-//===----------------------------------------------------------------------===//
-
-void MCContext::reportError(SMLoc Loc, const Twine &Msg) {
-  HadError = true;
-
-  // If we have a source manager use it. Otherwise just use the generic
-  // report_fatal_error().
-  if (!SrcMgr)
+void MCContext::reportFatalError(SMLoc Loc, const Twine &Msg) const {
+  // If we have a source manager and a location, use it. Otherwise just
+  // use the generic report_fatal_error().
+  if (!SrcMgr || Loc == SMLoc())
     report_fatal_error(Msg, false);
 
   // Use the source manager to print the message.
   SrcMgr->PrintMessage(Loc, SourceMgr::DK_Error, Msg);
-}
-
-void MCContext::reportFatalError(SMLoc Loc, const Twine &Msg) {
-  reportError(Loc, Msg);
 
   // If we reached here, we are failing ungracefully. Run the interrupt handlers
   // to make sure any special cleanups get done, in particular that we remove

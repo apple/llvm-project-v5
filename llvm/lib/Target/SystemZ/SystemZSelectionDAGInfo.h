@@ -7,20 +7,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the SystemZ subclass for SelectionDAGTargetInfo.
+// This file defines the SystemZ subclass for TargetSelectionDAGInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIB_TARGET_SYSTEMZ_SYSTEMZSELECTIONDAGINFO_H
 #define LLVM_LIB_TARGET_SYSTEMZ_SYSTEMZSELECTIONDAGINFO_H
 
-#include "llvm/CodeGen/SelectionDAGTargetInfo.h"
+#include "llvm/Target/TargetSelectionDAGInfo.h"
 
 namespace llvm {
 
 class SystemZTargetMachine;
 
-class SystemZSelectionDAGInfo : public SelectionDAGTargetInfo {
+class SystemZSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
   explicit SystemZSelectionDAGInfo() = default;
 

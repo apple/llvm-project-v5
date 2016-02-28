@@ -16,7 +16,6 @@
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
@@ -53,25 +52,22 @@ void AMDGPUInstPrinter::printU16ImmDecOperand(const MCInst *MI, unsigned OpNo,
   O << formatDec(MI->getOperand(OpNo).getImm() & 0xffff);
 }
 
-void AMDGPUInstPrinter::printNamedBit(const MCInst* MI, unsigned OpNo, raw_ostream& O, const char* BitName) {
-  if (MI->getOperand(OpNo).getImm()) {
-    O << " " << BitName;
-  }
-}
-
 void AMDGPUInstPrinter::printOffen(const MCInst *MI, unsigned OpNo,
                                    raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "offen");
+  if (MI->getOperand(OpNo).getImm())
+    O << " offen";
 }
 
 void AMDGPUInstPrinter::printIdxen(const MCInst *MI, unsigned OpNo,
                                    raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "idxen");
+  if (MI->getOperand(OpNo).getImm())
+    O << " idxen";
 }
 
 void AMDGPUInstPrinter::printAddr64(const MCInst *MI, unsigned OpNo,
                                     raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "addr64");
+  if (MI->getOperand(OpNo).getImm())
+    O << " addr64";
 }
 
 void AMDGPUInstPrinter::printMBUFOffset(const MCInst *MI, unsigned OpNo,
@@ -109,50 +105,26 @@ void AMDGPUInstPrinter::printDSOffset1(const MCInst *MI, unsigned OpNo,
 
 void AMDGPUInstPrinter::printGDS(const MCInst *MI, unsigned OpNo,
                                  raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "gds");
+  if (MI->getOperand(OpNo).getImm())
+    O << " gds";
 }
 
 void AMDGPUInstPrinter::printGLC(const MCInst *MI, unsigned OpNo,
                                  raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "glc");
+  if (MI->getOperand(OpNo).getImm())
+    O << " glc";
 }
 
 void AMDGPUInstPrinter::printSLC(const MCInst *MI, unsigned OpNo,
                                  raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "slc");
+  if (MI->getOperand(OpNo).getImm())
+    O << " slc";
 }
 
 void AMDGPUInstPrinter::printTFE(const MCInst *MI, unsigned OpNo,
                                  raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "tfe");
-}
-
-void AMDGPUInstPrinter::printDMask(const MCInst *MI, unsigned OpNo,
-                                   raw_ostream &O) {
-  if (MI->getOperand(OpNo).getImm()) {
-    O << " dmask:";
-    printU16ImmOperand(MI, OpNo, O);
-  }
-}
-
-void AMDGPUInstPrinter::printUNorm(const MCInst *MI, unsigned OpNo,
-                                   raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "unorm");
-}
-
-void AMDGPUInstPrinter::printDA(const MCInst *MI, unsigned OpNo,
-                                   raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "da");
-}
-
-void AMDGPUInstPrinter::printR128(const MCInst *MI, unsigned OpNo,
-                                   raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "r128");
-}
-
-void AMDGPUInstPrinter::printLWE(const MCInst *MI, unsigned OpNo,
-                                   raw_ostream &O) {
-  printNamedBit(MI, OpNo, O, "lwe");
+  if (MI->getOperand(OpNo).getImm())
+    O << " tfe";
 }
 
 void AMDGPUInstPrinter::printRegOperand(unsigned reg, raw_ostream &O,
@@ -643,9 +615,12 @@ void AMDGPUInstPrinter::printSendMsg(const MCInst *MI, unsigned OpNo,
 
 void AMDGPUInstPrinter::printWaitFlag(const MCInst *MI, unsigned OpNo,
                                       raw_ostream &O) {
+  // Note: Mask values are taken from SIInsertWaits.cpp and not from ISA docs
+  // SIInsertWaits.cpp bits usage does not match ISA docs description but it
+  // works so it might be a misprint in docs.
   unsigned SImm16 = MI->getOperand(OpNo).getImm();
   unsigned Vmcnt = SImm16 & 0xF;
-  unsigned Expcnt = (SImm16 >> 4) & 0x7;
+  unsigned Expcnt = (SImm16 >> 4) & 0xF;
   unsigned Lgkmcnt = (SImm16 >> 8) & 0xF;
 
   bool NeedSpace = false;
@@ -662,7 +637,7 @@ void AMDGPUInstPrinter::printWaitFlag(const MCInst *MI, unsigned OpNo,
     NeedSpace = true;
   }
 
-  if (Lgkmcnt != 0xF) {
+  if (Lgkmcnt != 0x7) {
     if (NeedSpace)
       O << ' ';
     O << "lgkmcnt(" << Lgkmcnt << ')';

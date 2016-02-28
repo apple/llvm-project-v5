@@ -361,8 +361,10 @@ BasicBlock *BasicBlock::splitBasicBlock(iterator I, const Twine &BBName) {
   assert(I != InstList.end() &&
          "Trying to get me to create degenerate basic block!");
 
-  BasicBlock *New = BasicBlock::Create(getContext(), BBName, getParent(),
-                                       this->getNextNode());
+  BasicBlock *InsertBefore = std::next(Function::iterator(this))
+                               .getNodePtrUnchecked();
+  BasicBlock *New = BasicBlock::Create(getContext(), BBName,
+                                       getParent(), InsertBefore);
 
   // Save DebugLoc of split point before invalidating iterator.
   DebugLoc Loc = I->getDebugLoc();

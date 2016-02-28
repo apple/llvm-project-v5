@@ -36,8 +36,7 @@ class StringRef;
 ///   each partition.
 void SplitModule(
     std::unique_ptr<Module> M, unsigned N,
-    std::function<void(std::unique_ptr<Module> MPart)> ModuleCallback,
-    bool PreserveLocals = false);
+    std::function<void(std::unique_ptr<Module> MPart)> ModuleCallback);
 
 } // End llvm namespace
 

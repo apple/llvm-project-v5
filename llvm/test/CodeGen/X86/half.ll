@@ -1,17 +1,12 @@
-; RUN: llc < %s -march=x86-64 -mtriple=x86_64-unknown-linux-gnu -mcpu=corei7 -mattr=-f16c -asm-verbose=false -fixup-byte-word-insts=1 \
-; RUN:   | FileCheck %s -check-prefix=CHECK -check-prefix=CHECK-LIBCALL -check-prefix=BWON
-; RUN: llc < %s -march=x86-64 -mtriple=x86_64-unknown-linux-gnu -mcpu=corei7 -mattr=-f16c -asm-verbose=false -fixup-byte-word-insts=0 \
-; RUN:   | FileCheck %s -check-prefix=CHECK -check-prefix=CHECK-LIBCALL -check-prefix=BWOFF
-; RUN: llc < %s -march=x86-64 -mtriple=x86_64-unknown-linux-gnu -mcpu=corei7 -mattr=+f16c -asm-verbose=false -fixup-byte-word-insts=1 \
-; RUN:    | FileCheck %s -check-prefix=CHECK -check-prefix=CHECK-F16C -check-prefix=BWON
-; RUN: llc < %s -mtriple=i686-unknown-linux-gnu -mattr +sse2 -asm-verbose=false -fixup-byte-word-insts=0  \
-; RUN:    | FileCheck %s -check-prefix=CHECK-I686
+; RUN: llc < %s -march=x86-64 -mtriple=x86_64-unknown-linux-gnu -mcpu=corei7 -mattr=-f16c -asm-verbose=false \
+; RUN:   | FileCheck %s -check-prefix=CHECK -check-prefix=CHECK-LIBCALL
+; RUN: llc < %s -march=x86-64 -mtriple=x86_64-unknown-linux-gnu -mcpu=corei7 -mattr=+f16c -asm-verbose=false \
+; RUN:    | FileCheck %s -check-prefix=CHECK -check-prefix=CHECK-F16C
 
 define void @test_load_store(half* %in, half* %out) {
 ; CHECK-LABEL: test_load_store:
-; BWON:  movzwl (%rdi), %eax
-; BWOFF: movw (%rdi), %ax
-; CHECK: movw %ax, (%rsi)
+; CHECK: movw (%rdi), [[TMP:%[a-z0-9]+]]
+; CHECK: movw [[TMP]], (%rsi)
   %val = load half, half* %in
   store half %val, half* %out
   ret void
@@ -82,7 +77,7 @@ define i64 @test_fptosi_i64(half* %p) #0 {
 ; CHECK-LIBCALL-NEXT: movzwl (%rdi), %edi
 ; CHECK-LIBCALL-NEXT: callq __gnu_h2f_ieee
 ; CHECK-LIBCALL-NEXT: cvttss2si %xmm0, %rax
-; CHECK-LIBCALL-NEXT: popq %rcx
+; CHECK-LIBCALL-NEXT: popq %rdx
 ; CHECK-LIBCALL-NEXT: retq
 
 ; CHECK-F16C-NEXT: movswl (%rdi), [[REG0:%[a-z0-9]+]]
@@ -107,7 +102,7 @@ define void @test_sitofp_i64(i64 %a, half* %p) #0 {
 ; CHECK_LIBCALL-NEXT: retq
 
 ; CHECK-F16C-NEXT: vcvtsi2ssq %rdi, [[REG0:%[a-z0-9]+]], [[REG0]]
-; CHECK-F16C-NEXT: vcvtps2ph $4, [[REG0]], [[REG0]]
+; CHECK-F16C-NEXT: vcvtps2ph $0, [[REG0]], [[REG0]]
 ; CHECK-F16C-NEXT: vmovd [[REG0]], %eax
 ; CHECK-F16C-NEXT: movw %ax, (%rsi)
 ; CHECK-F16C-NEXT: retq
@@ -132,7 +127,7 @@ define i64 @test_fptoui_i64(half* %p) #0 {
 ; CHECK-LIBCALL-NEXT: cvttss2si %xmm0, [[REG5:%[a-z0-9]+]]
 ; CHECK-LIBCALL-NEXT: ucomiss [[REG1]], %xmm0
 ; CHECK-LIBCALL-NEXT: cmovaeq [[REG4]], [[REG5]]
-; CHECK-LIBCALL-NEXT: popq %rcx
+; CHECK-LIBCALL-NEXT: popq %rdx
 ; CHECK-LIBCALL-NEXT: retq
 
 ; CHECK-F16C-NEXT: movswl (%rdi), [[REG0:%[a-z0-9]+]]
@@ -180,7 +175,7 @@ define void @test_uitofp_i64(i64 %a, half* %p) #0 {
 ; CHECK-LIBCALL-NEXT: callq __gnu_f2h_ieee
 ; CHECK-LIBCALL-NEXT: movw %ax, ([[ADDR]])
 ; CHECK-LIBCALL-NEXT: popq [[ADDR]]
-; CHECK-F16C-NEXT: vcvtps2ph $4, [[REG1]], [[REG4:%[a-z0-9]+]]
+; CHECK-F16C-NEXT: vcvtps2ph $0, [[REG1]], [[REG4:%[a-z0-9]+]]
 ; CHECK-F16C-NEXT: vmovd [[REG4]], %eax
 ; CHECK-F16C-NEXT: movw %ax, (%rsi)
 ; CHECK-NEXT: retq
@@ -263,19 +258,6 @@ define void @test_trunc64_vec4(<4 x double> %a, <4 x half>* %p) {
   %v = fptrunc <4 x double> %a to <4 x half>
   store <4 x half> %v, <4 x half>* %p
   ret void
-}
-
-declare float @test_floatret();
-
-; On i686, if SSE2 is available, the return value from test_floatret is loaded
-; to f80 and then rounded to f32.  The DAG combiner should not combine this
-; fp_round and the subsequent fptrunc from float to half.
-define half @test_f80trunc_nodagcombine() #0 {
-; CHECK-LABEL: test_f80trunc_nodagcombine:
-; CHECK-I686-NOT: calll __truncxfhf2
-  %1 = call float @test_floatret()
-  %2 = fptrunc float %1 to half
-  ret half %2
 }
 
 attributes #0 = { nounwind }

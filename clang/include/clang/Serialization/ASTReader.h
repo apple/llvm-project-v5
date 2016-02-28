@@ -1058,7 +1058,6 @@ private:
     off_t StoredSize;
     time_t StoredTime;
     bool Overridden;
-    bool Transient;
   };
 
   /// \brief Reads the stored information about an input file.
@@ -1364,7 +1363,7 @@ public:
   /// \param ClientLoadCapabilities The set of client load-failure
   /// capabilities, represented as a bitset of the enumerators of
   /// LoadFailureCapabilities.
-  ASTReadResult ReadAST(StringRef FileName, ModuleKind Type,
+  ASTReadResult ReadAST(const std::string &FileName, ModuleKind Type,
                         SourceLocation ImportLoc,
                         unsigned ClientLoadCapabilities);
 

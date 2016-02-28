@@ -555,9 +555,10 @@ bool AArch64FastISel::computeAddress(const Value *Obj, Address &Addr, Type *Ty)
 
     // Iterate through the GEP folding the constants into offsets where
     // we can.
-    for (gep_type_iterator GTI = gep_type_begin(U), E = gep_type_end(U);
-         GTI != E; ++GTI) {
-      const Value *Op = GTI.getOperand();
+    gep_type_iterator GTI = gep_type_begin(U);
+    for (User::const_op_iterator i = U->op_begin() + 1, e = U->op_end(); i != e;
+         ++i, ++GTI) {
+      const Value *Op = *i;
       if (StructType *STy = dyn_cast<StructType>(*GTI)) {
         const StructLayout *SL = DL.getStructLayout(STy);
         unsigned Idx = cast<ConstantInt>(Op)->getZExtValue();
@@ -2274,6 +2275,7 @@ bool AArch64FastISel::selectBranch(const Instruction *I) {
   MachineBasicBlock *TBB = FuncInfo.MBBMap[BI->getSuccessor(0)];
   MachineBasicBlock *FBB = FuncInfo.MBBMap[BI->getSuccessor(1)];
 
+  AArch64CC::CondCode CC = AArch64CC::NE;
   if (const CmpInst *CI = dyn_cast<CmpInst>(BI->getCondition())) {
     if (CI->hasOneUse() && isValueAvailable(CI)) {
       // Try to optimize or fold the cmp.
@@ -2305,7 +2307,7 @@ bool AArch64FastISel::selectBranch(const Instruction *I) {
 
       // FCMP_UEQ and FCMP_ONE cannot be checked with a single branch
       // instruction.
-      AArch64CC::CondCode CC = getCompareCC(Predicate);
+      CC = getCompareCC(Predicate);
       AArch64CC::CondCode ExtraCC = AArch64CC::AL;
       switch (Predicate) {
       default:
@@ -2336,37 +2338,65 @@ bool AArch64FastISel::selectBranch(const Instruction *I) {
       finishCondBranch(BI->getParent(), TBB, FBB);
       return true;
     }
+  } else if (TruncInst *TI = dyn_cast<TruncInst>(BI->getCondition())) {
+    MVT SrcVT;
+    if (TI->hasOneUse() && isValueAvailable(TI) &&
+        isTypeSupported(TI->getOperand(0)->getType(), SrcVT)) {
+      unsigned CondReg = getRegForValue(TI->getOperand(0));
+      if (!CondReg)
+        return false;
+      bool CondIsKill = hasTrivialKill(TI->getOperand(0));
+
+      // Issue an extract_subreg to get the lower 32-bits.
+      if (SrcVT == MVT::i64) {
+        CondReg = fastEmitInst_extractsubreg(MVT::i32, CondReg, CondIsKill,
+                                             AArch64::sub_32);
+        CondIsKill = true;
+      }
+
+      unsigned ANDReg = emitAnd_ri(MVT::i32, CondReg, CondIsKill, 1);
+      assert(ANDReg && "Unexpected AND instruction emission failure.");
+      emitICmp_ri(MVT::i32, ANDReg, /*IsKill=*/true, 0);
+
+      if (FuncInfo.MBB->isLayoutSuccessor(TBB)) {
+        std::swap(TBB, FBB);
+        CC = AArch64CC::EQ;
+      }
+      BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, TII.get(AArch64::Bcc))
+          .addImm(CC)
+          .addMBB(TBB);
+
+      finishCondBranch(BI->getParent(), TBB, FBB);
+      return true;
+    }
   } else if (const auto *CI = dyn_cast<ConstantInt>(BI->getCondition())) {
     uint64_t Imm = CI->getZExtValue();
     MachineBasicBlock *Target = (Imm == 0) ? FBB : TBB;
     BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, TII.get(AArch64::B))
         .addMBB(Target);
 
-    // Obtain the branch probability and add the target to the successor list.
+    // Obtain the branch weight and add the target to the successor list.
     if (FuncInfo.BPI) {
-      auto BranchProbability = FuncInfo.BPI->getEdgeProbability(
-          BI->getParent(), Target->getBasicBlock());
-      FuncInfo.MBB->addSuccessor(Target, BranchProbability);
+      uint32_t BranchWeight =
+          FuncInfo.BPI->getEdgeWeight(BI->getParent(), Target->getBasicBlock());
+      FuncInfo.MBB->addSuccessor(Target, BranchWeight);
     } else
-      FuncInfo.MBB->addSuccessorWithoutProb(Target);
+      FuncInfo.MBB->addSuccessorWithoutWeight(Target);
     return true;
-  } else {
-    AArch64CC::CondCode CC = AArch64CC::NE;
-    if (foldXALUIntrinsic(CC, I, BI->getCondition())) {
-      // Fake request the condition, otherwise the intrinsic might be completely
-      // optimized away.
-      unsigned CondReg = getRegForValue(BI->getCondition());
-      if (!CondReg)
-        return false;
+  } else if (foldXALUIntrinsic(CC, I, BI->getCondition())) {
+    // Fake request the condition, otherwise the intrinsic might be completely
+    // optimized away.
+    unsigned CondReg = getRegForValue(BI->getCondition());
+    if (!CondReg)
+      return false;
 
-      // Emit the branch.
-      BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, TII.get(AArch64::Bcc))
-        .addImm(CC)
-        .addMBB(TBB);
+    // Emit the branch.
+    BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, TII.get(AArch64::Bcc))
+      .addImm(CC)
+      .addMBB(TBB);
 
-      finishCondBranch(BI->getParent(), TBB, FBB);
-      return true;
-    }
+    finishCondBranch(BI->getParent(), TBB, FBB);
+    return true;
   }
 
   unsigned CondReg = getRegForValue(BI->getCondition());
@@ -2374,19 +2404,26 @@ bool AArch64FastISel::selectBranch(const Instruction *I) {
     return false;
   bool CondRegIsKill = hasTrivialKill(BI->getCondition());
 
-  // i1 conditions come as i32 values, test the lowest bit with tb(n)z.
-  unsigned Opcode = AArch64::TBNZW;
+  // We've been divorced from our compare!  Our block was split, and
+  // now our compare lives in a predecessor block.  We musn't
+  // re-compare here, as the children of the compare aren't guaranteed
+  // live across the block boundary (we *could* check for this).
+  // Regardless, the compare has been done in the predecessor block,
+  // and it left a value for us in a virtual register.  Ergo, we test
+  // the one-bit value left in the virtual register.
+  //
+  // FIXME: Optimize this with TBZW/TBZNW.
+  unsigned ANDReg = emitAnd_ri(MVT::i32, CondReg, CondRegIsKill, 1);
+  assert(ANDReg && "Unexpected AND instruction emission failure.");
+  emitICmp_ri(MVT::i32, ANDReg, /*IsKill=*/true, 0);
+
   if (FuncInfo.MBB->isLayoutSuccessor(TBB)) {
     std::swap(TBB, FBB);
-    Opcode = AArch64::TBZW;
+    CC = AArch64CC::EQ;
   }
 
-  const MCInstrDesc &II = TII.get(Opcode);
-  unsigned ConstrainedCondReg
-    = constrainOperandRegClass(II, CondReg, II.getNumDefs());
-  BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, II)
-      .addReg(ConstrainedCondReg, getKillRegState(CondRegIsKill))
-      .addImm(0)
+  BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, TII.get(AArch64::Bcc))
+      .addImm(CC)
       .addMBB(TBB);
 
   finishCondBranch(BI->getParent(), TBB, FBB);
@@ -2413,10 +2450,6 @@ bool AArch64FastISel::selectIndirectBr(const Instruction *I) {
 
 bool AArch64FastISel::selectCmp(const Instruction *I) {
   const CmpInst *CI = cast<CmpInst>(I);
-
-  // Vectors of i1 are weird: bail out.
-  if (CI->getType()->isVectorTy())
-    return false;
 
   // Try to optimize or fold the cmp.
   CmpInst::Predicate Predicate = optimizeCmpPredicate(CI);
@@ -3645,9 +3678,6 @@ bool AArch64FastISel::selectRet(const Instruction *I) {
   if (F.isVarArg())
     return false;
 
-  if (TLI.supportSplitCSR(FuncInfo.MF))
-    return false;
-
   // Build a list of return value registers.
   SmallVector<unsigned, 4> RetRegs;
 
@@ -4813,18 +4843,18 @@ bool AArch64FastISel::selectGetElementPtr(const Instruction *I) {
   // Keep a running tab of the total offset to coalesce multiple N = N + Offset
   // into a single N = N + TotalOffset.
   uint64_t TotalOffs = 0;
+  Type *Ty = I->getOperand(0)->getType();
   MVT VT = TLI.getPointerTy(DL);
-  for (gep_type_iterator GTI = gep_type_begin(I), E = gep_type_end(I);
-       GTI != E; ++GTI) {
-    const Value *Idx = GTI.getOperand();
-    if (auto *StTy = dyn_cast<StructType>(*GTI)) {
+  for (auto OI = std::next(I->op_begin()), E = I->op_end(); OI != E; ++OI) {
+    const Value *Idx = *OI;
+    if (auto *StTy = dyn_cast<StructType>(Ty)) {
       unsigned Field = cast<ConstantInt>(Idx)->getZExtValue();
       // N = N + Offset
       if (Field)
         TotalOffs += DL.getStructLayout(StTy)->getElementOffset(Field);
+      Ty = StTy->getElementType(Field);
     } else {
-      Type *Ty = GTI.getIndexedType();
-
+      Ty = cast<SequentialType>(Ty)->getElementType();
       // If this is a constant subscript, handle it quickly.
       if (const auto *CI = dyn_cast<ConstantInt>(Idx)) {
         if (CI->isZero())
