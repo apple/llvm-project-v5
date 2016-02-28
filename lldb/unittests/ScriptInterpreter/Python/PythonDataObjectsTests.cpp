@@ -16,38 +16,37 @@
 #include "Plugins/ScriptInterpreter/Python/PythonDataObjects.h"
 #include "Plugins/ScriptInterpreter/Python/ScriptInterpreterPython.h"
 
-#include "PythonTestSuite.h"
-
 using namespace lldb_private;
 
-class PythonDataObjectsTest : public PythonTestSuite
+class PythonDataObjectsTest : public testing::Test
 {
   public:
     void
     SetUp() override
     {
-        PythonTestSuite::SetUp();
+        HostInfoBase::Initialize();
+        // ScriptInterpreterPython::Initialize() depends on HostInfo being
+        // initializedso it can compute the python directory etc.
+        ScriptInterpreterPython::Initialize();
 
-        PythonString sys_module("sys");
-        m_sys_module.Reset(PyRefType::Owned, PyImport_Import(sys_module.get()));
-        m_main_module = PythonModule::MainModule();
-        m_builtins_module = PythonModule::BuiltinsModule();
+        // Although we don't care about concurrency for the purposes of running
+        // this test suite, Python requires the GIL to be locked even for
+        // deallocating memory, which can happen when you call Py_DECREF or
+        // Py_INCREF.  So acquire the GIL for the entire duration of this
+        // test suite.
+        m_gil_state = PyGILState_Ensure();
     }
 
     void
     TearDown() override
     {
-        m_sys_module.Reset();
-        m_main_module.Reset();
-        m_builtins_module.Reset();
+        PyGILState_Release(m_gil_state);
 
-        PythonTestSuite::TearDown();
+        ScriptInterpreterPython::Terminate();
     }
 
-  protected:
-    PythonModule m_sys_module;
-    PythonModule m_main_module;
-    PythonModule m_builtins_module;
+  private:
+    PyGILState_STATE m_gil_state;
 };
 
 TEST_F(PythonDataObjectsTest, TestOwnedReferences)
@@ -97,81 +96,6 @@ TEST_F(PythonDataObjectsTest, TestBorrowedReferences)
     EXPECT_EQ(original_refcnt + 1, borrowed_long.get()->ob_refcnt);
 }
 
-TEST_F(PythonDataObjectsTest, TestGlobalNameResolutionNoDot)
-{
-    PythonObject sys_module = m_main_module.ResolveName("sys");
-    EXPECT_EQ(m_sys_module.get(), sys_module.get());
-    EXPECT_TRUE(sys_module.IsAllocated());
-    EXPECT_TRUE(PythonModule::Check(sys_module.get()));
-}
-
-TEST_F(PythonDataObjectsTest, TestModuleNameResolutionNoDot)
-{
-    PythonObject sys_path = m_sys_module.ResolveName("path");
-    PythonObject sys_version_info = m_sys_module.ResolveName("version_info");
-    EXPECT_TRUE(sys_path.IsAllocated());
-    EXPECT_TRUE(sys_version_info.IsAllocated());
-
-    EXPECT_TRUE(PythonList::Check(sys_path.get()));
-}
-
-TEST_F(PythonDataObjectsTest, TestTypeNameResolutionNoDot)
-{
-    PythonObject sys_version_info = m_sys_module.ResolveName("version_info");
-
-    PythonObject version_info_type(PyRefType::Owned, PyObject_Type(sys_version_info.get()));
-    EXPECT_TRUE(version_info_type.IsAllocated());
-    PythonObject major_version_field = version_info_type.ResolveName("major");
-    EXPECT_TRUE(major_version_field.IsAllocated());
-}
-
-TEST_F(PythonDataObjectsTest, TestInstanceNameResolutionNoDot)
-{
-    PythonObject sys_version_info = m_sys_module.ResolveName("version_info");
-    PythonObject major_version_field = sys_version_info.ResolveName("major");
-    PythonObject minor_version_field = sys_version_info.ResolveName("minor");
-
-    EXPECT_TRUE(major_version_field.IsAllocated());
-    EXPECT_TRUE(minor_version_field.IsAllocated());
-
-    PythonInteger major_version_value = major_version_field.AsType<PythonInteger>();
-    PythonInteger minor_version_value = minor_version_field.AsType<PythonInteger>();
-
-    EXPECT_EQ(PY_MAJOR_VERSION, major_version_value.GetInteger());
-    EXPECT_EQ(PY_MINOR_VERSION, minor_version_value.GetInteger());
-}
-
-TEST_F(PythonDataObjectsTest, TestGlobalNameResolutionWithDot)
-{
-    PythonObject sys_path = m_main_module.ResolveName("sys.path");
-    EXPECT_TRUE(sys_path.IsAllocated());
-    EXPECT_TRUE(PythonList::Check(sys_path.get()));
-
-    PythonInteger version_major = m_main_module.ResolveName(
-        "sys.version_info.major").AsType<PythonInteger>();
-    PythonInteger version_minor = m_main_module.ResolveName(
-        "sys.version_info.minor").AsType<PythonInteger>();
-    EXPECT_TRUE(version_major.IsAllocated());
-    EXPECT_TRUE(version_minor.IsAllocated());
-    EXPECT_EQ(PY_MAJOR_VERSION, version_major.GetInteger());
-    EXPECT_EQ(PY_MINOR_VERSION, version_minor.GetInteger());
-}
-
-TEST_F(PythonDataObjectsTest, TestDictionaryResolutionWithDot)
-{
-    // Make up a custom dictionary with "sys" pointing to the `sys` module.
-    PythonDictionary dict(PyInitialValue::Empty);
-    dict.SetItemForKey(PythonString("sys"), m_sys_module);
-
-    // Now use that dictionary to resolve `sys.version_info.major`
-    PythonInteger version_major = PythonObject::ResolveNameWithDictionary(
-        "sys.version_info.major", dict).AsType<PythonInteger>();
-    PythonInteger version_minor = PythonObject::ResolveNameWithDictionary(
-        "sys.version_info.minor", dict).AsType<PythonInteger>();
-    EXPECT_EQ(PY_MAJOR_VERSION, version_major.GetInteger());
-    EXPECT_EQ(PY_MINOR_VERSION, version_minor.GetInteger());
-}
-
 TEST_F(PythonDataObjectsTest, TestPythonInteger)
 {
 // Test that integers behave correctly when wrapped by a PythonInteger.
@@ -203,46 +127,13 @@ TEST_F(PythonDataObjectsTest, TestPythonInteger)
     EXPECT_EQ(7, constructed_int.GetInteger());
 }
 
-TEST_F(PythonDataObjectsTest, TestPythonBytes)
-{
-    static const char *test_bytes = "PythonDataObjectsTest::TestPythonBytes";
-    PyObject *py_bytes = PyBytes_FromString(test_bytes);
-    EXPECT_TRUE(PythonBytes::Check(py_bytes));
-    PythonBytes python_bytes(PyRefType::Owned, py_bytes);
-
-#if PY_MAJOR_VERSION < 3
-    EXPECT_TRUE(PythonString::Check(py_bytes));
-    EXPECT_EQ(PyObjectType::String, python_bytes.GetObjectType());
-#else
-    EXPECT_FALSE(PythonString::Check(py_bytes));
-    EXPECT_EQ(PyObjectType::Bytes, python_bytes.GetObjectType());
-#endif
-
-    llvm::ArrayRef<uint8_t> bytes = python_bytes.GetBytes();
-    EXPECT_EQ(bytes.size(), strlen(test_bytes));
-    EXPECT_EQ(0, ::memcmp(bytes.data(), test_bytes, bytes.size()));
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonByteArray)
-{
-    static const char *test_bytes = "PythonDataObjectsTest::TestPythonByteArray";
-    llvm::StringRef orig_bytes(test_bytes);
-    PyObject *py_bytes = PyByteArray_FromStringAndSize(test_bytes, orig_bytes.size());
-    EXPECT_TRUE(PythonByteArray::Check(py_bytes));
-    PythonByteArray python_bytes(PyRefType::Owned, py_bytes);
-    EXPECT_EQ(PyObjectType::ByteArray, python_bytes.GetObjectType());
-
-    llvm::ArrayRef<uint8_t> after_bytes = python_bytes.GetBytes();
-    EXPECT_EQ(after_bytes.size(), orig_bytes.size());
-    EXPECT_EQ(0, ::memcmp(orig_bytes.data(), test_bytes, orig_bytes.size()));
-}
-
 TEST_F(PythonDataObjectsTest, TestPythonString)
 {
     // Test that strings behave correctly when wrapped by a PythonString.
 
     static const char *test_string = "PythonDataObjectsTest::TestPythonString1";
     static const char *test_string2 = "PythonDataObjectsTest::TestPythonString2";
+    static const char *test_string3 = "PythonDataObjectsTest::TestPythonString3";
 
 #if PY_MAJOR_VERSION < 3
     // Verify that `PythonString` works correctly when given a PyString object.
@@ -264,8 +155,8 @@ TEST_F(PythonDataObjectsTest, TestPythonString)
 
     // Test that creating a `PythonString` object works correctly with the
     // string constructor
-    PythonString constructed_string(test_string2);
-    EXPECT_STREQ(test_string2, constructed_string.GetString().str().c_str());
+    PythonString constructed_string(test_string3);
+    EXPECT_STREQ(test_string3, constructed_string.GetString().str().c_str());
 }
 
 TEST_F(PythonDataObjectsTest, TestPythonStringToStr)
@@ -287,7 +178,7 @@ TEST_F(PythonDataObjectsTest, TestPythonIntegerToStructuredInteger)
 {
     PythonInteger integer(7);
     auto int_sp = integer.CreateStructuredInteger();
-    EXPECT_EQ(7U, int_sp->GetValue());
+    EXPECT_EQ(7, int_sp->GetValue());
 }
 
 TEST_F(PythonDataObjectsTest, TestPythonStringToStructuredString)
@@ -302,7 +193,7 @@ TEST_F(PythonDataObjectsTest, TestPythonListValueEquality)
 {
     // Test that a list which is built through the native
     // Python API behaves correctly when wrapped by a PythonList.
-    static const unsigned list_size = 2;
+    static const int list_size = 2;
     static const long long_value0 = 5;
     static const char *const string_value1 = "String Index 1";
 
@@ -314,7 +205,7 @@ TEST_F(PythonDataObjectsTest, TestPythonListValueEquality)
     list_items[0].Reset(PythonInteger(long_value0));
     list_items[1].Reset(PythonString(string_value1));
 
-    for (unsigned i = 0; i < list_size; ++i)
+    for (int i = 0; i < list_size; ++i)
         list.SetItemAtIndex(i, list_items[i]);
 
     EXPECT_EQ(list_size, list.GetSize());
@@ -347,7 +238,7 @@ TEST_F(PythonDataObjectsTest, TestPythonListManipulation)
 
     list.AppendItem(integer);
     list.AppendItem(string);
-    EXPECT_EQ(2U, list.GetSize());
+    EXPECT_EQ(2, list.GetSize());
 
     // Verify that the values match
     PythonObject chk_value1 = list.GetItemAtIndex(0);
@@ -378,81 +269,15 @@ TEST_F(PythonDataObjectsTest, TestPythonListToStructuredList)
     auto int_sp = array_sp->GetItemAtIndex(0)->GetAsInteger();
     auto string_sp = array_sp->GetItemAtIndex(1)->GetAsString();
 
-    EXPECT_EQ(long_value0, long(int_sp->GetValue()));
+    EXPECT_EQ(long_value0, int_sp->GetValue());
     EXPECT_STREQ(string_value1, string_sp->GetValue().c_str());
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonTupleSize)
-{
-    PythonTuple tuple(PyInitialValue::Empty);
-    EXPECT_EQ(0U, tuple.GetSize());
-
-    tuple = PythonTuple(3);
-    EXPECT_EQ(3U, tuple.GetSize());
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonTupleValues)
-{
-    PythonTuple tuple(3);
-
-    PythonInteger int_value(1);
-    PythonString string_value("Test");
-    PythonObject none_value(PyRefType::Borrowed, Py_None);
-
-    tuple.SetItemAtIndex(0, int_value);
-    tuple.SetItemAtIndex(1, string_value);
-    tuple.SetItemAtIndex(2, none_value);
-
-    EXPECT_EQ(tuple.GetItemAtIndex(0).get(), int_value.get());
-    EXPECT_EQ(tuple.GetItemAtIndex(1).get(), string_value.get());
-    EXPECT_EQ(tuple.GetItemAtIndex(2).get(), none_value.get());
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonTupleInitializerList)
-{
-    PythonInteger int_value(1);
-    PythonString string_value("Test");
-    PythonObject none_value(PyRefType::Borrowed, Py_None);
-    PythonTuple tuple{ int_value, string_value, none_value };
-    EXPECT_EQ(3U, tuple.GetSize());
-
-    EXPECT_EQ(tuple.GetItemAtIndex(0).get(), int_value.get());
-    EXPECT_EQ(tuple.GetItemAtIndex(1).get(), string_value.get());
-    EXPECT_EQ(tuple.GetItemAtIndex(2).get(), none_value.get());
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonTupleInitializerList2)
-{
-    PythonInteger int_value(1);
-    PythonString string_value("Test");
-    PythonObject none_value(PyRefType::Borrowed, Py_None);
-
-    PythonTuple tuple{ int_value.get(), string_value.get(), none_value.get() };
-    EXPECT_EQ(3U, tuple.GetSize());
-
-    EXPECT_EQ(tuple.GetItemAtIndex(0).get(), int_value.get());
-    EXPECT_EQ(tuple.GetItemAtIndex(1).get(), string_value.get());
-    EXPECT_EQ(tuple.GetItemAtIndex(2).get(), none_value.get());
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonTupleToStructuredList)
-{
-    PythonInteger int_value(1);
-    PythonString string_value("Test");
-
-    PythonTuple tuple{ int_value.get(), string_value.get() };
-
-    auto array_sp = tuple.CreateStructuredArray();
-    EXPECT_EQ(tuple.GetSize(), array_sp->GetSize());
-    EXPECT_EQ(StructuredData::Type::eTypeInteger, array_sp->GetItemAtIndex(0)->GetType());
-    EXPECT_EQ(StructuredData::Type::eTypeString, array_sp->GetItemAtIndex(1)->GetType());
 }
 
 TEST_F(PythonDataObjectsTest, TestPythonDictionaryValueEquality)
 {
     // Test that a dictionary which is built through the native
     // Python API behaves correctly when wrapped by a PythonDictionary.
-    static const unsigned dict_entries = 2;
+    static const int dict_entries = 2;
     const char *key_0 = "Key 0";
     int key_1 = 1;
     const int value_0 = 0;
@@ -470,7 +295,7 @@ TEST_F(PythonDataObjectsTest, TestPythonDictionaryValueEquality)
     EXPECT_TRUE(PythonDictionary::Check(py_dict));
     PythonDictionary dict(PyRefType::Owned, py_dict);
 
-    for (unsigned i = 0; i < dict_entries; ++i)
+    for (int i = 0; i < dict_entries; ++i)
         PyDict_SetItem(py_dict, py_keys[i].get(), py_values[i].get());
     EXPECT_EQ(dict.GetSize(), dict_entries);
     EXPECT_EQ(PyObjectType::Dictionary, dict.GetObjectType());
@@ -492,7 +317,7 @@ TEST_F(PythonDataObjectsTest, TestPythonDictionaryManipulation)
 {
     // Test that manipulation of a dictionary behaves correctly when wrapped
     // by a PythonDictionary.
-    static const unsigned dict_entries = 2;
+    static const int dict_entries = 2;
 
     const char *const key_0 = "Key 0";
     const char *const key_1 = "Key 1";
@@ -539,7 +364,7 @@ TEST_F(PythonDataObjectsTest, TestPythonDictionaryToStructuredDictionary)
     dict.SetItemForKey(PythonString(string_key1), PythonInteger(int_value1));
 
     auto dict_sp = dict.CreateStructuredDictionary();
-    EXPECT_EQ(2U, dict_sp->GetSize());
+    EXPECT_EQ(2, dict_sp->GetSize());
 
     EXPECT_TRUE(dict_sp->HasKey(string_key0));
     EXPECT_TRUE(dict_sp->HasKey(string_key1));
@@ -548,34 +373,7 @@ TEST_F(PythonDataObjectsTest, TestPythonDictionaryToStructuredDictionary)
     auto int_sp = dict_sp->GetValueForKey(string_key1)->GetAsInteger();
 
     EXPECT_STREQ(string_value0, string_sp->GetValue().c_str());
-    EXPECT_EQ(int_value1, long(int_sp->GetValue()));
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonCallableCheck)
-{
-    PythonObject sys_exc_info = m_sys_module.ResolveName("exc_info");
-    PythonObject none(PyRefType::Borrowed, Py_None);
-
-    EXPECT_TRUE(PythonCallable::Check(sys_exc_info.get()));
-    EXPECT_FALSE(PythonCallable::Check(none.get()));
-}
-
-TEST_F(PythonDataObjectsTest, TestPythonCallableInvoke)
-{
-    auto list = m_builtins_module.ResolveName("list").AsType<PythonCallable>();
-    PythonInteger one(1);
-    PythonString two("two");
-    PythonTuple three = { one, two };
-
-    PythonTuple tuple_to_convert = { one, two, three };
-    PythonObject result = list({ tuple_to_convert });
-
-    EXPECT_TRUE(PythonList::Check(result.get()));
-    auto list_result = result.AsType<PythonList>();
-    EXPECT_EQ(3U, list_result.GetSize());
-    EXPECT_EQ(one.get(), list_result.GetItemAtIndex(0).get());
-    EXPECT_EQ(two.get(), list_result.GetItemAtIndex(1).get());
-    EXPECT_EQ(three.get(), list_result.GetItemAtIndex(2).get());
+    EXPECT_EQ(int_value1, int_sp->GetValue());
 }
 
 TEST_F(PythonDataObjectsTest, TestPythonFile)

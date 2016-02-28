@@ -7,13 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-// C Includes
-// C++ Includes
-#include <climits>
-
-// Other libraries and framework includes
-// Project includes
 #include "lldb/Target/ProcessInfo.h"
+
+// C Includes
+#include <limits.h>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -86,7 +83,9 @@ ProcessInfo::SetExecutableFile (const FileSpec &exe_file, bool add_exe_file_as_f
 const char *
 ProcessInfo::GetArg0 () const
 {
-    return (m_arg0.empty() ? nullptr : m_arg0.c_str());
+    if (m_arg0.empty())
+        return NULL;
+    return m_arg0.c_str();
 }
 
 void
@@ -117,7 +116,6 @@ ProcessInfo::SetArguments (char const **argv, bool first_arg_is_executable)
         }
     }
 }
-
 void
 ProcessInfo::SetArguments (const Args& args, bool first_arg_is_executable)
 {

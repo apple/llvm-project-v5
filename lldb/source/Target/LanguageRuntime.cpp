@@ -12,8 +12,6 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Target/LanguageRuntime.h"
-#include "Plugins/Language/CPlusPlus/CPlusPlusLanguage.h"
-#include "Plugins/Language/ObjC/ObjCLanguage.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Core/PluginManager.h"
@@ -29,10 +27,10 @@ public:
     ExceptionSearchFilter (const lldb::TargetSP &target_sp,
                            lldb::LanguageType language,
                            bool update_module_list = true) :
-        SearchFilter(target_sp),
-        m_language(language),
-        m_language_runtime(nullptr),
-        m_filter_sp()
+        SearchFilter (target_sp),
+        m_language (language),
+        m_language_runtime (NULL),
+        m_filter_sp ()
     {
         if (update_module_list)
             UpdateModuleListIfNeeded ();
@@ -92,7 +90,7 @@ protected:
         if (process_sp)
         {
             bool refreash_filter = !m_filter_sp;
-            if (m_language_runtime == nullptr)
+            if (m_language_runtime == NULL)
             {
                 m_language_runtime = process_sp->GetLanguageRuntime(m_language);
                 refreash_filter = true;
@@ -115,7 +113,7 @@ protected:
         else
         {
             m_filter_sp.reset();
-            m_language_runtime = nullptr;
+            m_language_runtime = NULL;
         }
     }
 };
@@ -128,11 +126,11 @@ public:
     ExceptionBreakpointResolver (lldb::LanguageType language,
                                  bool catch_bp,
                                  bool throw_bp) :
-        BreakpointResolver(nullptr, BreakpointResolver::ExceptionResolver),
-        m_language(language),
-        m_language_runtime(nullptr),
-        m_catch_bp(catch_bp),
-        m_throw_bp(throw_bp)
+        BreakpointResolver (NULL, BreakpointResolver::ExceptionResolver),
+        m_language (language),
+        m_language_runtime (NULL),
+        m_catch_bp (catch_bp),
+        m_throw_bp (throw_bp)
     {
     }
 
@@ -163,12 +161,10 @@ public:
     void
     GetDescription (Stream *s) override
     {
-       Language *language_plugin = Language::FindPlugin(m_language);
-       if (language_plugin)
-           language_plugin->GetExceptionResolverDescription(m_catch_bp, m_throw_bp, *s);
-       else
-           Language::GetDefaultExceptionResolverDescription(m_catch_bp, m_throw_bp, *s);
-           
+        s->Printf ("Exception breakpoint (catch: %s throw: %s)",
+                   m_catch_bp ? "on" : "off",
+                   m_throw_bp ? "on" : "off");
+        
         SetActualResolver();
         if (m_actual_resolver_sp)
         {
@@ -207,7 +203,7 @@ protected:
             if (process_sp)
             {
                 bool refreash_resolver = !m_actual_resolver_sp;
-                if (m_language_runtime == nullptr)
+                if (m_language_runtime == NULL)
                 {
                     m_language_runtime = process_sp->GetLanguageRuntime(m_language);
                     refreash_resolver = true;
@@ -230,17 +226,16 @@ protected:
             else
             {
                 m_actual_resolver_sp.reset();
-                m_language_runtime = nullptr;
+                m_language_runtime = NULL;
             }
         }
         else
         {
             m_actual_resolver_sp.reset();
-            m_language_runtime = nullptr;
+            m_language_runtime = NULL;
         }
         return (bool)m_actual_resolver_sp;
     }
-
     lldb::BreakpointResolverSP m_actual_resolver_sp;
     lldb::LanguageType m_language;
     LanguageRuntime *m_language_runtime;
@@ -255,16 +250,16 @@ LanguageRuntime::FindPlugin (Process *process, lldb::LanguageType language)
     LanguageRuntimeCreateInstance create_callback;
 
     for (uint32_t idx = 0;
-         (create_callback = PluginManager::GetLanguageRuntimeCreateCallbackAtIndex(idx)) != nullptr;
+         (create_callback = PluginManager::GetLanguageRuntimeCreateCallbackAtIndex(idx)) != NULL;
          ++idx)
     {
         language_runtime_ap.reset (create_callback(process, language));
 
-        if (language_runtime_ap)
+        if (language_runtime_ap.get())
             return language_runtime_ap.release();
     }
 
-    return nullptr;
+    return NULL;
 }
 
 LanguageRuntime::LanguageRuntime(Process *process) :
@@ -337,9 +332,6 @@ LanguageRuntime::InitializeCommands (CommandObject* parent)
             CommandObjectSP command = command_callback(parent->GetCommandInterpreter());
             if (command)
             {
-                // the CommandObject vended by a Language plugin cannot be created once and cached because
-                // we may create multiple debuggers and need one instance of the command each - the implementing function
-                // is meant to create a new instance of the command each time it is invoked
                 parent->LoadSubCommand(command->GetCommandName(), command);
             }
         }
@@ -349,5 +341,5 @@ LanguageRuntime::InitializeCommands (CommandObject* parent)
 lldb::SearchFilterSP
 LanguageRuntime::CreateExceptionSearchFilter ()
 {
-    return m_process->GetTarget().GetSearchFilterForModule(nullptr);
+    return m_process->GetTarget().GetSearchFilterForModule(NULL);
 }

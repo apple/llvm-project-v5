@@ -4,16 +4,15 @@ from __future__ import print_function
 
 
 
-from distutils.version import StrictVersion
-
 import unittest2
 import os, time
-import platform
-
 import lldb
-from lldbsuite.test.decorators import *
+import platform
+import lldbsuite.test.lldbutil as lldbutil
+
+from distutils.version import StrictVersion
+
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class ModulesInlineFunctionsTestCase(TestBase):
 
@@ -27,7 +26,6 @@ class ModulesInlineFunctionsTestCase(TestBase):
 
     @skipUnlessDarwin
     @unittest2.skipIf(platform.system() != "Darwin" or StrictVersion('12.0.0') > platform.release(), "Only supported on Darwin 12.0.0+")
-    @expectedFailureDarwin("llvm.org/pr25743")
     def test_expr(self):
         self.build()
         exe = os.path.join(os.getcwd(), "a.out")

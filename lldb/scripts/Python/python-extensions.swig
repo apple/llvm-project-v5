@@ -608,20 +608,6 @@
                     return lldb_private::PythonString("").release();
         }
 }
-%extend lldb::SBTypeMemberFunction {
-        PyObject *lldb::SBTypeMemberFunction::__str__ (){
-                lldb::SBStream description;
-                $self->GetDescription (description, lldb::eDescriptionLevelBrief);
-                const char *desc = description.GetData();
-                size_t desc_len = description.GetSize();
-                if (desc_len > 0 && (desc[desc_len-1] == '\n' || desc[desc_len-1] == '\r'))
-                    --desc_len;
-                if (desc_len > 0)
-                    return lldb_private::PythonString(llvm::StringRef(desc, desc_len)).release();
-                else
-                    return lldb_private::PythonString("").release();
-        }
-}
 %extend lldb::SBTypeEnumMember {
         PyObject *lldb::SBTypeEnumMember::__str__ (){
                 lldb::SBStream description;
@@ -1024,13 +1010,11 @@ class value(object):
         return complex (int(self))
         
     def __int__(self):
-        is_num,is_sign = is_numeric_type(self.sbvalue.GetType().GetCanonicalType().GetBasicType())
-        if is_num and not is_sign: return self.sbvalue.GetValueAsUnsigned()
         return self.sbvalue.GetValueAsSigned()
-
+        
     def __long__(self):
-        return self.__int__()
-
+        return self.sbvalue.GetValueAsSigned()
+        
     def __float__(self):
         return float (self.sbvalue.GetValueAsSigned())
         
@@ -1060,7 +1044,7 @@ class value(object):
                 return self_val == other_val
         raise TypeError("Unknown type %s, No equality operation defined." % str(type(other)))
 
-    def __ne__(self, other):
+    def __neq__(self, other):
         return not self.__eq__(other)
 %}
 
@@ -1085,48 +1069,5 @@ class SBSyntheticValueProvider(object):
     def has_children(self):
         return False
 
-
-%}
-
-%pythoncode %{
-
-# given an lldb.SBBasicType it returns a tuple
-# (is_numeric, is_signed)
-# the value of is_signed is undefined if is_numeric == false
-def is_numeric_type(basic_type):
-    if basic_type == eBasicTypeInvalid: return (False,False)
-    if basic_type == eBasicTypeVoid: return (False,False)
-    if basic_type == eBasicTypeChar: return (True,False)
-    if basic_type == eBasicTypeSignedChar: return (True,True)
-    if basic_type == eBasicTypeUnsignedChar: return (True,False)
-    if basic_type == eBasicTypeWChar: return (True,False)
-    if basic_type == eBasicTypeSignedWChar: return (True,True)
-    if basic_type == eBasicTypeUnsignedWChar: return (True,False)
-    if basic_type == eBasicTypeChar16: return (True,False)
-    if basic_type == eBasicTypeChar32: return (True,False)
-    if basic_type == eBasicTypeShort: return (True,True)
-    if basic_type == eBasicTypeUnsignedShort: return (True,False)
-    if basic_type == eBasicTypeInt: return (True,True)
-    if basic_type == eBasicTypeUnsignedInt: return (True,False)
-    if basic_type == eBasicTypeLong: return (True,True)
-    if basic_type == eBasicTypeUnsignedLong: return (True,False)
-    if basic_type == eBasicTypeLongLong: return (True,True)
-    if basic_type == eBasicTypeUnsignedLongLong: return (True,False)
-    if basic_type == eBasicTypeInt128: return (True,True)
-    if basic_type == eBasicTypeUnsignedInt128: return (True,False)
-    if basic_type == eBasicTypeBool: return (False,False)
-    if basic_type == eBasicTypeHalf: return (True,True)
-    if basic_type == eBasicTypeFloat: return (True,True)
-    if basic_type == eBasicTypeDouble: return (True,True)
-    if basic_type == eBasicTypeLongDouble: return (True,True)
-    if basic_type == eBasicTypeFloatComplex: return (True,True)
-    if basic_type == eBasicTypeDoubleComplex: return (True,True)
-    if basic_type == eBasicTypeLongDoubleComplex: return (True,True)
-    if basic_type == eBasicTypeObjCID: return (False,False)
-    if basic_type == eBasicTypeObjCClass: return (False,False)
-    if basic_type == eBasicTypeObjCSel: return (False,False)
-    if basic_type == eBasicTypeNullPtr: return (False,False)
-    #if basic_type == eBasicTypeOther:
-    return (False,False)
 
 %}

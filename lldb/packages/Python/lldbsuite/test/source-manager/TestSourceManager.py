@@ -14,9 +14,8 @@ from __future__ import print_function
 
 
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class SourceManagerTestCase(TestBase):
 
@@ -27,6 +26,7 @@ class SourceManagerTestCase(TestBase):
         TestBase.setUp(self)
         # Find the line number to break inside main().
         self.line = line_number('main.c', '// Set break point at this line.')
+        lldb.skip_build_and_cleanup = False
 
     @add_test_categories(['pyapi'])
     def test_display_source_python(self):
@@ -81,12 +81,12 @@ class SourceManagerTestCase(TestBase):
         main_c_hidden = os.path.join("hidden", main_c)
         os.rename(main_c, main_c_hidden)
 
-        # Restore main.c after the test.
-        self.addTearDownHook(lambda: os.rename(main_c_hidden, main_c))
-
         if self.TraceOn():
             system([["ls"]])
             system([["ls", "hidden"]])
+
+        # Restore main.c after the test.
+        self.addTearDownHook(lambda: os.rename(main_c_hidden, main_c))
 
         # Set target.source-map settings.
         self.runCmd("settings set target.source-map %s %s" % (os.getcwd(), os.path.join(os.getcwd(), "hidden")))
@@ -134,7 +134,7 @@ class SourceManagerTestCase(TestBase):
         self.assertTrue(int(m.group(1)) > 0)
 
         # Read the main.c file content.
-        with io.open('main.c', 'r', newline='\n') as f:
+        with open('main.c', 'r') as f:
             original_content = f.read()
             if self.TraceOn():
                 print("original content:", original_content)
@@ -146,7 +146,7 @@ class SourceManagerTestCase(TestBase):
         def restore_file():
             #print("os.path.getmtime() before restore:", os.path.getmtime('main.c'))
             time.sleep(1)
-            with io.open('main.c', 'w', newline='\n') as f:
+            with open('main.c', 'wb') as f:
                 f.write(original_content)
             if self.TraceOn():
                 with open('main.c', 'r') as f:
@@ -157,8 +157,9 @@ class SourceManagerTestCase(TestBase):
                 print("os.path.getmtime() after restore:", os.path.getmtime('main.c'))
 
 
+
         # Modify the source code file.
-        with io.open('main.c', 'w', newline='\n') as f:
+        with open('main.c', 'wb') as f:
             time.sleep(1)
             f.write(new_content)
             if self.TraceOn():

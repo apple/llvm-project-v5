@@ -9,9 +9,8 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class CommonShortSpellingsTestCase(TestBase):
     
@@ -30,7 +29,6 @@ class CommonShortSpellingsTestCase(TestBase):
             ('dis', 'disassemble'),
             ('ta st a', 'target stop-hook add'),
             ('fr v', 'frame variable'),
-            ('f 1', 'frame select 1'),
             ('ta st li', 'target stop-hook list'),
         ]
 

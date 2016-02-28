@@ -20,7 +20,6 @@
 #include "lldb/Core/ValueObjectMemory.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/Symbol.h"
-#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/TypeList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -127,14 +126,12 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                         uint32_t num_matches = 0;
                         // First look in the module that the vtable symbol came from
                         // and look for a single exact match.
-                        llvm::DenseSet<SymbolFile *> searched_symbol_files;
                         if (sc.module_sp)
                         {
                             num_matches = sc.module_sp->FindTypes (sc,
                                                                    ConstString(class_name),
                                                                    exact_match,
                                                                    1,
-                                                                   searched_symbol_files,
                                                                    class_types);
                         }
                         
@@ -147,7 +144,6 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                                                                          ConstString(class_name),
                                                                          exact_match,
                                                                          UINT32_MAX,
-                                                                         searched_symbol_files,
                                                                          class_types);
                         }
                         
@@ -195,7 +191,7 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                                 type_sp = class_types.GetTypeAtIndex(i);
                                 if (type_sp)
                                 {
-                                    if (ClangASTContext::IsCXXClassType(type_sp->GetForwardCompilerType()))
+                                    if (ClangASTContext::IsCXXClassType(type_sp->GetFullCompilerType ()))
                                     {
                                         if (log)
                                             log->Printf ("0x%16.16" PRIx64 ": static-type = '%s' has multiple matching dynamic types, picking this one: uid={0x%" PRIx64 "}, type-name='%s'\n",
@@ -228,7 +224,7 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                         if (type_sp)
                         {
                             if (ClangASTContext::AreTypesSame (in_value.GetCompilerType(),
-                                                               type_sp->GetForwardCompilerType ()))
+                                                               type_sp->GetFullCompilerType ()))
                             {
                                 // The dynamic type we found was the same type,
                                 // so we don't have a dynamic type here...
@@ -323,6 +319,46 @@ ItaniumABILanguageRuntime::IsVTableName (const char *name)
         return false;
 }
 
+static std::map<ConstString, std::vector<ConstString> >&
+GetAlternateManglingPrefixes()
+{
+    static std::map<ConstString, std::vector<ConstString> > g_alternate_mangling_prefixes;
+    return g_alternate_mangling_prefixes;
+}
+
+
+size_t
+ItaniumABILanguageRuntime::GetAlternateManglings(const ConstString &mangled, std::vector<ConstString> &alternates)
+{
+    if (!mangled)
+        return static_cast<size_t>(0);
+
+    alternates.clear();
+    const char *mangled_cstr = mangled.AsCString();
+    std::map<ConstString, std::vector<ConstString> >& alternate_mangling_prefixes = GetAlternateManglingPrefixes();
+    for (std::map<ConstString, std::vector<ConstString> >::iterator it = alternate_mangling_prefixes.begin();
+         it != alternate_mangling_prefixes.end();
+         ++it)
+    {
+        const char *prefix_cstr = it->first.AsCString();
+        if (strncmp(mangled_cstr, prefix_cstr, strlen(prefix_cstr)) == 0)
+        {
+            const std::vector<ConstString> &alternate_prefixes = it->second;
+            for (size_t i = 0; i < alternate_prefixes.size(); ++i)
+            {
+                std::string alternate_mangling(alternate_prefixes[i].AsCString());
+                alternate_mangling.append(mangled_cstr + strlen(prefix_cstr));
+
+                alternates.push_back(ConstString(alternate_mangling.c_str()));
+            }
+
+            return alternates.size();
+        }
+    }
+
+    return static_cast<size_t>(0);
+}
+
 //------------------------------------------------------------------
 // Static Functions
 //------------------------------------------------------------------
@@ -346,6 +382,17 @@ ItaniumABILanguageRuntime::Initialize()
     PluginManager::RegisterPlugin (GetPluginNameStatic(),
                                    "Itanium ABI for the C++ language",
                                    CreateInstance);    
+
+    // Alternate manglings for std::basic_string<...>
+    std::vector<ConstString> basic_string_alternates;
+    basic_string_alternates.push_back(ConstString("_ZNSs"));
+    basic_string_alternates.push_back(ConstString("_ZNKSs"));
+    std::map<ConstString, std::vector<ConstString> >& alternate_mangling_prefixes = GetAlternateManglingPrefixes();
+
+    alternate_mangling_prefixes[ConstString("_ZNSbIcSt17char_traits<char>St15allocator<char>E")] =
+        basic_string_alternates;
+    alternate_mangling_prefixes[ConstString("_ZNKSbIcSt17char_traits<char>St15allocator<char>E")] =
+        basic_string_alternates;
 }
 
 void

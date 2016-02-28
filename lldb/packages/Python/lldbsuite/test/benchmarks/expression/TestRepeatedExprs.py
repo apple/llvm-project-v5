@@ -6,11 +6,7 @@ from __future__ import print_function
 
 import os, sys
 import lldb
-from lldbsuite.test.lldbbench import BenchBase
-from lldbsuite.test.decorators import *
-from lldbsuite.test.lldbtest import *
-from lldbsuite.test import configuration
-from lldbsuite.test import lldbutil
+from lldbsuite.test.lldbbench import *
 
 class RepeatedExprsCase(BenchBase):
 
@@ -22,10 +18,12 @@ class RepeatedExprsCase(BenchBase):
         self.line_to_break = line_number(self.source, '// Set breakpoint here.')
         self.lldb_avg = None
         self.gdb_avg = None
-        self.count = 100
+        self.count = lldb.bmIterationCount
+        if self.count <= 0:
+            self.count = 100
 
     @benchmarks_test
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr22274: need a pexpect replacement for windows")
+    @expectedFailureWindows("llvm.org/pr22274: need a pexpect replacement for windows")
     def test_compare_lldb_to_gdb(self):
         """Test repeated expressions with lldb vs. gdb."""
         self.build()

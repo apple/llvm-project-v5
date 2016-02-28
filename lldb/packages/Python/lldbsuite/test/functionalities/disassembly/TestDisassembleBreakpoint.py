@@ -8,15 +8,14 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class DisassemblyTestCase(TestBase):
 
     mydir = TestBase.compute_mydir(__file__)
 
-    @expectedFailureAll(oslist=["windows"], bugnumber="function names print fully demangled instead of name-only")
+    @expectedFailureWindows # Function name prints fully demangled instead of name-only
     def test(self):
         self.build()
         exe = os.path.join (os.getcwd(), "a.out")
@@ -33,16 +32,12 @@ class DisassemblyTestCase(TestBase):
         disassembly = self.res.GetOutput()
 
         # ARCH, if not specified, defaults to x86_64.
-        arch = self.getArchitecture()
-        if arch in ["", 'x86_64', 'i386', 'i686']:
+        if self.getArchitecture() in ["", 'x86_64', 'i386', 'i686']:
             breakpoint_opcodes = ["int3"]
             instructions = [' mov', ' addl ', 'ret']
-        elif arch in ["arm", "aarch64"]:
+        elif self.getArchitecture() in ["arm", "aarch64"]:
             breakpoint_opcodes = ["brk", "udf"]
             instructions = [' add ', ' ldr ', ' str ']
-        elif re.match("mips" , arch):
-            breakpoint_opcodes = ["break"]
-            instructions = ['lw', 'sw', 'jr']
         else:
             # TODO please add your arch here
             self.fail('unimplemented for arch = "{arch}"'.format(arch=self.getArchitecture()))

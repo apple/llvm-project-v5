@@ -94,12 +94,10 @@ PlatformNetBSD::Initialize ()
 
     if (g_initialize_count++ == 0)
     {
-#if defined(__NetBSD__)
         // Force a host flag to true for the default platform object.
         PlatformSP default_platform_sp (new PlatformNetBSD(true));
         default_platform_sp->SetSystemArchitecture(HostInfo::GetArchitecture());
         Platform::SetHostPlatform (default_platform_sp);
-#endif
         PluginManager::RegisterPlugin(PlatformNetBSD::GetPluginNameStatic(false),
                                       PlatformNetBSD::GetDescriptionStatic(false),
                                       PlatformNetBSD::CreateInstance);
@@ -584,6 +582,34 @@ PlatformNetBSD::GetStatus (Stream &strm)
 
     Platform::GetStatus(strm);
 }
+
+size_t
+PlatformNetBSD::GetSoftwareBreakpointTrapOpcode (Target &target, BreakpointSite *bp_site)
+{
+    ArchSpec arch = target.GetArchitecture();
+    const uint8_t *trap_opcode = NULL;
+    size_t trap_opcode_size = 0;
+
+    switch (arch.GetMachine())
+    {
+    default:
+        assert(false && "Unhandled architecture in PlatformNetBSD::GetSoftwareBreakpointTrapOpcode()");
+        break;
+    case llvm::Triple::x86:
+    case llvm::Triple::x86_64:
+        {
+            static const uint8_t g_i386_opcode[] = { 0xCC };
+            trap_opcode = g_i386_opcode;
+            trap_opcode_size = sizeof(g_i386_opcode);
+        }
+        break;
+    }
+
+    if (bp_site->SetTrapOpcode(trap_opcode, trap_opcode_size))
+        return trap_opcode_size;
+    return 0;
+}
+
 
 void
 PlatformNetBSD::CalculateTrapHandlerSymbolNames ()

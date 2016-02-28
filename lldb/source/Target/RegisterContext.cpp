@@ -32,7 +32,12 @@ RegisterContext::RegisterContext (Thread &thread, uint32_t concrete_frame_idx) :
 {
 }
 
-RegisterContext::~RegisterContext() = default;
+//----------------------------------------------------------------------
+// Destructor
+//----------------------------------------------------------------------
+RegisterContext::~RegisterContext()
+{
+}
 
 void
 RegisterContext::InvalidateIfNeeded (bool force)
@@ -56,6 +61,7 @@ RegisterContext::InvalidateIfNeeded (bool force)
     }
 }
 
+
 const RegisterInfo *
 RegisterContext::GetRegisterInfoByName (const char *reg_name, uint32_t start_idx)
 {
@@ -66,14 +72,14 @@ RegisterContext::GetRegisterInfoByName (const char *reg_name, uint32_t start_idx
         {
             const RegisterInfo * reg_info = GetRegisterInfoAtIndex(reg);
 
-            if ((reg_info->name != nullptr && ::strcasecmp (reg_info->name, reg_name) == 0) ||
-                (reg_info->alt_name != nullptr && ::strcasecmp (reg_info->alt_name, reg_name) == 0))
+            if ((reg_info->name != NULL && ::strcasecmp (reg_info->name, reg_name) == 0) ||
+                (reg_info->alt_name != NULL && ::strcasecmp (reg_info->alt_name, reg_name) == 0))
             {
                 return reg_info;
             }
         }
     }
-    return nullptr;
+    return NULL;
 }
 
 const RegisterInfo *
@@ -81,7 +87,7 @@ RegisterContext::GetRegisterInfo (lldb::RegisterKind kind, uint32_t num)
 {
     const uint32_t reg_num = ConvertRegisterKindToRegisterNumber(kind, num);
     if (reg_num == LLDB_INVALID_REGNUM)
-        return nullptr;
+        return NULL;
     return GetRegisterInfoAtIndex (reg_num);
 }
 
@@ -91,7 +97,7 @@ RegisterContext::GetRegisterName (uint32_t reg)
     const RegisterInfo * reg_info = GetRegisterInfoAtIndex(reg);
     if (reg_info)
         return reg_info->name;
-    return nullptr;
+    return NULL;
 }
 
 uint64_t
@@ -184,6 +190,7 @@ RegisterContext::GetFlags (uint64_t fail_value)
     uint32_t reg = ConvertRegisterKindToRegisterNumber (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_FLAGS);
     return ReadRegisterAsUnsigned (reg, fail_value);
 }
+
 
 uint64_t
 RegisterContext::ReadRegisterAsUnsigned (uint32_t reg, uint64_t fail_value)
@@ -290,6 +297,7 @@ RegisterContext::ClearHardwareBreakpoint (uint32_t hw_idx)
     return false;
 }
 
+
 uint32_t
 RegisterContext::NumSupportedHardwareWatchpoints ()
 {
@@ -321,12 +329,13 @@ RegisterContext::ReadRegisterValueFromMemory (const RegisterInfo *reg_info,
                                               RegisterValue &reg_value)
 {
     Error error;
-    if (reg_info == nullptr)
+    if (reg_info == NULL)
     {
         error.SetErrorString ("invalid register info argument.");
         return error;
     }
 
+    
     // Moving from addr into a register
     //
     // Case 1: src_len == dst_len
@@ -399,6 +408,7 @@ RegisterContext::WriteRegisterValueToMemory (const RegisterInfo *reg_info,
                                              uint32_t dst_len, 
                                              const RegisterValue &reg_value)
 {
+    
     uint8_t dst[RegisterValue::kMaxRegisterByteSize];
 
     Error error;
@@ -441,6 +451,7 @@ RegisterContext::WriteRegisterValueToMemory (const RegisterInfo *reg_info,
         error.SetErrorString("invalid process");
 
     return error;
+
 }
 
 bool
@@ -460,6 +471,7 @@ RegisterContext::CalculateTarget ()
 {
     return m_thread.CalculateTarget();
 }
+
 
 ProcessSP
 RegisterContext::CalculateProcess ()
@@ -488,6 +500,7 @@ RegisterContext::CalculateExecutionContext (ExecutionContext &exe_ctx)
     m_thread.CalculateExecutionContext (exe_ctx);
 }
 
+
 bool
 RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint32_t source_regnum, lldb::RegisterKind target_rk, uint32_t& target_regnum)
 {
@@ -499,7 +512,14 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
         if (reg_info->kinds[source_rk] == source_regnum)
         {
             target_regnum = reg_info->kinds[target_rk];
-            return (target_regnum != LLDB_INVALID_REGNUM);
+            if (target_regnum == LLDB_INVALID_REGNUM)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
+            }
         } 
     }
     return false;
@@ -551,7 +571,7 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
 //        case 1:
 //            {
 //                int8_t v;
-//                if (data.ExtractBytes (0, sizeof (int8_t), endian::InlHostByteOrder(), &v) != sizeof (int8_t))
+//                if (data.ExtractBytes (0, sizeof (int8_t), lldb::endian::InlHostByteOrder(), &v) != sizeof (int8_t))
 //                    return false;
 //                value = v;
 //                return true;
@@ -559,7 +579,7 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
 //        case 2:
 //            {
 //                int16_t v;
-//                if (data.ExtractBytes (0, sizeof (int16_t), endian::InlHostByteOrder(), &v) != sizeof (int16_t))
+//                if (data.ExtractBytes (0, sizeof (int16_t), lldb::endian::InlHostByteOrder(), &v) != sizeof (int16_t))
 //                    return false;
 //                value = v;
 //                return true;
@@ -567,7 +587,7 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
 //        case 4:
 //            {
 //                int32_t v;
-//                if (data.ExtractBytes (0, sizeof (int32_t), endian::InlHostByteOrder(), &v) != sizeof (int32_t))
+//                if (data.ExtractBytes (0, sizeof (int32_t), lldb::endian::InlHostByteOrder(), &v) != sizeof (int32_t))
 //                    return false;
 //                value = v;
 //                return true;
@@ -575,7 +595,7 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
 //        case 8:
 //            {
 //                int64_t v;
-//                if (data.ExtractBytes (0, sizeof (int64_t), endian::InlHostByteOrder(), &v) != sizeof (int64_t))
+//                if (data.ExtractBytes (0, sizeof (int64_t), lldb::endian::InlHostByteOrder(), &v) != sizeof (int64_t))
 //                    return false;
 //                value = v;
 //                return true;
@@ -588,7 +608,7 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
 //        case sizeof (float):
 //            {
 //                float v;
-//                if (data.ExtractBytes (0, sizeof (float), endian::InlHostByteOrder(), &v) != sizeof (float))
+//                if (data.ExtractBytes (0, sizeof (float), lldb::endian::InlHostByteOrder(), &v) != sizeof (float))
 //                    return false;
 //                value = v;
 //                return true;
@@ -596,7 +616,7 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
 //        case sizeof (double):
 //            {
 //                double v;
-//                if (data.ExtractBytes (0, sizeof (double), endian::InlHostByteOrder(), &v) != sizeof (double))
+//                if (data.ExtractBytes (0, sizeof (double), lldb::endian::InlHostByteOrder(), &v) != sizeof (double))
 //                    return false;
 //                value = v;
 //                return true;
@@ -604,7 +624,7 @@ RegisterContext::ConvertBetweenRegisterKinds (lldb::RegisterKind source_rk, uint
 //        case sizeof (long double):
 //            {
 //                double v;
-//                if (data.ExtractBytes (0, sizeof (long double), endian::InlHostByteOrder(), &v) != sizeof (long double))
+//                if (data.ExtractBytes (0, sizeof (long double), lldb::endian::InlHostByteOrder(), &v) != sizeof (long double))
 //                    return false;
 //                value = v;
 //                return true;

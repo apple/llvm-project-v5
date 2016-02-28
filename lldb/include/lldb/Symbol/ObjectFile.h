@@ -840,11 +840,7 @@ public:
     {
         return symbol_name.str();
     }
-
-    static lldb::SymbolType
-    GetSymbolTypeFromName (llvm::StringRef name,
-                           lldb::SymbolType symbol_type_hint = lldb::eSymbolTypeUndefined);
-
+    
 protected:
     //------------------------------------------------------------------
     // Member variables.
@@ -860,7 +856,6 @@ protected:
     const lldb::addr_t m_memory_addr;
     std::unique_ptr<lldb_private::SectionList> m_sections_ap;
     std::unique_ptr<lldb_private::Symtab> m_symtab_ap;
-    uint32_t m_synthetic_symbol_idx;
     
     //------------------------------------------------------------------
     /// Sets the architecture for a module.  At present the architecture
@@ -874,11 +869,7 @@ protected:
     ///     Returns \b true if the architecture was changed, \b
     ///     false otherwise.
     //------------------------------------------------------------------
-    bool
-    SetModulesArchitecture (const ArchSpec &new_arch);
-
-    ConstString
-    GetNextSyntheticSymbolName();
+    bool SetModulesArchitecture (const ArchSpec &new_arch);
 
 private:
     DISALLOW_COPY_AND_ASSIGN (ObjectFile);

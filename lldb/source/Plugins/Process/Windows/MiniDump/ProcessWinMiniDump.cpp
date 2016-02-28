@@ -14,29 +14,24 @@
 
 #include <assert.h>
 #include <stdlib.h>
-#include <memory>
+
 #include <mutex>
 
-#include "Plugins/DynamicLoader/Windows-DYLD/DynamicLoaderWindowsDYLD.h"
-#include "lldb/Core/DataBufferHeap.h"
-#include "lldb/Core/Log.h"
+#include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"
-#include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Core/State.h"
-#include "lldb/Target/DynamicLoader.h"
-#include "lldb/Target/MemoryRegionInfo.h"
+#include "lldb/Core/DataBufferHeap.h"
+#include "lldb/Core/Log.h"
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Target/DynamicLoader.h"
 #include "lldb/Target/UnixSignals.h"
-#include "lldb/Utility/LLDBAssert.h"
-#include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include "Plugins/Process/Windows/Common/NtStructures.h"
-#include "Plugins/Process/Windows/Common/ProcessWindowsLog.h"
+#include "llvm/Support/ConvertUTF.h"
+#include "Plugins/DynamicLoader/Windows-DYLD/DynamicLoaderWindowsDYLD.h"
 
 #include "ExceptionRecord.h"
 #include "ThreadWinMiniDump.h"
@@ -86,7 +81,6 @@ public:
     HANDLE m_mapping;  // handle to the file mapping for the minidump file
     void * m_base_addr;  // base memory address of the minidump
     std::shared_ptr<ExceptionRecord> m_exception_sp;
-    bool m_is_wow64; // minidump is of a 32-bit process captured with a 64-bit debugger
 };
 
 ConstString
@@ -195,53 +189,7 @@ ProcessWinMiniDump::UpdateThreadList(ThreadList &old_thread_list, ThreadList &ne
     {
         const ULONG32 thread_count = thread_list_ptr->NumberOfThreads;
         for (ULONG32 i = 0; i < thread_count; ++i) {
-            const auto &mini_dump_thread = thread_list_ptr->Threads[i];
-            auto thread_sp = std::make_shared<ThreadWinMiniDump>(*this, mini_dump_thread.ThreadId);
-            if (mini_dump_thread.ThreadContext.DataSize >= sizeof(CONTEXT))
-            {
-                const CONTEXT *context = reinterpret_cast<const CONTEXT *>(
-                    static_cast<const char *>(m_data_up->m_base_addr) + mini_dump_thread.ThreadContext.Rva);
-
-                if (m_data_up->m_is_wow64)
-                {
-                    // On Windows, a 32-bit process can run on a 64-bit machine under WOW64.
-                    // If the minidump was captured with a 64-bit debugger, then the CONTEXT
-                    // we just grabbed from the mini_dump_thread is the one for the 64-bit
-                    // "native" process rather than the 32-bit "guest" process we care about.
-                    // In this case, we can get the 32-bit CONTEXT from the TEB (Thread
-                    // Environment Block) of the 64-bit process.
-                    Error error;
-                    TEB64 wow64teb = {0};
-                    ReadMemory(mini_dump_thread.Teb, &wow64teb, sizeof(wow64teb), error);
-                    if (error.Success())
-                    {
-                        // Slot 1 of the thread-local storage in the 64-bit TEB points to a structure
-                        // that includes the 32-bit CONTEXT (after a ULONG).
-                        // See:  https://msdn.microsoft.com/en-us/library/ms681670.aspx
-                        const size_t addr = wow64teb.TlsSlots[1];
-                        Range range = {0};
-                        if (FindMemoryRange(addr, &range))
-                        {
-                            lldbassert(range.start <= addr);
-                            const size_t offset = addr - range.start + sizeof(ULONG);
-                            if (offset < range.size)
-                            {
-                                const size_t overlap = range.size - offset;
-                                if (overlap >= sizeof(CONTEXT))
-                                {
-                                    context = reinterpret_cast<const CONTEXT *>(range.ptr + offset);
-                                }
-                            }
-                        }
-                    }
-
-                    // NOTE:  We don't currently use the TEB for anything else.  If we need it in
-                    // the future, the 32-bit TEB is located according to the address stored in the
-                    // first slot of the 64-bit TEB (wow64teb.Reserved1[0]).
-                }
-
-                thread_sp->SetContext(context);
-            }
+            std::shared_ptr<ThreadWinMiniDump> thread_sp(new ThreadWinMiniDump(*this, thread_list_ptr->Threads[i].ThreadId));
             new_thread_list.AddThread(thread_sp);
         }
     }
@@ -312,57 +260,10 @@ ProcessWinMiniDump::DoReadMemory(lldb::addr_t addr, void *buf, size_t size, Erro
     // There's at least some overlap between the beginning of the desired range
     // (addr) and the current range.  Figure out where the overlap begins and
     // how much overlap there is, then copy it to the destination buffer.
-    lldbassert(range.start <= addr);
-    const size_t offset = addr - range.start;
-    lldbassert(offset < range.size);
+    const size_t offset = range.start - addr;
     const size_t overlap = std::min(size, range.size - offset);
     std::memcpy(buf, range.ptr + offset, overlap);
     return overlap;
-}
-
-Error
-ProcessWinMiniDump::GetMemoryRegionInfo(lldb::addr_t load_addr, lldb_private::MemoryRegionInfo &info)
-{
-    Error error;
-    size_t size;
-    const auto list = reinterpret_cast<const MINIDUMP_MEMORY_INFO_LIST *>(FindDumpStream(MemoryInfoListStream, &size));
-    if (list == nullptr || size < sizeof(MINIDUMP_MEMORY_INFO_LIST))
-    {
-        error.SetErrorString("the mini dump contains no memory range information");
-        return error;
-    }
-
-    if (list->SizeOfEntry < sizeof(MINIDUMP_MEMORY_INFO))
-    {
-        error.SetErrorString("the entries in the mini dump memory info list are smaller than expected");
-        return error;
-    }
-
-    if (size < list->SizeOfHeader + list->SizeOfEntry * list->NumberOfEntries)
-    {
-        error.SetErrorString("the mini dump memory info list is incomplete");
-        return error;
-    }
-
-    for (int i = 0; i < list->NumberOfEntries; ++i)
-    {
-        const auto entry = reinterpret_cast<const MINIDUMP_MEMORY_INFO *>(reinterpret_cast<const char *>(list) +
-                                                                          list->SizeOfHeader + i * list->SizeOfEntry);
-        const auto head = entry->BaseAddress;
-        const auto tail = head + entry->RegionSize;
-        if (head <= load_addr && load_addr < tail)
-        {
-            info.SetReadable(IsPageReadable(entry->Protect) ? MemoryRegionInfo::eYes : MemoryRegionInfo::eNo);
-            info.SetWritable(IsPageWritable(entry->Protect) ? MemoryRegionInfo::eYes : MemoryRegionInfo::eNo);
-            info.SetExecutable(IsPageExecutable(entry->Protect) ? MemoryRegionInfo::eYes : MemoryRegionInfo::eNo);
-            return error;
-        }
-    }
-    // Note that the memory info list doesn't seem to contain ranges in kernel space,
-    // so if you're walking a stack that has kernel frames, the stack may appear
-    // truncated.
-    error.SetErrorString("address is not in a known range");
-    return error;
 }
 
 void
@@ -391,8 +292,11 @@ ProcessWinMiniDump::GetArchitecture()
     return ArchSpec();
 }
 
-ProcessWinMiniDump::Data::Data()
-    : m_dump_file(INVALID_HANDLE_VALUE), m_mapping(NULL), m_base_addr(nullptr), m_is_wow64(false)
+
+ProcessWinMiniDump::Data::Data() :
+    m_dump_file(INVALID_HANDLE_VALUE),
+    m_mapping(NULL),
+    m_base_addr(nullptr)
 {
 }
 
@@ -422,8 +326,7 @@ ProcessWinMiniDump::FindMemoryRange(lldb::addr_t addr, Range *range_out) const
     auto mem_list_stream = static_cast<const MINIDUMP_MEMORY_LIST *>(FindDumpStream(MemoryListStream, &stream_size));
     if (mem_list_stream)
     {
-        for (ULONG32 i = 0; i < mem_list_stream->NumberOfMemoryRanges; ++i)
-        {
+        for (ULONG32 i = 0; i < mem_list_stream->NumberOfMemoryRanges; ++i) {
             const MINIDUMP_MEMORY_DESCRIPTOR &mem_desc = mem_list_stream->MemoryRanges[i];
             const MINIDUMP_LOCATION_DESCRIPTOR &loc_desc = mem_desc.Memory;
             const lldb::addr_t range_start = mem_desc.StartOfMemoryRange;
@@ -527,11 +430,6 @@ ProcessWinMiniDump::ReadExceptionRecord()
     {
         m_data_up->m_exception_sp.reset(new ExceptionRecord(exception_stream_ptr->ExceptionRecord, exception_stream_ptr->ThreadId));
     }
-    else
-    {
-        WINLOG_IFALL(WINDOWS_LOG_PROCESS, "Minidump has no exception record.");
-        // TODO:  See if we can recover the exception from the TEB.
-    }
 }
 
 void
@@ -563,13 +461,7 @@ ProcessWinMiniDump::ReadModuleList()
     {
         const auto &module = module_list_ptr->Modules[i];
         const auto file_name = GetMiniDumpString(m_data_up->m_base_addr, module.ModuleNameRva);
-        const auto file_spec = FileSpec(file_name, true);
-        if (FileSpec::Compare(file_spec, FileSpec("wow64.dll", false), false) == 0)
-        {
-            WINLOG_IFALL(WINDOWS_LOG_PROCESS, "Minidump is for a WOW64 process.");
-            m_data_up->m_is_wow64 = true;
-        }
-        ModuleSpec module_spec = file_spec;
+        ModuleSpec module_spec = FileSpec(file_name, true);
 
         lldb::ModuleSP module_sp = GetTarget().GetSharedModule(module_spec);
         if (!module_sp)

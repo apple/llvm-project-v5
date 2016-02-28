@@ -54,32 +54,30 @@ FileSystem::MakeDirectory(const FileSpec &file_spec, uint32_t file_permissions)
             switch (error.GetError())
             {
                 case ENOENT:
+                {
+                    // Parent directory doesn't exist, so lets make it if we can
+                    // Make the parent directory and try again
+                    FileSpec parent_file_spec{file_spec.GetDirectory().GetCString(), false};
+                    error = MakeDirectory(parent_file_spec, file_permissions);
+                    if (error.Fail())
+                        return error;
+                    // Try and make the directory again now that the parent directory was made successfully
+                    if (::mkdir(file_spec.GetCString(), file_permissions) == -1)
                     {
-                        // Parent directory doesn't exist, so lets make it if we can
-                        // Make the parent directory and try again
-                        FileSpec parent_file_spec{file_spec.GetDirectory().GetCString(), false};
-                        error = MakeDirectory(parent_file_spec, file_permissions);
-                        if (error.Fail())
-                            return error;
-                        // Try and make the directory again now that the parent directory was made successfully
-                        if (::mkdir(file_spec.GetCString(), file_permissions) == -1)
-                        {
-                            error.SetErrorToErrno();
-                        }
+                        error.SetErrorToErrno();
                         return error;
                     }
-                    break;
+                }
                 case EEXIST:
-                    {
-                        if (file_spec.IsDirectory())
-                            return Error(); // It is a directory and it already exists
-                    }
-                    break;
+                {
+                    if (file_spec.IsDirectory())
+                        return Error{}; // It is a directory and it already exists
+                }
             }
         }
         return error;
     }
-    return Error("empty path");
+    return Error{"empty path"};
 }
 
 Error

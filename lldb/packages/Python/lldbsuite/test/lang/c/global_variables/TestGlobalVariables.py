@@ -3,9 +3,11 @@
 from __future__ import print_function
 
 
-from lldbsuite.test.decorators import *
+
+import os, time
+import lldb
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class GlobalVariablesTestCase(TestBase):
 
@@ -19,9 +21,8 @@ class GlobalVariablesTestCase(TestBase):
         self.line = line_number(self.source, '// Set break point at this line.')
         self.shlib_names = ["a"]
 
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr24764")
-    @expectedFailureAll("llvm.org/pr25872", oslist=["macosx"], debug_info="dwarf")
-    def test_c_global_variables(self):
+    @expectedFailureWindows("llvm.org/pr24764")
+    def test(self):
         """Test 'frame variable --scope --no-args' which omits args and shows scopes."""
         self.build()
 
@@ -51,7 +52,6 @@ class GlobalVariablesTestCase(TestBase):
         # Check that GLOBAL scopes are indicated for the variables.
         self.expect("frame variable --show-types --scope --show-globals --no-args", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['GLOBAL: (int) g_file_global_int = 42',
-                       'STATIC: (const int) g_file_static_int = 2',
                        'GLOBAL: (const char *) g_file_global_cstr',
                        '"g_file_global_cstr"',
                        'STATIC: (const char *) g_file_static_cstr',

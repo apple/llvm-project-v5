@@ -7,14 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-// C Includes
-// C++ Includes
-#include <vector>
-
-// Other libraries and framework includes
-// Project includes
 #include "CommandObjectBreakpoint.h"
 #include "CommandObjectBreakpointCommand.h"
+
+// C Includes
+// C++ Includes
+// Other libraries and framework includes
+// Project includes
 #include "lldb/Breakpoint/Breakpoint.h"
 #include "lldb/Breakpoint/BreakpointIDList.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
@@ -34,6 +33,8 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadSpec.h"
 
+#include <vector>
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -50,9 +51,11 @@ AddBreakpointDescription (Stream *s, Breakpoint *bp, lldb::DescriptionLevel leve
 // CommandObjectBreakpointSet
 //-------------------------------------------------------------------------
 
+
 class CommandObjectBreakpointSet : public CommandObjectParsed
 {
 public:
+
     typedef enum BreakpointSetType
     {
         eSetTypeInvalid,
@@ -73,7 +76,8 @@ public:
     {
     }
 
-    ~CommandObjectBreakpointSet() override = default;
+
+    ~CommandObjectBreakpointSet () override {}
 
     Options *
     GetOptions () override
@@ -84,6 +88,7 @@ public:
     class CommandOptions : public Options
     {
     public:
+
         CommandOptions (CommandInterpreter &interpreter) :
             Options (interpreter),
             m_condition (),
@@ -113,7 +118,8 @@ public:
         {
         }
 
-        ~CommandOptions() override = default;
+
+        ~CommandOptions () override {}
 
         Error
         SetOptionValue (uint32_t option_idx, const char *option_arg) override
@@ -147,7 +153,6 @@ public:
                         error.SetErrorStringWithFormat("invalid column number: %s", option_arg);
                     break;
                 }
-
                 case 'c':
                     m_condition.assign(option_arg);
                     break;
@@ -212,10 +217,12 @@ public:
                     break;
 
                 case 'i':
+                {
                     m_ignore_count = StringConvert::ToUInt32(option_arg, UINT32_MAX, 0);
                     if (m_ignore_count == UINT32_MAX)
                        error.SetErrorStringWithFormat ("invalid ignore count '%s'", option_arg);
                     break;
+                }
 
                 case 'K':
                 {
@@ -299,8 +306,10 @@ public:
                     break;
 
                 case 's':
+                {
                     m_modules.AppendIfUnique (FileSpec (option_arg, false));
                     break;
+                }
                     
                 case 'S':
                     m_func_names.push_back (option_arg);
@@ -308,10 +317,12 @@ public:
                     break;
 
                 case 't' :
+                {
                     m_thread_id = StringConvert::ToUInt64(option_arg, LLDB_INVALID_THREAD_ID, 0);
                     if (m_thread_id == LLDB_INVALID_THREAD_ID)
                        error.SetErrorStringWithFormat ("invalid thread id string '%s'", option_arg);
-                    break;
+                }
+                break;
 
                 case 'T':
                     m_thread_name.assign (option_arg);
@@ -327,10 +338,13 @@ public:
                 break;
 
                 case 'x':
+                {
                     m_thread_index = StringConvert::ToUInt32(option_arg, UINT32_MAX, 0);
                     if (m_thread_id == UINT32_MAX)
                        error.SetErrorStringWithFormat ("invalid thread index string '%s'", option_arg);
-                    break;
+                    
+                }
+                break;
 
                 default:
                     error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
@@ -339,7 +353,6 @@ public:
 
             return error;
         }
-
         void
         OptionParsingStarting () override
         {
@@ -411,6 +424,7 @@ public:
         bool m_all_files;
         Args m_exception_extra_args;
         LazyBool m_move_to_nearest_code;
+
     };
 
 protected:
@@ -450,7 +464,7 @@ protected:
         else if (m_options.m_exception_language != eLanguageTypeUnknown)
             break_type = eSetTypeException;
 
-        Breakpoint *bp = nullptr;
+        Breakpoint *bp = NULL;
         FileSpec module_spec;
         const bool internal = false;
 
@@ -493,32 +507,11 @@ protected:
                 break;
 
             case eSetTypeAddress: // Breakpoint by address
-                {
-                    // If a shared library has been specified, make an lldb_private::Address with the library, and
-                    // use that.  That way the address breakpoint will track the load location of the library.
-                    size_t num_modules_specified = m_options.m_modules.GetSize();
-                    if (num_modules_specified == 1)
-                    {
-                        const FileSpec *file_spec = m_options.m_modules.GetFileSpecPointerAtIndex(0);
-                        bp = target->CreateAddressInModuleBreakpoint (m_options.m_load_addr,
-                                                                      internal,
-                                                                      file_spec,
-                                                                      m_options.m_hardware).get();
-                    }
-                    else if (num_modules_specified == 0)
-                    {
-                        bp = target->CreateBreakpoint (m_options.m_load_addr,
-                                                       internal,
-                                                       m_options.m_hardware).get();
-                    }
-                    else
-                    {
-                        result.AppendError("Only one shared library can be specified for address breakpoints.");
-                        result.SetStatus(eReturnStatusFailed);
-                        return false;
-                    }
+                bp = target->CreateBreakpoint (m_options.m_load_addr,
+                                               internal,
+                                               m_options.m_hardware).get();
                 break;
-                }
+
             case eSetTypeFunctionName: // Breakpoint by function name
                 {
                     uint32_t name_type_mask = m_options.m_func_name_type_mask;
@@ -553,7 +546,6 @@ protected:
                     bp = target->CreateFuncRegexBreakpoint (&(m_options.m_modules),
                                                             &(m_options.m_filenames),
                                                             regexp,
-                                                            m_options.m_language,
                                                             m_options.m_skip_prologue,
                                                             internal,
                                                             m_options.m_hardware).get();
@@ -687,7 +679,7 @@ private:
         if (!target->GetSourceManager().GetDefaultFileAndLine(file, default_line))
         {
             StackFrame *cur_frame = m_exe_ctx.GetFramePtr();
-            if (cur_frame == nullptr)
+            if (cur_frame == NULL)
             {
                 result.AppendError ("No selected frame to use to find the default file.");
                 result.SetStatus (eReturnStatusFailed);
@@ -719,129 +711,120 @@ private:
     
     CommandOptions m_options;
 };
-
 // If an additional option set beyond LLDB_OPTION_SET_10 is added, make sure to
 // update the numbers passed to LLDB_OPT_SET_FROM_TO(...) appropriately.
 #define LLDB_OPT_FILE ( LLDB_OPT_SET_FROM_TO(1, 9) & ~LLDB_OPT_SET_2 )
 #define LLDB_OPT_NOT_10 ( LLDB_OPT_SET_FROM_TO(1, 10) & ~LLDB_OPT_SET_10 )
 #define LLDB_OPT_SKIP_PROLOGUE ( LLDB_OPT_SET_1 | LLDB_OPT_SET_FROM_TO(3,8) )
 #define LLDB_OPT_MOVE_TO_NEAREST_CODE ( LLDB_OPT_SET_1 | LLDB_OPT_SET_9 )
-#define LLDB_OPT_EXPR_LANGUAGE ( LLDB_OPT_SET_FROM_TO(3, 8) )
+#define LLDB_OPT_EXPR_LANGUAGE ( LLDB_OPT_SET_FROM_TO(3, 8) & ~LLDB_OPT_SET_7 )
 
 OptionDefinition
 CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_NOT_10, false, "shlib", 's', OptionParser::eRequiredArgument, nullptr, nullptr, CommandCompletions::eModuleCompletion, eArgTypeShlibName,
+    { LLDB_OPT_NOT_10, false, "shlib", 's', OptionParser::eRequiredArgument, NULL, NULL, CommandCompletions::eModuleCompletion, eArgTypeShlibName,
         "Set the breakpoint only in this shared library.  "
         "Can repeat this option multiple times to specify multiple shared libraries."},
 
-    { LLDB_OPT_SET_ALL, false, "ignore-count", 'i', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeCount,
+    { LLDB_OPT_SET_ALL, false, "ignore-count", 'i', OptionParser::eRequiredArgument,   NULL, NULL, 0, eArgTypeCount,
         "Set the number of times this breakpoint is skipped before stopping." },
 
-    { LLDB_OPT_SET_ALL, false, "one-shot", 'o', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_ALL, false, "one-shot", 'o', OptionParser::eNoArgument,   NULL, NULL, 0, eArgTypeNone,
         "The breakpoint is deleted the first time it causes a stop." },
 
-    { LLDB_OPT_SET_ALL, false, "condition",    'c', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeExpression,
+    { LLDB_OPT_SET_ALL, false, "condition",    'c', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeExpression,
         "The breakpoint stops only if this condition expression evaluates to true."},
 
-    { LLDB_OPT_SET_ALL, false, "thread-index", 'x', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeThreadIndex,
+    { LLDB_OPT_SET_ALL, false, "thread-index", 'x', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeThreadIndex,
         "The breakpoint stops only for the thread whose indeX matches this argument."},
 
-    { LLDB_OPT_SET_ALL, false, "thread-id", 't', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeThreadID,
+    { LLDB_OPT_SET_ALL, false, "thread-id", 't', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeThreadID,
         "The breakpoint stops only for the thread whose TID matches this argument."},
 
-    { LLDB_OPT_SET_ALL, false, "thread-name", 'T', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeThreadName,
+    { LLDB_OPT_SET_ALL, false, "thread-name", 'T', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeThreadName,
         "The breakpoint stops only for the thread whose thread name matches this argument."},
 
-    { LLDB_OPT_SET_ALL, false, "hardware", 'H', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_ALL, false, "hardware", 'H', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Require the breakpoint to use hardware breakpoints."},
 
-    { LLDB_OPT_SET_ALL, false, "queue-name", 'q', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeQueueName,
+    { LLDB_OPT_SET_ALL, false, "queue-name", 'q', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeQueueName,
         "The breakpoint stops only for threads in the queue whose name is given by this argument."},
 
-    { LLDB_OPT_FILE, false, "file", 'f', OptionParser::eRequiredArgument, nullptr, nullptr, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
+    { LLDB_OPT_FILE, false, "file", 'f', OptionParser::eRequiredArgument, NULL, NULL, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
         "Specifies the source file in which to set this breakpoint.  "
         "Note, by default lldb only looks for files that are #included if they use the standard include file extensions.  "
         "To set breakpoints on .c/.cpp/.m/.mm files that are #included, set target.inline-breakpoint-strategy"
         " to \"always\"."},
 
-    { LLDB_OPT_SET_1, true, "line", 'l', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeLineNum,
+    { LLDB_OPT_SET_1, true, "line", 'l', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeLineNum,
         "Specifies the line number on which to set this breakpoint."},
 
     // Comment out this option for the moment, as we don't actually use it, but will in the future.
     // This way users won't see it, but the infrastructure is left in place.
-    //    { 0, false, "column",     'C', OptionParser::eRequiredArgument, nullptr, "<column>",
+    //    { 0, false, "column",     'C', OptionParser::eRequiredArgument, NULL, "<column>",
     //    "Set the breakpoint by source location at this particular column."},
 
-    { LLDB_OPT_SET_2, true, "address", 'a', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeAddressOrExpression,
-        "Set the breakpoint at the specified address.  "
-        "If the address maps uniquely to a particular "
-        "binary, then the address will be converted to a \"file\" address, so that the breakpoint will track that binary+offset no matter where "
-        "the binary eventually loads.  "
-        "Alternately, if you also specify the module - with the -s option - then the address will be treated as "
-        "a file address in that module, and resolved accordingly.  Again, this will allow lldb to track that offset on "
-        "subsequent reloads.  The module need not have been loaded at the time you specify this breakpoint, and will "
-        "get resolved when the module is loaded."},
+    { LLDB_OPT_SET_2, true, "address", 'a', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeAddressOrExpression,
+        "Set the breakpoint by address, at the specified address."},
 
-    { LLDB_OPT_SET_3, true, "name", 'n', OptionParser::eRequiredArgument, nullptr, nullptr, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
+    { LLDB_OPT_SET_3, true, "name", 'n', OptionParser::eRequiredArgument, NULL, NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
         "Set the breakpoint by function name.  Can be repeated multiple times to make one breakpoint for multiple names" },
 
-    { LLDB_OPT_SET_4, true, "fullname", 'F', OptionParser::eRequiredArgument, nullptr, nullptr, CommandCompletions::eSymbolCompletion, eArgTypeFullName,
+    { LLDB_OPT_SET_4, true, "fullname", 'F', OptionParser::eRequiredArgument, NULL, NULL, CommandCompletions::eSymbolCompletion, eArgTypeFullName,
         "Set the breakpoint by fully qualified function names. For C++ this means namespaces and all arguments, and "
         "for Objective C this means a full function prototype with class and selector.  "
         "Can be repeated multiple times to make one breakpoint for multiple names." },
 
-    { LLDB_OPT_SET_5, true, "selector", 'S', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeSelector,
+    { LLDB_OPT_SET_5, true, "selector", 'S', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeSelector,
         "Set the breakpoint by ObjC selector name. Can be repeated multiple times to make one breakpoint for multiple Selectors." },
 
-    { LLDB_OPT_SET_6, true, "method", 'M', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeMethod,
+    { LLDB_OPT_SET_6, true, "method", 'M', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeMethod,
         "Set the breakpoint by C++ method names.  Can be repeated multiple times to make one breakpoint for multiple methods." },
 
-    { LLDB_OPT_SET_7, true, "func-regex", 'r', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeRegularExpression,
+    { LLDB_OPT_SET_7, true, "func-regex", 'r', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeRegularExpression,
         "Set the breakpoint by function name, evaluating a regular-expression to find the function name(s)." },
 
-    { LLDB_OPT_SET_8, true, "basename", 'b', OptionParser::eRequiredArgument, nullptr, nullptr, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
+    { LLDB_OPT_SET_8, true, "basename", 'b', OptionParser::eRequiredArgument, NULL, NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
         "Set the breakpoint by function basename (C++ namespaces and arguments will be ignored). "
         "Can be repeated multiple times to make one breakpoint for multiple symbols." },
 
-    { LLDB_OPT_SET_9, true, "source-pattern-regexp", 'p', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeRegularExpression,
+    { LLDB_OPT_SET_9, true, "source-pattern-regexp", 'p', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeRegularExpression,
         "Set the breakpoint by specifying a regular expression which is matched against the source text in a source file or files "
         "specified with the -f option.  The -f option can be specified more than once.  "
-        "If no source files are specified, uses the current \"default source file\".  "
-        "If you want to match against all source files, pass the \"--all-files\" option." },
+        "If no source files are specified, uses the current \"default source file\"" },
 
-    { LLDB_OPT_SET_9, false, "all-files", 'A', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_9, false, "all-files", 'A', OptionParser::eNoArgument,   NULL, NULL, 0, eArgTypeNone,
         "All files are searched for source pattern matches." },
 
-    { LLDB_OPT_SET_10, true, "language-exception", 'E', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeLanguage,
+    { LLDB_OPT_SET_10, true, "language-exception", 'E', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeLanguage,
         "Set the breakpoint on exceptions thrown by the specified language (without options, on throw but not catch.)" },
 
-    { LLDB_OPT_SET_10, false, "on-throw", 'w', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBoolean,
+    { LLDB_OPT_SET_10, false, "on-throw", 'w', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBoolean,
         "Set the breakpoint on exception throW." },
 
-    { LLDB_OPT_SET_10, false, "on-catch", 'h', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBoolean,
+    { LLDB_OPT_SET_10, false, "on-catch", 'h', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBoolean,
         "Set the breakpoint on exception catcH." },
 
 //  Don't add this option till it actually does something useful...
-//    { LLDB_OPT_SET_10, false, "exception-typename", 'O', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeTypeName,
+//    { LLDB_OPT_SET_10, false, "exception-typename", 'O', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeTypeName,
 //        "The breakpoint will only stop if an exception Object of this type is thrown.  Can be repeated multiple times to stop for multiple object types" },
 
-    { LLDB_OPT_EXPR_LANGUAGE, false, "language", 'L', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeLanguage,
+    { LLDB_OPT_EXPR_LANGUAGE, false, "language", 'L', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeLanguage,
         "Specifies the Language to use when interpreting the breakpoint's expression (note: currently only implemented for setting breakpoints on identifiers).  If not set the target.language setting is used." },
 
-    { LLDB_OPT_SKIP_PROLOGUE, false, "skip-prologue", 'K', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBoolean,
+    { LLDB_OPT_SKIP_PROLOGUE, false, "skip-prologue", 'K', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBoolean,
         "sKip the prologue if the breakpoint is at the beginning of a function.  If not set the target.skip-prologue setting is used." },
 
-    { LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Sets Dummy breakpoints - i.e. breakpoints set before a file is provided, which prime new targets."},
 
-    { LLDB_OPT_SET_ALL, false, "breakpoint-name", 'N', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBreakpointName,
+    { LLDB_OPT_SET_ALL, false, "breakpoint-name", 'N', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBreakpointName,
         "Adds this to the list of names for this breakopint."},
 
-    { LLDB_OPT_MOVE_TO_NEAREST_CODE, false, "move-to-nearest-code", 'm', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBoolean,
+    { LLDB_OPT_MOVE_TO_NEAREST_CODE, false, "move-to-nearest-code", 'm', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBoolean,
         "Move breakpoints to nearest code. If not set the target.move-to-nearest-code setting is used." },
 
-    { 0, false, nullptr, 0, 0, nullptr, nullptr, 0, eArgTypeNone, nullptr }
+    { 0, false, NULL, 0, 0, NULL, NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -852,13 +835,14 @@ CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
 class CommandObjectBreakpointModify : public CommandObjectParsed
 {
 public:
+
     CommandObjectBreakpointModify (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "breakpoint modify", 
-                            "Modify the options on a breakpoint or set of breakpoints in the executable.  "
-                            "If no breakpoint is specified, acts on the last created breakpoint.  "
-                            "With the exception of -e, -d and -i, passing an empty argument clears the modification.", 
-                            nullptr),
+        CommandObjectParsed (interpreter,
+                             "breakpoint modify", 
+                             "Modify the options on a breakpoint or set of breakpoints in the executable.  "
+                             "If no breakpoint is specified, acts on the last created breakpoint.  "
+                             "With the exception of -e, -d and -i, passing an empty argument clears the modification.", 
+                             NULL),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -867,7 +851,8 @@ public:
         m_arguments.push_back (arg);   
     }
 
-    ~CommandObjectBreakpointModify() override = default;
+
+    ~CommandObjectBreakpointModify () override {}
 
     Options *
     GetOptions () override
@@ -878,6 +863,7 @@ public:
     class CommandOptions : public Options
     {
     public:
+
         CommandOptions (CommandInterpreter &interpreter) :
             Options (interpreter),
             m_ignore_count (0),
@@ -899,7 +885,7 @@ public:
         {
         }
 
-        ~CommandOptions() override = default;
+        ~CommandOptions () override {}
 
         Error
         SetOptionValue (uint32_t option_idx, const char *option_arg) override
@@ -910,7 +896,7 @@ public:
             switch (short_option)
             {
                 case 'c':
-                    if (option_arg != nullptr)
+                    if (option_arg != NULL)
                         m_condition.assign (option_arg);
                     else
                         m_condition.clear();
@@ -928,10 +914,12 @@ public:
                     m_enable_value = true;
                     break;
                 case 'i':
+                {
                     m_ignore_count = StringConvert::ToUInt32(option_arg, UINT32_MAX, 0);
                     if (m_ignore_count == UINT32_MAX)
                        error.SetErrorStringWithFormat ("invalid ignore count '%s'", option_arg);
-                    break;
+                }
+                break;
                 case 'o':
                 {
                     bool value, success;
@@ -946,6 +934,7 @@ public:
                 }
                 break;
                 case 't' :
+                {
                     if (option_arg[0] == '\0')
                     {
                         m_thread_id = LLDB_INVALID_THREAD_ID;
@@ -959,22 +948,24 @@ public:
                         else
                             m_thread_id_passed = true;
                     }
-                    break;
+                }
+                break;
                 case 'T':
-                    if (option_arg != nullptr)
+                    if (option_arg != NULL)
                         m_thread_name.assign (option_arg);
                     else
                         m_thread_name.clear();
                     m_name_passed = true;
                     break;
                 case 'q':
-                    if (option_arg != nullptr)
+                    if (option_arg != NULL)
                         m_queue_name.assign (option_arg);
                     else
                         m_queue_name.clear();
                     m_queue_passed = true;
                     break;
                 case 'x':
+                {
                     if (option_arg[0] == '\n')
                     {
                         m_thread_index = UINT32_MAX;
@@ -988,7 +979,8 @@ public:
                         else
                             m_thread_index_passed = true;
                     }
-                    break;
+                }
+                break;
                 default:
                     error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
                     break;
@@ -996,7 +988,6 @@ public:
 
             return error;
         }
-
         void
         OptionParsingStarting () override
         {
@@ -1023,6 +1014,7 @@ public:
             return g_option_table;
         }
         
+
         // Options table: Required for subclasses of Options.
 
         static OptionDefinition g_option_table[];
@@ -1045,6 +1037,7 @@ public:
         bool m_condition_passed;
         bool m_one_shot_passed;
         bool m_use_dummy;
+
     };
 
 protected:
@@ -1052,7 +1045,7 @@ protected:
     DoExecute (Args& command, CommandReturnObject &result) override
     {
         Target *target = GetSelectedOrDummyTarget(m_options.m_use_dummy);
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target.  No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -1141,18 +1134,18 @@ private:
 OptionDefinition
 CommandObjectBreakpointModify::CommandOptions::g_option_table[] =
 {
-{ LLDB_OPT_SET_ALL, false, "ignore-count", 'i', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeCount, "Set the number of times this breakpoint is skipped before stopping." },
-{ LLDB_OPT_SET_ALL, false, "one-shot",     'o', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBoolean, "The breakpoint is deleted the first time it stop causes a stop." },
-{ LLDB_OPT_SET_ALL, false, "thread-index", 'x', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeThreadIndex, "The breakpoint stops only for the thread whose index matches this argument."},
-{ LLDB_OPT_SET_ALL, false, "thread-id",    't', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeThreadID, "The breakpoint stops only for the thread whose TID matches this argument."},
-{ LLDB_OPT_SET_ALL, false, "thread-name",  'T', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeThreadName, "The breakpoint stops only for the thread whose thread name matches this argument."},
-{ LLDB_OPT_SET_ALL, false, "queue-name",   'q', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeQueueName, "The breakpoint stops only for threads in the queue whose name is given by this argument."},
-{ LLDB_OPT_SET_ALL, false, "condition",    'c', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeExpression, "The breakpoint stops only if this condition expression evaluates to true."},
-{ LLDB_OPT_SET_1,   false, "enable",       'e', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone, "Enable the breakpoint."},
-{ LLDB_OPT_SET_2,   false, "disable",      'd', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone, "Disable the breakpoint."},
-{ LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument,  nullptr, nullptr, 0, eArgTypeNone, "Sets Dummy breakpoints - i.e. breakpoints set before a file is provided, which prime new targets."},
+{ LLDB_OPT_SET_ALL, false, "ignore-count", 'i', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeCount, "Set the number of times this breakpoint is skipped before stopping." },
+{ LLDB_OPT_SET_ALL, false, "one-shot",     'o', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBoolean, "The breakpoint is deleted the first time it stop causes a stop." },
+{ LLDB_OPT_SET_ALL, false, "thread-index", 'x', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeThreadIndex, "The breakpoint stops only for the thread whose index matches this argument."},
+{ LLDB_OPT_SET_ALL, false, "thread-id",    't', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeThreadID, "The breakpoint stops only for the thread whose TID matches this argument."},
+{ LLDB_OPT_SET_ALL, false, "thread-name",  'T', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeThreadName, "The breakpoint stops only for the thread whose thread name matches this argument."},
+{ LLDB_OPT_SET_ALL, false, "queue-name",   'q', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeQueueName, "The breakpoint stops only for threads in the queue whose name is given by this argument."},
+{ LLDB_OPT_SET_ALL, false, "condition",    'c', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeExpression, "The breakpoint stops only if this condition expression evaluates to true."},
+{ LLDB_OPT_SET_1,   false, "enable",       'e', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone, "Enable the breakpoint."},
+{ LLDB_OPT_SET_2,   false, "disable",      'd', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone, "Disable the breakpoint."},
+{ LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone, "Sets Dummy breakpoints - i.e. breakpoints set before a file is provided, which prime new targets."},
 
-{ 0,                false, nullptr,            0 , 0,                 nullptr, nullptr, 0, eArgTypeNone, nullptr }
+{ 0,                false, NULL,            0 , 0,                 NULL, NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -1164,10 +1157,10 @@ class CommandObjectBreakpointEnable : public CommandObjectParsed
 {
 public:
     CommandObjectBreakpointEnable (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "enable",
-                            "Enable the specified disabled breakpoint(s). If no breakpoints are specified, enable all of them.",
-                            nullptr)
+        CommandObjectParsed (interpreter,
+                             "enable",
+                             "Enable the specified disabled breakpoint(s). If no breakpoints are specified, enable all of them.",
+                             NULL)
     {
         CommandArgumentEntry arg;
         CommandObject::AddIDsArgumentData(arg, eArgTypeBreakpointID, eArgTypeBreakpointIDRange);
@@ -1175,14 +1168,15 @@ public:
         m_arguments.push_back (arg);   
     }
 
-    ~CommandObjectBreakpointEnable() override = default;
+
+    ~CommandObjectBreakpointEnable () override {}
 
 protected:
     bool
     DoExecute (Args& command, CommandReturnObject &result) override
     {
         Target *target = GetSelectedOrDummyTarget();
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target.  No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -1262,10 +1256,10 @@ class CommandObjectBreakpointDisable : public CommandObjectParsed
 {
 public:
     CommandObjectBreakpointDisable (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "breakpoint disable",
-                            "Disable the specified breakpoint(s) without removing them.  If none are specified, disable all breakpoints.",
-                            nullptr)
+        CommandObjectParsed (interpreter,
+                             "breakpoint disable",
+                             "Disable the specified breakpoint(s) without removing them.  If none are specified, disable all breakpoints.",
+                             NULL)
     {
         SetHelpLong(
 "Disable the specified breakpoint(s) without removing them.  \
@@ -1290,16 +1284,18 @@ the second re-enables the first location."
         CommandObject::AddIDsArgumentData(arg, eArgTypeBreakpointID, eArgTypeBreakpointIDRange);
         // Add the entry for the first argument for this command to the object's arguments vector.
         m_arguments.push_back (arg);
+
     }
 
-    ~CommandObjectBreakpointDisable() override = default;
+
+    ~CommandObjectBreakpointDisable () override {}
 
 protected:
     bool
     DoExecute (Args& command, CommandReturnObject &result) override
     {
         Target *target = GetSelectedOrDummyTarget();
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target.  No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -1368,6 +1364,7 @@ protected:
 
         return result.Succeeded();
     }
+
 };
 
 //-------------------------------------------------------------------------
@@ -1379,10 +1376,10 @@ class CommandObjectBreakpointList : public CommandObjectParsed
 {
 public:
     CommandObjectBreakpointList (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter, 
-                            "breakpoint list",
-                            "List some or all breakpoints at configurable levels of detail.",
-                            nullptr),
+        CommandObjectParsed (interpreter, 
+                             "breakpoint list",
+                             "List some or all breakpoints at configurable levels of detail.",
+                             NULL),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -1399,7 +1396,8 @@ public:
         m_arguments.push_back (arg);
     }
 
-    ~CommandObjectBreakpointList() override = default;
+
+    ~CommandObjectBreakpointList () override {}
 
     Options *
     GetOptions () override
@@ -1410,6 +1408,7 @@ public:
     class CommandOptions : public Options
     {
     public:
+
         CommandOptions (CommandInterpreter &interpreter) :
             Options (interpreter),
             m_level (lldb::eDescriptionLevelBrief),
@@ -1417,7 +1416,7 @@ public:
         {
         }
 
-        ~CommandOptions() override = default;
+        ~CommandOptions () override {}
 
         Error
         SetOptionValue (uint32_t option_idx, const char *option_arg) override
@@ -1482,7 +1481,7 @@ protected:
     {
         Target *target = GetSelectedOrDummyTarget(m_options.m_use_dummy);
 
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target. No current target or breakpoints.");
             result.SetStatus (eReturnStatusSuccessFinishNoResult);
@@ -1549,24 +1548,24 @@ private:
 OptionDefinition
 CommandObjectBreakpointList::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, false, "internal", 'i', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_ALL, false, "internal", 'i', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Show debugger internal breakpoints" },
 
-    { LLDB_OPT_SET_1, false, "brief",    'b', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_1, false, "brief",    'b', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Give a brief description of the breakpoint (no location info)."},
 
     // FIXME: We need to add an "internal" command, and then add this sort of thing to it.
     // But I need to see it for now, and don't want to wait.
-    { LLDB_OPT_SET_2, false, "full",    'f', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_2, false, "full",    'f', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Give a full description of the breakpoint and its locations."},
 
-    { LLDB_OPT_SET_3, false, "verbose", 'v', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_3, false, "verbose", 'v', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Explain everything we know about the breakpoint (for debugging debugger bugs)." },
 
-    { LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "List Dummy breakpoints - i.e. breakpoints set before a file is provided, which prime new targets."},
 
-    { 0, false, nullptr, 0, 0, nullptr, nullptr, 0, eArgTypeNone, nullptr }
+    { 0, false, NULL, 0, 0, NULL, NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -1577,6 +1576,7 @@ CommandObjectBreakpointList::CommandOptions::g_option_table[] =
 class CommandObjectBreakpointClear : public CommandObjectParsed
 {
 public:
+
     typedef enum BreakpointClearType
     {
         eClearTypeInvalid,
@@ -1592,7 +1592,7 @@ public:
     {
     }
 
-    ~CommandObjectBreakpointClear() override = default;
+    ~CommandObjectBreakpointClear () override {}
 
     Options *
     GetOptions () override
@@ -1603,6 +1603,7 @@ public:
     class CommandOptions : public Options
     {
     public:
+
         CommandOptions (CommandInterpreter &interpreter) :
             Options (interpreter),
             m_filename (),
@@ -1610,7 +1611,7 @@ public:
         {
         }
 
-        ~CommandOptions() override = default;
+        ~CommandOptions () override {}
 
         Error
         SetOptionValue (uint32_t option_idx, const char *option_arg) override
@@ -1665,7 +1666,7 @@ protected:
     DoExecute (Args& command, CommandReturnObject &result) override
     {
         Target *target = GetSelectedOrDummyTarget();
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target. No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -1699,7 +1700,7 @@ protected:
         // First create a copy of all the IDs.
         std::vector<break_id_t> BreakIDs;
         for (size_t i = 0; i < num_breakpoints; ++i)
-            BreakIDs.push_back(breakpoints.GetBreakpointAtIndex(i)->GetID());
+            BreakIDs.push_back(breakpoints.GetBreakpointAtIndex(i).get()->GetID());
 
         int num_cleared = 0;
         StreamString ss;
@@ -1759,13 +1760,13 @@ private:
 OptionDefinition
 CommandObjectBreakpointClear::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "file", 'f', OptionParser::eRequiredArgument, nullptr, nullptr, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
+    { LLDB_OPT_SET_1, false, "file", 'f', OptionParser::eRequiredArgument, NULL, NULL, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
         "Specify the breakpoint by source location in this particular file."},
 
-    { LLDB_OPT_SET_1, true, "line", 'l', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeLineNum,
+    { LLDB_OPT_SET_1, true, "line", 'l', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeLineNum,
         "Specify the breakpoint by source location at this particular line."},
 
-    { 0, false, nullptr, 0, 0, nullptr, nullptr, 0, eArgTypeNone, nullptr }
+    { 0, false, NULL, 0, 0, NULL, NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -1777,10 +1778,10 @@ class CommandObjectBreakpointDelete : public CommandObjectParsed
 {
 public:
     CommandObjectBreakpointDelete (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "breakpoint delete",
-                            "Delete the specified breakpoint(s).  If no breakpoints are specified, delete them all.",
-                            nullptr),
+        CommandObjectParsed (interpreter,
+                             "breakpoint delete",
+                             "Delete the specified breakpoint(s).  If no breakpoints are specified, delete them all.",
+                             NULL),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -1789,7 +1790,7 @@ public:
         m_arguments.push_back (arg);   
     }
 
-    ~CommandObjectBreakpointDelete() override = default;
+    ~CommandObjectBreakpointDelete () override {}
 
     Options *
     GetOptions () override
@@ -1800,6 +1801,7 @@ public:
     class CommandOptions : public Options
     {
     public:
+
         CommandOptions (CommandInterpreter &interpreter) :
             Options (interpreter),
             m_use_dummy (false),
@@ -1807,7 +1809,7 @@ public:
         {
         }
 
-        ~CommandOptions() override = default;
+        ~CommandOptions () override {}
 
         Error
         SetOptionValue (uint32_t option_idx, const char *option_arg) override
@@ -1861,7 +1863,7 @@ protected:
     {
         Target *target = GetSelectedOrDummyTarget(m_options.m_use_dummy);
 
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target. No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -1937,7 +1939,6 @@ protected:
         }
         return result.Succeeded();
     }
-
 private:
     CommandOptions m_options;
 };
@@ -1945,13 +1946,13 @@ private:
 OptionDefinition
 CommandObjectBreakpointDelete::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "force", 'f', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_1, false, "force", 'f', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Delete all breakpoints without querying for confirmation."},
 
-    { LLDB_OPT_SET_1, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_1, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Delete Dummy breakpoints - i.e. breakpoints set before a file is provided, which prime new targets."},
 
-    { 0, false, nullptr, 0, 0, nullptr, nullptr, 0, eArgTypeNone, nullptr }
+    { 0, false, NULL, 0, 0, NULL, NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -1961,9 +1962,9 @@ CommandObjectBreakpointDelete::CommandOptions::g_option_table[] =
 static OptionDefinition
 g_breakpoint_name_options[] =
 {
-    { LLDB_OPT_SET_1,   false, "name", 'N', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBreakpointName, "Specifies a breakpoint name to use."},
-    { LLDB_OPT_SET_2,   false, "breakpoint-id", 'B', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBreakpointID,   "Specify a breakpoint id to use."},
-    { LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+    { LLDB_OPT_SET_1,   false, "name", 'N', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBreakpointName, "Specifies a breakpoint name to use."},
+    { LLDB_OPT_SET_2,   false, "breakpoint-id", 'B', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeBreakpointID,   "Specify a breakpoint id to use."},
+    { LLDB_OPT_SET_ALL, false, "dummy-breakpoints", 'D', OptionParser::eNoArgument, NULL, NULL, 0, eArgTypeNone,
         "Operate on Dummy breakpoints - i.e. breakpoints set before a file is provided, which prime new targets."},
 };
 class BreakpointNameOptionGroup : public OptionGroup
@@ -1974,10 +1975,13 @@ public:
         m_breakpoint(LLDB_INVALID_BREAK_ID),
         m_use_dummy (false)
     {
+
     }
 
-    ~BreakpointNameOptionGroup() override = default;
-
+    ~BreakpointNameOptionGroup () override
+    {
+    }
+    
     uint32_t
     GetNumDefinitions () override
     {
@@ -2035,6 +2039,7 @@ public:
     OptionValueBoolean m_use_dummy;
 };
 
+
 class CommandObjectBreakpointNameAdd : public CommandObjectParsed
 {
 public:
@@ -2058,14 +2063,14 @@ public:
             m_option_group.Finalize();
         }
 
-    ~CommandObjectBreakpointNameAdd() override = default;
+    ~CommandObjectBreakpointNameAdd () override {}
 
-    Options *
-    GetOptions() override
-    {
-        return &m_option_group;
-    }
-
+  Options *
+  GetOptions () override
+  {
+    return &m_option_group;
+  }
+  
 protected:
     bool
     DoExecute (Args& command, CommandReturnObject &result) override
@@ -2078,7 +2083,7 @@ protected:
 
         Target *target = GetSelectedOrDummyTarget(m_name_options.m_use_dummy.GetCurrentValue());
 
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target. No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -2128,6 +2133,8 @@ private:
     OptionGroupOptions m_option_group;
 };
 
+
+
 class CommandObjectBreakpointNameDelete : public CommandObjectParsed
 {
 public:
@@ -2151,14 +2158,14 @@ public:
         m_option_group.Finalize();
     }
 
-    ~CommandObjectBreakpointNameDelete() override = default;
+    ~CommandObjectBreakpointNameDelete () override {}
 
-    Options *
-    GetOptions() override
-    {
-        return &m_option_group;
-    }
-
+  Options *
+  GetOptions () override
+  {
+    return &m_option_group;
+  }
+  
 protected:
     bool
     DoExecute (Args& command, CommandReturnObject &result) override
@@ -2171,7 +2178,7 @@ protected:
 
         Target *target = GetSelectedOrDummyTarget(m_name_options.m_use_dummy.GetCurrentValue());
 
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target. No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -2235,21 +2242,21 @@ public:
         m_option_group.Finalize();
     }
 
-    ~CommandObjectBreakpointNameList() override = default;
+    ~CommandObjectBreakpointNameList () override {}
 
-    Options *
-    GetOptions() override
-    {
-        return &m_option_group;
-    }
-
+  Options *
+  GetOptions () override
+  {
+    return &m_option_group;
+  }
+  
 protected:
     bool
     DoExecute (Args& command, CommandReturnObject &result) override
     {
         Target *target = GetSelectedOrDummyTarget(m_name_options.m_use_dummy.GetCurrentValue());
 
-        if (target == nullptr)
+        if (target == NULL)
         {
             result.AppendError ("Invalid target. No existing target or breakpoints.");
             result.SetStatus (eReturnStatusFailed);
@@ -2327,10 +2334,15 @@ public:
         LoadSubCommand ("add", add_command_object);
         LoadSubCommand ("delete", delete_command_object);
         LoadSubCommand ("list", list_command_object);
+
     }
 
-    ~CommandObjectBreakpointName() override = default;
+    ~CommandObjectBreakpointName () override
+    {
+    }
+
 };
+
 
 //-------------------------------------------------------------------------
 // CommandObjectMultiwordBreakpoint
@@ -2374,7 +2386,9 @@ CommandObjectMultiwordBreakpoint::CommandObjectMultiwordBreakpoint (CommandInter
     LoadSubCommand ("name",       name_command_object);
 }
 
-CommandObjectMultiwordBreakpoint::~CommandObjectMultiwordBreakpoint() = default;
+CommandObjectMultiwordBreakpoint::~CommandObjectMultiwordBreakpoint ()
+{
+}
 
 void
 CommandObjectMultiwordBreakpoint::VerifyIDs (Args &args,
@@ -2430,7 +2444,7 @@ CommandObjectMultiwordBreakpoint::VerifyIDs (Args &args,
         {
             BreakpointID cur_bp_id = valid_ids->GetBreakpointIDAtIndex (i);
             Breakpoint *breakpoint = target->GetBreakpointByID (cur_bp_id.GetBreakpointID()).get();
-            if (breakpoint != nullptr)
+            if (breakpoint != NULL)
             {
                 const size_t num_locations = breakpoint->GetNumLocations();
                 if (static_cast<size_t>(cur_bp_id.GetLocationID()) > num_locations)

@@ -282,7 +282,6 @@ public:
               ClangExpressionDeclMap *decl_map,
               lldb::addr_t loclist_base_load_addr,
               const Value* initial_value_ptr,
-              const Value* object_address_ptr,
               Value& result,
               Error *error_ptr) const;
 
@@ -297,7 +296,6 @@ public:
               RegisterContext *reg_ctx,
               lldb::addr_t loclist_base_load_addr,
               const Value* initial_value_ptr,
-              const Value* object_address_ptr,
               Value& result,
               Error *error_ptr) const;
 
@@ -372,7 +370,6 @@ public:
               const lldb::offset_t length,
               const lldb::RegisterKind reg_set,
               const Value* initial_value_ptr,
-              const Value* object_address_ptr,
               Value& result,
               Error *error_ptr);
 

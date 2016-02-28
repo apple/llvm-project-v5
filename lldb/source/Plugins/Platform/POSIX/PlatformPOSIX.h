@@ -12,7 +12,6 @@
 
 // C Includes
 // C++ Includes
-#include <map>
 #include <memory>
 
 // Other libraries and framework includes
@@ -174,41 +173,11 @@ public:
     lldb_private::Error
     DisconnectRemote () override;
 
-    uint32_t
-    DoLoadImage (lldb_private::Process* process,
-                 const lldb_private::FileSpec& remote_file,
-                 lldb_private::Error& error) override;
-
-    lldb_private::Error
-    UnloadImage (lldb_private::Process* process, uint32_t image_token) override;
-
-    lldb::ProcessSP
-    ConnectProcess (const char* connect_url,
-                    const char* plugin_name,
-                    lldb_private::Debugger &debugger,
-                    lldb_private::Target *target,
-                    lldb_private::Error &error) override;
-                    
-    size_t
-    ConnectToWaitingProcesses(lldb_private::Debugger& debugger, lldb_private::Error& error) override;
-
 protected:
-    std::unique_ptr<lldb_private::OptionGroupPlatformRSync> m_option_group_platform_rsync;
-    std::unique_ptr<lldb_private::OptionGroupPlatformSSH> m_option_group_platform_ssh;
-    std::unique_ptr<lldb_private::OptionGroupPlatformCaching> m_option_group_platform_caching;
-    
-    std::map<lldb_private::CommandInterpreter*,std::unique_ptr<lldb_private::OptionGroupOptions>> m_options;
+    std::unique_ptr<lldb_private::OptionGroupOptions> m_options;
+        
     lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote POSIX-compliant OS
-
-    lldb_private::Error
-    EvaluateLibdlExpression(lldb_private::Process* process,
-                            const char *expr_cstr,
-                            const char *expr_prefix,
-                            lldb::ValueObjectSP& result_valobj_sp);
-
-    virtual const char*
-    GetLibdlFunctionDeclarations() const;
-
+    
 private:
     DISALLOW_COPY_AND_ASSIGN (PlatformPOSIX);
 };

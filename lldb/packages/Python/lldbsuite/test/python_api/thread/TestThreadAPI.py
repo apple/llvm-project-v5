@@ -8,10 +8,8 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
-from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 from lldbsuite.test.lldbutil import get_stopped_thread, get_caller_symbol
+from lldbsuite.test.lldbtest import *
 
 class ThreadAPITestCase(TestBase):
 
@@ -39,8 +37,8 @@ class ThreadAPITestCase(TestBase):
         self.run_to_address(self.exe_name)
 
     @add_test_categories(['pyapi'])
-    @expectedFailureAll(oslist=['freebsd'], bugnumber='llvm.org/pr20476')
-    @expectedFailureAll(oslist=["windows"])
+    @expectedFailureFreeBSD # llvm.org/pr20476
+    @expectedFailureWindows # Test crashes
     def test_step_out_of_malloc_into_function_b(self):
         """Test Python SBThread.StepOut() API to step out of a malloc call where the call site is at function b()."""
         # We build a different executable than the default build() does.

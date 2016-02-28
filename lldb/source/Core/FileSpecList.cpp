@@ -119,8 +119,7 @@ FileSpecList::FindFileIndex (size_t start_idx, const FileSpec &file_spec, bool f
     {
         if (compare_filename_only)
         {
-            if (ConstString::Equals(m_files[idx].GetFilename(), file_spec.GetFilename(),
-                                    file_spec.IsCaseSensitive() || m_files[idx].IsCaseSensitive()))
+            if (m_files[idx].GetFilename() == file_spec.GetFilename())
                 return idx;
         }
         else

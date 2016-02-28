@@ -51,14 +51,12 @@ class StdCXXDisassembleTestCase(TestBase):
 
         # Disassemble the functions on the call stack.
         self.runCmd("thread backtrace")
-        thread = lldbutil.get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-        self.assertIsNotNone(thread)
+        thread = process.GetThreadAtIndex(0)
         depth = thread.GetNumFrames()
         for i in range(depth - 1):
             frame = thread.GetFrameAtIndex(i)
             function = frame.GetFunction()
-            if function.GetName():
-                self.runCmd("disassemble -n '%s'" % function.GetName())
+            self.runCmd("disassemble -n '%s'" % function.GetName())
 
         lib_stdcxx = "FAILHORRIBLYHERE"
         # Iterate through the available modules, looking for stdc++ library...

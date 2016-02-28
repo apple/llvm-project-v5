@@ -7,11 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/Target/StackFrame.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Target/StackFrame.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Disassembler.h"
@@ -23,7 +24,6 @@
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolContextScope.h"
-#include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -57,7 +57,7 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
     m_reg_context_sp (),
-    m_id(pc, cfa, nullptr),
+    m_id (pc, cfa, NULL),
     m_frame_code_addr (pc),
     m_sc (),
     m_flags (),
@@ -74,12 +74,12 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
 {
     // If we don't have a CFA value, use the frame index for our StackID so that recursive
     // functions properly aren't confused with one another on a history stack.
-    if (m_is_history_frame && !m_cfa_is_valid)
+    if (m_is_history_frame && m_cfa_is_valid == false)
     {
         m_id.SetCFA (m_frame_index);
     }
 
-    if (sc_ptr != nullptr)
+    if (sc_ptr != NULL)
     {
         m_sc = *sc_ptr;
         m_flags.Set(m_sc.GetResolvedMask ());
@@ -97,7 +97,7 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
     m_reg_context_sp (reg_context_sp),
-    m_id(pc, cfa, nullptr),
+    m_id (pc, cfa, NULL),
     m_frame_code_addr (pc),
     m_sc (),
     m_flags (),
@@ -112,7 +112,7 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_disassembly (),
     m_mutex (Mutex::eMutexTypeRecursive)
 {
-    if (sc_ptr != nullptr)
+    if (sc_ptr != NULL)
     {
         m_sc = *sc_ptr;
         m_flags.Set(m_sc.GetResolvedMask ());
@@ -137,7 +137,7 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
     m_reg_context_sp (reg_context_sp),
-    m_id(pc_addr.GetLoadAddress(thread_sp->CalculateTarget().get()), cfa, nullptr),
+    m_id (pc_addr.GetLoadAddress (thread_sp->CalculateTarget().get()), cfa, NULL),
     m_frame_code_addr (pc_addr),
     m_sc (),
     m_flags (),
@@ -152,13 +152,13 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_disassembly (),
     m_mutex (Mutex::eMutexTypeRecursive)
 {
-    if (sc_ptr != nullptr)
+    if (sc_ptr != NULL)
     {
         m_sc = *sc_ptr;
         m_flags.Set(m_sc.GetResolvedMask ());
     }
     
-    if (!m_sc.target_sp && reg_context_sp)
+    if (m_sc.target_sp.get() == NULL && reg_context_sp)
     {
         m_sc.target_sp = reg_context_sp->CalculateTarget();
         if (m_sc.target_sp)
@@ -180,7 +180,13 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     }
 }
 
-StackFrame::~StackFrame() = default;
+
+//----------------------------------------------------------------------
+// Destructor
+//----------------------------------------------------------------------
+StackFrame::~StackFrame()
+{
+}
 
 StackID&
 StackFrame::GetStackID()
@@ -202,13 +208,13 @@ StackFrame::GetStackID()
             // Calculate the frame block and use this for the stack ID symbol
             // context scope if we have one.
             SymbolContextScope *scope = GetFrameBlock (); 
-            if (scope == nullptr)
+            if (scope == NULL)
             {
                 // We don't have a block, so use the symbol
                 if (m_flags.IsClear (eSymbolContextSymbol))
                     GetSymbolContext (eSymbolContextSymbol);
                 
-                // It is ok if m_sc.symbol is nullptr here
+                // It is ok if m_sc.symbol is NULL here
                 scope = m_sc.symbol;
             }
             // Set the symbol context scope (the accessor will set the
@@ -294,8 +300,8 @@ StackFrame::Disassemble ()
         Target *target = exe_ctx.GetTargetPtr();
         if (target)
         {
-            const char *plugin_name = nullptr;
-            const char *flavor = nullptr;
+            const char *plugin_name = NULL;
+            const char *flavor = NULL;
             Disassembler::Disassemble (target->GetDebugger(),
                                        target->GetArchitecture(),
                                        plugin_name,
@@ -307,7 +313,7 @@ StackFrame::Disassemble ()
                                        m_disassembly);
         }
         if (m_disassembly.GetSize() == 0)
-            return nullptr;
+            return NULL;
     }
     return m_disassembly.GetData();
 }
@@ -315,7 +321,7 @@ StackFrame::Disassemble ()
 Block *
 StackFrame::GetFrameBlock ()
 {
-    if (m_sc.block == nullptr && m_flags.IsClear(eSymbolContextBlock))
+    if (m_sc.block == NULL && m_flags.IsClear (eSymbolContextBlock))
         GetSymbolContext (eSymbolContextBlock);
 
     if (m_sc.block)
@@ -335,7 +341,7 @@ StackFrame::GetFrameBlock ()
             return &m_sc.function->GetBlock (false);
         }
     }    
-    return nullptr;
+    return NULL;
 }
 
 //----------------------------------------------------------------------
@@ -361,6 +367,7 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
                 resolved |= eSymbolContextTarget;
         }
         
+
         // Resolve our PC to section offset if we haven't already done so
         // and if we don't have a module. The resolved address section will
         // contain the module to which it belongs
@@ -402,6 +409,7 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
                 }
             }
         }
+
 
         if (m_sc.module_sp)
         {
@@ -478,13 +486,13 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
                 // Only replace what we didn't already have as we may have 
                 // information for an inlined function scope that won't match
                 // what a standard lookup by address would match
-                if ((resolved & eSymbolContextCompUnit)  && m_sc.comp_unit == nullptr)  
+                if ((resolved & eSymbolContextCompUnit)  && m_sc.comp_unit == NULL)  
                     m_sc.comp_unit = sc.comp_unit;
-                if ((resolved & eSymbolContextFunction)  && m_sc.function == nullptr)  
+                if ((resolved & eSymbolContextFunction)  && m_sc.function == NULL)  
                     m_sc.function = sc.function;
-                if ((resolved & eSymbolContextBlock)     && m_sc.block == nullptr)  
+                if ((resolved & eSymbolContextBlock)     && m_sc.block == NULL)  
                     m_sc.block = sc.block;
-                if ((resolved & eSymbolContextSymbol)    && m_sc.symbol == nullptr)  
+                if ((resolved & eSymbolContextSymbol)    && m_sc.symbol == NULL)  
                     m_sc.symbol = sc.symbol;
                 if ((resolved & eSymbolContextLineEntry) && !m_sc.line_entry.IsValid())
                 {
@@ -524,6 +532,7 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
     return m_sc;
 }
 
+
 VariableList *
 StackFrame::GetVariableList (bool get_file_globals)
 {
@@ -540,11 +549,7 @@ StackFrame::GetVariableList (bool get_file_globals)
             const bool can_create = true;
             const bool stop_if_child_block_is_inlined_function = true;
             m_variable_list_sp.reset(new VariableList());
-            frame_block->AppendBlockVariables(can_create,
-                                              get_child_variables,
-                                              stop_if_child_block_is_inlined_function,
-                                              [this](Variable* v) { return v->IsInScope(this); },
-                                              m_variable_list_sp.get());
+            frame_block->AppendBlockVariables(can_create, get_child_variables, stop_if_child_block_is_inlined_function, m_variable_list_sp.get());
         }
     }
     
@@ -588,11 +593,10 @@ StackFrame::GetInScopeVariableList (bool get_file_globals)
         m_sc.block->AppendVariables (can_create, 
                                      get_parent_variables,
                                      stop_if_block_is_inlined_function,
-                                     [this](Variable* v) { return v->IsInScope(this); },
                                      var_list_sp.get());
     }
                      
-    if (m_sc.comp_unit && get_file_globals)
+    if (m_sc.comp_unit)
     {
         VariableListSP global_variable_list_sp (m_sc.comp_unit->GetVariableList(true));
         if (global_variable_list_sp)
@@ -601,6 +605,7 @@ StackFrame::GetInScopeVariableList (bool get_file_globals)
     
     return var_list_sp;
 }
+
 
 ValueObjectSP
 StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
@@ -662,8 +667,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
             {
                 var_path.erase (0, name_const_string.GetLength ());
             }
-            
-            if (!var_sp && (options & eExpressionPathOptionsAllowDirectIVarAccess))
+            else if (options & eExpressionPathOptionsAllowDirectIVarAccess)
             {
                 // Check for direct ivars access which helps us with implicit
                 // access to ivars with the "this->" or "self->"
@@ -685,43 +689,13 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                     }
                 }
             }
-            
-            if (!var_sp && (options & eExpressionPathOptionsInspectAnonymousUnions))
-            {
-                // Check if any anonymous unions are there which contain a variable with the name we need
-                for (size_t i = 0;
-                     i < variable_list->GetSize();
-                     i++)
-                {
-                    if (VariableSP variable_sp = variable_list->GetVariableAtIndex(i))
-                    {
-                        if (variable_sp->GetName().IsEmpty())
-                        {
-                            if (Type *var_type = variable_sp->GetType())
-                            {
-                                if (var_type->GetForwardCompilerType().IsAnonymousType())
-                                {
-                                    valobj_sp = GetValueObjectForFrameVariable (variable_sp, use_dynamic);
-                                    if (!valobj_sp)
-                                        return valobj_sp;
-                                    valobj_sp = valobj_sp->GetChildMemberWithName(name_const_string, true);
-                                    if (valobj_sp)
-                                        break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
 
-            if (var_sp && !valobj_sp)
+            if (var_sp)
             {
                 valobj_sp = GetValueObjectForFrameVariable (var_sp, use_dynamic);
                 if (!valobj_sp)
                     return valobj_sp;
-            }
-            if (valobj_sp)
-            {
+                    
                 // We are dumping at least one child
                 while (separator_idx != std::string::npos)
                 {
@@ -730,6 +704,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                     const char separator_type = var_path[0];
                     switch (separator_type)
                     {
+
                     case '-':
                         if (var_path.size() >= 2 && var_path[1] != '>')
                             return ValueObjectSP();
@@ -738,7 +713,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                         {
                             // Make sure we aren't trying to deref an objective
                             // C ivar if this is not allowed
-                            const uint32_t pointer_type_flags = valobj_sp->GetCompilerType().GetTypeInfo(nullptr);
+                            const uint32_t pointer_type_flags = valobj_sp->GetCompilerType().GetTypeInfo (NULL);
                             if ((pointer_type_flags & eTypeIsObjC) &&
                                 (pointer_type_flags & eTypeIsPointer))
                             {
@@ -749,7 +724,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             }
                         }
                         var_path.erase (0, 1); // Remove the '-'
-                        LLVM_FALLTHROUGH;
+                        // Fall through
                     case '.':
                         {
                             const bool expr_is_ptr = var_path[0] == '>';
@@ -793,7 +768,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             child_valobj_sp = valobj_sp->GetChildMemberWithName (child_name, true);
                             if (!child_valobj_sp)
                             {
-                                if (!no_synth_child)
+                                if (no_synth_child == false)
                                 {
                                     child_valobj_sp = valobj_sp->GetSyntheticValue();
                                     if (child_valobj_sp)
@@ -847,7 +822,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                         // Array member access, or treating pointer as an array
                         if (var_path.size() > 2) // Need at least two brackets and a number
                         {
-                            char *end = nullptr;
+                            char *end = NULL;
                             long child_index = ::strtol (&var_path[1], &end, 0);
                             if (end && *end == ']'
                                 && *(end-1) != '[') // this code forces an error in the case of arr[]. as bitfield[] is not a good syntax we're good to go
@@ -912,7 +887,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                     {                                            
                                         // dereferencing ObjC variables is not valid.. so let's try and recur to synthetic children
                                         ValueObjectSP synthetic = valobj_sp->GetSyntheticValue();
-                                        if (!synthetic /* no synthetic */
+                                        if (synthetic.get() == NULL /* no synthetic */
                                             || synthetic == valobj_sp) /* synthetic is the same as the original object */
                                         {
                                             valobj_sp->GetExpressionPath (var_expr_path_strm, false);
@@ -954,12 +929,12 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         }
                                     }
                                 }
-                                else if (valobj_sp->GetCompilerType().IsArrayType(nullptr, nullptr, &is_incomplete_array))
+                                else if (valobj_sp->GetCompilerType().IsArrayType (NULL, NULL, &is_incomplete_array))
                                 {
                                     // Pass false to dynamic_value here so we can tell the difference between
                                     // no dynamic value and no member of this type...
                                     child_valobj_sp = valobj_sp->GetChildAtIndex (child_index, true);
-                                    if (!child_valobj_sp && (is_incomplete_array || !no_synth_child))
+                                    if (!child_valobj_sp && (is_incomplete_array || no_synth_child == false))
                                         child_valobj_sp = valobj_sp->GetSyntheticArrayMember (child_index, true);
 
                                     if (!child_valobj_sp)
@@ -988,7 +963,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 {
                                     ValueObjectSP synthetic = valobj_sp->GetSyntheticValue();
                                     if (no_synth_child /* synthetic is forbidden */ ||
-                                        !synthetic /* no synthetic */
+                                        synthetic.get() == NULL /* no synthetic */
                                         || synthetic == valobj_sp) /* synthetic is the same as the original object */
                                     {
                                         valobj_sp->GetExpressionPath (var_expr_path_strm, false);
@@ -1041,7 +1016,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             else if (end && *end == '-')
                             {
                                 // this is most probably a BitField, let's take a look
-                                char *real_end = nullptr;
+                                char *real_end = NULL;
                                 long final_index = ::strtol (end+1, &real_end, 0);
                                 bool expand_bitfield = true;
                                 if (real_end && *real_end == ']')
@@ -1167,6 +1142,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
 
                     if (var_path.empty())
                         break;
+
                 }
                 if (valobj_sp)
                 {
@@ -1201,7 +1177,7 @@ bool
 StackFrame::GetFrameBaseValue (Scalar &frame_base, Error *error_ptr)
 {
     Mutex::Locker locker(m_mutex);
-    if (!m_cfa_is_valid)
+    if (m_cfa_is_valid == false)
     {
         m_frame_base_error.SetErrorString("No frame base available for this historical stack frame.");
         return false;
@@ -1221,15 +1197,7 @@ StackFrame::GetFrameBaseValue (Scalar &frame_base, Error *error_ptr)
             if (m_sc.function->GetFrameBaseExpression().IsLocationList())
                 loclist_base_addr = m_sc.function->GetAddressRange().GetBaseAddress().GetLoadAddress (exe_ctx.GetTargetPtr());
 
-            if (m_sc.function->GetFrameBaseExpression().Evaluate(&exe_ctx,
-                                                                 nullptr,
-                                                                 nullptr,
-                                                                 nullptr,
-                                                                 loclist_base_addr,
-                                                                 nullptr,
-                                                                 nullptr,
-                                                                 expr_value,
-                                                                 &m_frame_base_error) == false)
+            if (m_sc.function->GetFrameBaseExpression().Evaluate(&exe_ctx, NULL, NULL, NULL, loclist_base_addr, NULL, expr_value, &m_frame_base_error) == false)
             {
                 // We should really have an error if evaluate returns, but in case
                 // we don't, lets set the error to something at least.
@@ -1275,6 +1243,7 @@ StackFrame::HasDebugInformation ()
     return m_sc.line_entry.IsValid();
 }
 
+
 ValueObjectSP
 StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, DynamicValueType use_dynamic)
 {
@@ -1293,7 +1262,7 @@ StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, Dynam
         if (var_idx < num_variables)
         {
             valobj_sp = m_variable_list_value_objects.GetValueObjectAtIndex (var_idx);
-            if (!valobj_sp)
+            if (valobj_sp.get() == NULL)
             {
                 if (m_variable_list_value_objects.GetSize() < num_variables)
                     m_variable_list_value_objects.Resize(num_variables);
@@ -1325,7 +1294,7 @@ StackFrame::TrackGlobalVariable (const VariableSP &variable_sp, DynamicValueType
         // We aren't already tracking this global
         VariableList *var_list = GetVariableList (true);
         // If this frame has no variables, create a new list
-        if (var_list == nullptr)
+        if (var_list == NULL)
             m_variable_list_sp.reset (new VariableList());
 
         // Add the global/static variable to this frame
@@ -1340,10 +1309,10 @@ StackFrame::TrackGlobalVariable (const VariableSP &variable_sp, DynamicValueType
 bool
 StackFrame::IsInlined ()
 {
-    if (m_sc.block == nullptr)
+    if (m_sc.block == NULL)
         GetSymbolContext (eSymbolContextBlock);
     if (m_sc.block)
-        return m_sc.block->GetContainingInlinedBlock() != nullptr;
+        return m_sc.block->GetContainingInlinedBlock() != NULL;
     return false;
 }
 
@@ -1392,6 +1361,7 @@ StackFrame::CalculateStackFrame ()
     return shared_from_this();
 }
 
+
 void
 StackFrame::CalculateExecutionContext (ExecutionContext &exe_ctx)
 {
@@ -1401,7 +1371,7 @@ StackFrame::CalculateExecutionContext (ExecutionContext &exe_ctx)
 void
 StackFrame::DumpUsingSettingsFormat (Stream *strm, const char *frame_marker)
 {
-    if (strm == nullptr)
+    if (strm == NULL)
         return;
 
     GetSymbolContext(eSymbolContextEverything);
@@ -1411,11 +1381,11 @@ StackFrame::DumpUsingSettingsFormat (Stream *strm, const char *frame_marker)
     if (frame_marker)
         s.PutCString(frame_marker);
 
-    const FormatEntity::Entry *frame_format = nullptr;
+    const FormatEntity::Entry *frame_format = NULL;
     Target *target = exe_ctx.GetTargetPtr();
     if (target)
         frame_format = target->GetDebugger().GetFrameFormat();
-    if (frame_format && FormatEntity::Format(*frame_format, s, &m_sc, &exe_ctx, nullptr, nullptr, false, false))
+    if (frame_format && FormatEntity::Format(*frame_format, s, &m_sc, &exe_ctx, NULL, NULL, false, false))
     {
         strm->Write(s.GetData(), s.GetSize());
     }
@@ -1429,7 +1399,7 @@ StackFrame::DumpUsingSettingsFormat (Stream *strm, const char *frame_marker)
 void
 StackFrame::Dump (Stream *strm, bool show_frame_index, bool show_fullpaths)
 {
-    if (strm == nullptr)
+    if (strm == NULL)
         return;
 
     if (show_frame_index)
@@ -1464,6 +1434,7 @@ StackFrame::UpdateCurrentFrameFromPreviousFrame (StackFrame &prev_frame)
     if (!m_disassembly.GetString().empty())
         m_disassembly.GetString().swap (m_disassembly.GetString());
 }
+    
 
 void
 StackFrame::UpdatePreviousFrameFromCurrentFrame (StackFrame &curr_frame)
@@ -1476,10 +1447,10 @@ StackFrame::UpdatePreviousFrameFromCurrentFrame (StackFrame &curr_frame)
     m_concrete_frame_index = curr_frame.m_concrete_frame_index;
     m_reg_context_sp = curr_frame.m_reg_context_sp;
     m_frame_code_addr = curr_frame.m_frame_code_addr;
-    assert (!m_sc.target_sp || !curr_frame.m_sc.target_sp || m_sc.target_sp.get() == curr_frame.m_sc.target_sp.get());
-    assert (!m_sc.module_sp || !curr_frame.m_sc.module_sp || m_sc.module_sp.get() == curr_frame.m_sc.module_sp.get());
-    assert (m_sc.comp_unit == nullptr || curr_frame.m_sc.comp_unit == nullptr || m_sc.comp_unit == curr_frame.m_sc.comp_unit);
-    assert (m_sc.function == nullptr || curr_frame.m_sc.function == nullptr || m_sc.function == curr_frame.m_sc.function);
+    assert (m_sc.target_sp.get() == NULL || curr_frame.m_sc.target_sp.get() == NULL || m_sc.target_sp.get() == curr_frame.m_sc.target_sp.get());
+    assert (m_sc.module_sp.get() == NULL || curr_frame.m_sc.module_sp.get() == NULL || m_sc.module_sp.get() == curr_frame.m_sc.module_sp.get());
+    assert (m_sc.comp_unit == NULL || curr_frame.m_sc.comp_unit == NULL || m_sc.comp_unit == curr_frame.m_sc.comp_unit);
+    assert (m_sc.function == NULL || curr_frame.m_sc.function == NULL || m_sc.function == curr_frame.m_sc.function);
     m_sc = curr_frame.m_sc;
     m_flags.Clear(GOT_FRAME_BASE | eSymbolContextEverything);
     m_flags.Set (m_sc.GetResolvedMask());
@@ -1487,10 +1458,11 @@ StackFrame::UpdatePreviousFrameFromCurrentFrame (StackFrame &curr_frame)
     m_frame_base_error.Clear();
 }
     
+
 bool
 StackFrame::HasCachedData () const
 {
-    if (m_variable_list_sp)
+    if (m_variable_list_sp.get())
         return true;
     if (m_variable_list_value_objects.GetSize() > 0)
         return true;
@@ -1515,7 +1487,7 @@ StackFrame::GetStatus (Stream& strm,
     if (show_source)
     {
         ExecutionContext exe_ctx (shared_from_this());
-        bool have_source = false, have_debuginfo = false;
+        bool have_source = false;
         Debugger::StopDisassemblyType disasm_display = Debugger::eStopDisassemblyTypeNever;
         Target *target = exe_ctx.GetTargetPtr();
         if (target)
@@ -1528,35 +1500,26 @@ StackFrame::GetStatus (Stream& strm,
             GetSymbolContext(eSymbolContextCompUnit | eSymbolContextLineEntry);
             if (m_sc.comp_unit && m_sc.line_entry.IsValid())
             {
-                have_debuginfo = true;
+                have_source = true;
                 if (source_lines_before > 0 || source_lines_after > 0)
                 {
-                    size_t num_lines = target->GetSourceManager().DisplaySourceLinesWithLineNumbers (m_sc.line_entry.file,
+                    target->GetSourceManager().DisplaySourceLinesWithLineNumbers (m_sc.line_entry.file,
                                                                                       m_sc.line_entry.line,
                                                                                       source_lines_before,
                                                                                       source_lines_after,
                                                                                       "->",
                                                                                       &strm);
-                    if (num_lines != 0)
-                        have_source = true;
-                    // TODO: Give here a one time warning if source file is missing.
                 }
             }
             switch (disasm_display)
             {
             case Debugger::eStopDisassemblyTypeNever:
                 break;
-
-            case Debugger::eStopDisassemblyTypeNoDebugInfo:
-                if (have_debuginfo)
-                    break;
-                LLVM_FALLTHROUGH;
-
+                
             case Debugger::eStopDisassemblyTypeNoSource:
                 if (have_source)
                     break;
-                LLVM_FALLTHROUGH;
-
+                // Fall through to next case
             case Debugger::eStopDisassemblyTypeAlways:
                 if (target)
                 {
@@ -1567,8 +1530,8 @@ StackFrame::GetStatus (Stream& strm,
                         AddressRange pc_range;
                         pc_range.GetBaseAddress() = GetFrameCodeAddress();
                         pc_range.SetByteSize(disasm_lines * target_arch.GetMaximumOpcodeByteSize());
-                        const char *plugin_name = nullptr;
-                        const char *flavor = nullptr;
+                        const char *plugin_name = NULL;
+                        const char *flavor = NULL;
                         Disassembler::Disassemble (target->GetDebugger(),
                                                    target_arch,
                                                    plugin_name,
@@ -1587,3 +1550,4 @@ StackFrame::GetStatus (Stream& strm,
     }
     return true;
 }
+

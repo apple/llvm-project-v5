@@ -72,13 +72,6 @@ public:
         eMIPSABI_mask       = 0x000ff000
     };
 
-    // ARM specific e_flags
-    enum ARMeflags
-    {
-        eARM_abi_soft_float = 0x00000200,
-        eARM_abi_hard_float = 0x00000400
-    };
-
     enum Core
     {
         eCore_arm_generic,
@@ -219,11 +212,7 @@ public:
         kCore_mips64_last   = eCore_mips64r6,
 
         kCore_mips64el_first  = eCore_mips64el,
-        kCore_mips64el_last   = eCore_mips64r6el,
-
-        kCore_mips_first  = eCore_mips32,
-        kCore_mips_last   = eCore_mips64r6el
-
+        kCore_mips64el_last   = eCore_mips64r6el
     };
 
     typedef void (* StopInfoOverrideCallbackType)(lldb_private::Thread &thread);
@@ -286,16 +275,6 @@ public:
     //------------------------------------------------------------------
     const char *
     GetArchitectureName () const;
-
-    //------------------------------------------------------------------
-    /// Returns a string representing current architecture as a target CPU
-    /// for tools like compiler, disassembler etc.
-    ///
-    /// @return A string representing target CPU for the current
-    ///         architecture.
-    //------------------------------------------------------------------
-    std::string
-    GetClangTargetCPU ();
 
     //------------------------------------------------------------------
     /// Clears the object state.

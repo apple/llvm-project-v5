@@ -5,11 +5,10 @@ Test lldb-mi -break-xxx commands.
 from __future__ import print_function
 
 
+
 import unittest2
 import lldbmi_testcase
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class MiBreakTestCase(lldbmi_testcase.MiTestCaseBase):
 
@@ -17,7 +16,7 @@ class MiBreakTestCase(lldbmi_testcase.MiTestCaseBase):
 
     @skipIfWindows #llvm.org/pr24452: Get lldb-mi tests working on Windows
     @skipIfFreeBSD # llvm.org/pr22411: Failure presumably due to known thread races
-    @expectedFlakeyLinux("llvm.org/pr24717")
+    @expectedFailureAll("llvm.org/pr24717", oslist=["linux"])
     def test_lldbmi_break_insert_function_pending(self):
         """Test that 'lldb-mi --interpreter' works for pending function breakpoints."""
 

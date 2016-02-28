@@ -33,7 +33,6 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Operator.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <map>
@@ -298,8 +297,7 @@ public:
 
                         SmallVector <Value *, 8> indices (op_cursor, op_end);
 
-                        Type *src_elem_ty = cast<GEPOperator>(constant_expr)->getSourceElementType();
-                        uint64_t offset = m_target_data.getIndexedOffsetInType(src_elem_ty, indices);
+                        uint64_t offset = m_target_data.getIndexedOffset(base->getType(), indices);
 
                         const bool is_signed = true;
                         value += APInt(value.getBitWidth(), offset, is_signed);
@@ -367,7 +365,7 @@ public:
 
         const uint64_t *raw_data = resolved_value.getRawData();
 
-        buffer.PutRawBytes(raw_data, constant_size, lldb_private::endian::InlHostByteOrder());
+        buffer.PutRawBytes(raw_data, constant_size, lldb::endian::InlHostByteOrder());
 
         lldb_private::Error write_error;
 
@@ -465,45 +463,6 @@ static const char *memory_read_error                = "Interpreter couldn't read
 static const char *infinite_loop_error              = "Interpreter ran for too many cycles";
 //static const char *bad_result_error                 = "Result of expression is in bad memory";
 
-static bool
-CanResolveConstant (llvm::Constant *constant)
-{
-    switch (constant->getValueID())
-    {
-    default:
-        return false;
-    case Value::ConstantIntVal:
-    case Value::ConstantFPVal:
-        return true;
-    case Value::ConstantExprVal:
-        if (const ConstantExpr *constant_expr = dyn_cast<ConstantExpr>(constant))
-        {
-            switch (constant_expr->getOpcode())
-            {
-                default:
-                    return false;
-                case Instruction::IntToPtr:
-                case Instruction::PtrToInt:
-                case Instruction::BitCast:
-                    return CanResolveConstant(constant_expr->getOperand(0));
-                case Instruction::GetElementPtr:
-                {
-                    ConstantExpr::const_op_iterator op_cursor = constant_expr->op_begin();
-                    Constant *base = dyn_cast<Constant>(*op_cursor);
-                    if (!base)
-                        return false;
-                    
-                    return CanResolveConstant(base);
-                }
-            }
-        } else {
-            return false;
-        }
-    case Value::ConstantPointerNullVal:
-        return true;
-    }
-}
-
 bool
 IRInterpreter::CanInterpret (llvm::Module &module,
                              llvm::Function &function,
@@ -539,7 +498,7 @@ IRInterpreter::CanInterpret (llvm::Module &module,
             default:
                 {
                     if (log)
-                        log->Printf("Unsupported instruction: %s", PrintValue(&*ii).c_str());
+                        log->Printf("Unsupported instruction: %s", PrintValue(ii).c_str());
                     error.SetErrorToGenericError();
                     error.SetErrorString(unsupported_opcode_error);
                     return false;
@@ -563,7 +522,7 @@ IRInterpreter::CanInterpret (llvm::Module &module,
                     if (!CanIgnoreCall(call_inst) && !support_function_calls)
                     {
                         if (log)
-                            log->Printf("Unsupported instruction: %s", PrintValue(&*ii).c_str());
+                            log->Printf("Unsupported instruction: %s", PrintValue(ii).c_str());
                         error.SetErrorToGenericError();
                         error.SetErrorString(unsupported_opcode_error);
                         return false;
@@ -588,7 +547,7 @@ IRInterpreter::CanInterpret (llvm::Module &module,
                     default:
                     {
                         if (log)
-                            log->Printf("Unsupported ICmp predicate: %s", PrintValue(&*ii).c_str());
+                            log->Printf("Unsupported ICmp predicate: %s", PrintValue(ii).c_str());
 
                         error.SetErrorToGenericError();
                         error.SetErrorString(unsupported_opcode_error);
@@ -650,17 +609,6 @@ IRInterpreter::CanInterpret (llvm::Module &module,
                         return false;
                     }
                 }
-                
-                if (Constant *constant = llvm::dyn_cast<Constant>(operand))
-                {
-                    if (!CanResolveConstant(constant))
-                    {
-                        if (log)
-                            log->Printf("Unsupported constant: %s", PrintValue(constant).c_str());
-                        error.SetErrorString(unsupported_operand_error);
-                        return false;
-                    }
-                }
             }
         }
 
@@ -715,16 +663,16 @@ IRInterpreter::Interpret (llvm::Module &module,
 
         lldb::addr_t ptr = args[arg_index];
 
-        frame.MakeArgument(&*ai, ptr);
+        frame.MakeArgument(ai, ptr);
     }
 
     uint32_t num_insts = 0;
 
-    frame.Jump(&function.front());
+    frame.Jump(function.begin());
 
     while (frame.m_ii != frame.m_ie && (++num_insts < 4096))
     {
-        const Instruction *inst = &*frame.m_ii;
+        const Instruction *inst = frame.m_ii;
 
         if (log)
             log->Printf("Interpreting %s", PrintValue(inst).c_str());
@@ -1051,7 +999,7 @@ IRInterpreter::Interpret (llvm::Module &module,
                 }
 
                 const Value *pointer_operand = gep_inst->getPointerOperand();
-                Type *src_elem_ty = gep_inst->getSourceElementType();
+                Type *pointer_type = pointer_operand->getType();
 
                 lldb_private::Scalar P;
 
@@ -1100,7 +1048,7 @@ IRInterpreter::Interpret (llvm::Module &module,
                     const_indices.push_back(constant_index);
                 }
 
-                uint64_t offset = data_layout.getIndexedOffsetInType(src_elem_ty, const_indices);
+                uint64_t offset = data_layout.getIndexedOffset(pointer_type, const_indices);
 
                 lldb_private::Scalar Poffset = P + offset;
 

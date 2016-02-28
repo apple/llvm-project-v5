@@ -27,7 +27,6 @@
 #include "lldb/Symbol/SymbolContextScope.h"
 #include "lldb/Symbol/TypeSystem.h"
 #include "lldb/Target/PathMappingList.h"
-#include "llvm/ADT/DenseSet.h"
 
 namespace lldb_private {
 
@@ -499,7 +498,6 @@ public:
                const ConstString &type_name,
                bool exact_match,
                size_t max_matches,
-               llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
                TypeList& types);
 
     lldb::TypeSP
@@ -1196,7 +1194,6 @@ private:
                     const CompilerDeclContext *parent_decl_ctx,
                     bool append, 
                     size_t max_matches,
-                    llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
                     TypeMap& types);
 
     DISALLOW_COPY_AND_ASSIGN (Module);

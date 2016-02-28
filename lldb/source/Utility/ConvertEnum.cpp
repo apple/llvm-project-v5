@@ -77,8 +77,6 @@ lldb_private::GetSectionTypeAsCString(lldb::SectionType sect_type)
             return "dwarf-loc";
         case eSectionTypeDWARFDebugMacInfo:
             return "dwarf-macinfo";
-        case eSectionTypeDWARFDebugMacro:
-            return "dwarf-macro";
         case eSectionTypeDWARFDebugPubNames:
             return "dwarf-pubnames";
         case eSectionTypeDWARFDebugPubTypes:
@@ -115,8 +113,6 @@ lldb_private::GetSectionTypeAsCString(lldb::SectionType sect_type)
             return "compact-unwind";
         case eSectionTypeGoSymtab:
             return "go-symtab";
-        case eSectionTypeAbsoluteAddress:
-            return "absolute";
         case eSectionTypeOther:
             return "regular";
     }

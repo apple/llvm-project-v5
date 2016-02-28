@@ -35,8 +35,6 @@
               </li>
               <li> <a href="http://lab.llvm.org:8011/builders/lldb-x86_64-freebsd">LLDB FreeBSD x86_64 (CMake)</a>
               </li>
-              <li> <a href="http://lab.llvm.org:8011/builders/lldb-amd64-ninja-netbsd7">LLDB NetBSD-7.0 amd64 (GCC 4.8.5, Ninja)</a>
-              </li>
             </ul>
           </p>
         </div>
@@ -46,7 +44,7 @@
           <ul>
             <li><a href="#BuildingLldbOnWindows">Building LLDB on Windows</a></li>
             <li><a href="#BuildingLldbOnMacOSX">Building LLDB on Mac OSX</a></li>
-            <li><a href="#BuildingLldbOnLinux">Building LLDB on Linux, FreeBSD and NetBSD</a></li>
+            <li><a href="#BuildingLldbOnLinux">Building LLDB on Linux and FreeBSD</a></li>
           </ul>
         </div>
         <div class="postfooter"></div>
@@ -55,22 +53,16 @@
           <div class="postcontent">
             <h2>Required Dependencies</h2>
             <ul>
-              <li>Visual Studio 2015 or greater</li>
-              <li>Windows SDK 8.0 or higher.  In general it is best to use the latest available version.</li>
+              <li>Visual Studio 2012 or greater</li>
+              <li>Windows SDK 8.0 or higher</li>
               <li>
-                <a href="https://www.python.org/downloads/windows/">Python 3.5 or higher</a> or higher.  Earlier
-                versions of Python can be made to work by compiling your own distribution from source,
-                but this workflow is unsupported and you are own your own.
+                <a href="https://www.python.org/download/releases/2.7/">Python 2.7</a>. Note that you <b>must</b>
+                compile Python from source.  See <a href="#WindowsPreliminaries">Preliminaries</a> for more
+                information.
               </li>
               <li><a href="http://martine.github.io/ninja/">Ninja build tool</a> (strongly recommended)</li>
               <li><a href="http://gnuwin32.sourceforge.net/">GnuWin32</a></li>
-              <li><a href="http://www.swig.org/download.html">SWIG for Windows (version 3+)</a></li>
-            </ul>
-            <h2>Optional Dependencies</h2>
-            <ul>
-              <li><a href="https://github.com/Microsoft/PTVS/releases">Python Tools for Visual Studio</a>.  If you
-              plan to debug test failures or even write new tests at all, PTVS is an indispensable debugging extension
-              to VS that enables full editing and debugging support for Python (including mixed native/managed debugging)</li>
+              <li><a href="http://www.swig.org/download.html">SWIG for Windows</a></li>
             </ul>
             <h2 id="WindowsPreliminaries">Preliminaries</h2>
             <p>
@@ -80,13 +72,45 @@
             </p>
             <ol>
               <li><p>Install Visual Studio and the Windows SDK.</p></li>
-              <li><p>Install GnuWin32, making sure <code>&lt;GnuWin32 install dir&gt;\bin</code> is added to your <code>PATH</code> environment variable.</p></li>
-              <li><p>Install SWIG for Windows, making sure <code>&lt;SWIG install dir&gt;</code> is added to your <code>PATH</code> environment variable.</p></li>
+              <li>
+                <p>
+                  Build Python from source using the solution file supplied with the Python 2.7 source
+                  distribution.
+                </p>
+                <p>
+                  Because LLDB functionality is compiled into a Python extension module,
+                  the extension module must be compiled with the same version of Visual Studio that
+                  Python itself was compiled with.  The binary release of Python 2.7 is compiled with
+                  Visual Studio 2008, so it is incompatible with linking against LLDB.
+                </p>
+                <p>
+                  Note that if you plan to do both debug and release builds of LLDB, you will need to
+                  compile both debug and release builds of Python.  The same applies if you plan to build
+                  both x86 and x64 configurations of LLDB
+                </p>
+              </li>
+              <li>
+                <p>Copy &lt;python src dir&gt;\PC\pyconfig.h to &lt;python src dir&gt;\Include.</p>
+                <p>
+                  This is necessary because pyconfig.h is a hand-maintained file which is platform specific,
+                  so multiple copies of this file are included with each source distribution.  It appears to
+                  be up to the person building Python to move the correct version of pyconfig.h to the Include
+                  folder.
+                </p>
+              </li>
+              <li>
+                <p>
+                  Run lldb/scripts/install_custom_python.py so to "install" your custom build of Python to a
+                  canonical directory structure.
+                </p>
+              </li>
+              <li><p>Install GnuWin32, making sure &lt;GnuWin32 install dir&gt;\bin is added to your PATH environment variable.</p></li>
+              <li><p>Install SWIG for Windows, making sure &lt;SWIG install dir&gt; is added to your PATH environment variable.</p></li>
             </ol>
             <h2>Building LLDB</h2>
             <p>
               Any command prompt from which you build LLDB should have a valid Visual Studio environment setup.
-              This means you should run <code>vcvarsall.bat</code> or open an appropriate Visual Studio Command Prompt
+              This means you should run vcvarsall.bat or open an appropriate Visual Studio Command Prompt
               corresponding to the version you wish to use.
             </p>
             <p>Finally, when you are ready to build LLDB, generate CMake with the following command line:</p>
@@ -104,8 +128,9 @@
                 a crash, rather than having to reproduce a failure or use a crash dump.
               </li>
               <li>
-                <b>PYTHON_HOME</b> (Required): Path to the folder where the Python distribution is installed.  For example,
-                C:\Python35
+                <b>PYTHON_HOME</b> (Required): Path the folder you specified in the --dest argument to install_custom_python.py.
+                Note that install_custom_python.py will create x86 and x64 subdirectories under this folder.  PYTHON_HOME should
+                refer to the correct architecture-specific folder.
               </li>
               <li>
                 <b>LLDB_RELOCATABLE_PYTHON</b> (Default=0): When this is 0, LLDB will bind statically to the location specified
@@ -115,28 +140,7 @@
                 use its default mechanism for finding the python installation at runtime (looking for installed Pythons, or using
                 the PYTHONHOME environment variable if it is specified).
               </li>
-              <li>
-                <b>LLDB_TEST_COMPILER</b>: The test suite needs to be able to find a copy of clang.exe that it can use to compile
-                inferior programs.  Note that MSVC is not supported here, it <strong>must</strong> be a path to a clang executable.
-                Note that using a release clang.exe is strongly recommended here, as it will make the test suite run much faster.
-                This can be a path to any recent clang.exe, including one you built yourself.
-              </li>
             </ul>
-            Sample command line:<br/>
-            <code>cmake -G Ninja -DLLDB_TEST_DEBUG_TEST_CRASHES=1 -DPYTHON_HOME=C:\Python35 -DLLDB_TEST_COMPILER=d:\src\llvmbuild\ninja_release\bin\clang.exe ..\..\llvm</code>
-            <h2>Working with both Ninja and MSVC</h2>
-            <p>
-              Compiling with <code>ninja</code> is both faster and simpler than compiling with MSVC, but chances are you still want
-              to debug LLDB with MSVC (at least until we can debug LLDB on Windows with LLDB!).  One solution to this is to run 
-              <code>cmake</code> twice and generate the output into two different folders.  One for compiling (the <code>ninja</code>
-              folder), and one for editing / browsing / debugging (the MSVC folder).
-            </p>
-            <p>
-              To do this, simply run <code>`cmake -G Ninja &lt;arguments&gt;`</code> from one folder, and 
-              <code>`cmake -G "Visual Studio 14 2015" &lt;arguments&gt;`</code> in another folder.  Then you can open the .sln file
-              in Visual Studio, set <code>lldb</code> as the startup project, and use F5 to run it.  You need only edit the project
-              settings to set the executable and the working directory to point to binaries inside of the <code>ninja</code> tree.
-            </p>
           </div>
         </div>
         <div class="post" id="BuildingLldbOnMacOSX">
@@ -161,9 +165,9 @@
           <div class="postfooter"></div>
         </div>
         <div class="post" id="BuildingLldbOnLinux">
-          <h1 class="postheader">Building LLDB on Linux, FreeBSD and NetBSD</h1>
+          <h1 class="postheader">Building LLDB on Linux and FreeBSD</h1>
           <div class="postcontent">
-            <p>This document describes the steps needed to compile LLDB on most Linux systems, FreeBSD and NetBSD.</a></p>
+            <p>This document describes the steps needed to compile LLDB on most Linux systems, and FreeBSD.</a></p>
           </div>
           <div class="postcontent">
             <h2>Preliminaries</h2>
@@ -188,10 +192,6 @@
               or the GCC port or package.
             </p>
             <p>
-              On NetBSD the base system GCC and libstdc++ are used to build LLDB,
-              Clang/LLVM and libc++ should also work.
-            </p>
-            <p>
               In addition to any dependencies required by LLVM and Clang, LLDB needs a few
               development packages that may also need to be installed depending on your
               system.  The current list of dependencies are:
@@ -209,8 +209,6 @@
             <code>&gt; sudo apt-get build-dep lldb-3.3 # or lldb-3.4</code>
             <p>On FreeBSD one might run:</p>
             <code>&gt; pkg install swig python</code>
-            <p>On NetBSD one might run:</p>
-            <code>&gt; pkgin install swig python27 cmake ninja-build</code>
             <p>If you wish to build the optional reference documentation, additional dependencies are required:</p>
             <ul>
               <li> Graphviz (for the 'dot' tool).
@@ -349,11 +347,6 @@
               is made available automatically.  However, if a script is to be run by a Python interpreter
               outside the command line application, the <tt>PYTHONPATH</tt> environment variable can be used
               to let the Python interpreter find the <tt>lldb</tt> module.
-            </p>
-            <p>
-              Current stable NetBSD release doesn't ship with libpanel(3), therefore it's required to disable curses(3) support with
-              the <tt>-DLLDB_DISABLE_CURSES:BOOL=TRUE</tt> option. To make sure check if <tt>/usr/include/panel.h</tt> exists in your
-              system.
             </p>
             <p>The correct path can be obtained by invoking the command line <tt>lldb</tt> tool with the -P flag:</p>
             <code>&gt; export PYTHONPATH=`$llvm/build/Debug+Asserts/bin/lldb -P`</code>

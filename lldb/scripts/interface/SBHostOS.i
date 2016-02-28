@@ -22,9 +22,6 @@ public:
     static lldb::SBFileSpec
     GetLLDBPath (lldb::PathType path_type);
 
-    static lldb::SBFileSpec
-    GetUserHomeDirectory ();
-
     static void
     ThreadCreated (const char *name);
 

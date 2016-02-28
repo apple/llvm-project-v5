@@ -7,14 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CommandObjectApropos.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "CommandObjectApropos.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/Property.h"
+
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 
@@ -26,10 +28,10 @@ using namespace lldb_private;
 //-------------------------------------------------------------------------
 
 CommandObjectApropos::CommandObjectApropos (CommandInterpreter &interpreter) :
-    CommandObjectParsed(interpreter,
-                        "apropos",
-                        "Find a list of debugger commands related to a particular word/subject.",
-                        nullptr)
+    CommandObjectParsed (interpreter,
+                         "apropos",
+                         "Find a list of debugger commands related to a particular word/subject.",
+                         NULL)
 {
     CommandArgumentEntry arg;
     CommandArgumentData search_word_arg;
@@ -45,7 +47,10 @@ CommandObjectApropos::CommandObjectApropos (CommandInterpreter &interpreter) :
     m_arguments.push_back (arg);
 }
 
-CommandObjectApropos::~CommandObjectApropos() = default;
+CommandObjectApropos::~CommandObjectApropos()
+{
+}
+
 
 bool
 CommandObjectApropos::DoExecute (Args& args, CommandReturnObject &result)
@@ -55,7 +60,7 @@ CommandObjectApropos::DoExecute (Args& args, CommandReturnObject &result)
     if (argc == 1)
     {
         const char *search_word = args.GetArgumentAtIndex(0);
-        if ((search_word != nullptr)
+        if ((search_word != NULL)
             && (strlen (search_word) > 0))
         {
             // The bulk of the work must be done inside the Command Interpreter, since the command dictionary
@@ -115,7 +120,9 @@ CommandObjectApropos::DoExecute (Args& args, CommandReturnObject &result)
                                                                user_commands_help.GetStringAtIndex(i),
                                                                max_len);
                 }
+                
             }
+            
             
             std::vector<const Property *> properties;
             const size_t num_properties = m_interpreter.GetDebugger().Apropos(search_word, properties);

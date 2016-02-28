@@ -12,8 +12,6 @@
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
-#include "llvm/ADT/StringRef.h"
-
 // Project includes
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
@@ -22,6 +20,7 @@
 
 using namespace lldb;
 using namespace lldb_private;
+#include "llvm/ADT/StringRef.h"
 
 //-------------------------------------------------------------------------
 // CommandObjectSettingsSet
@@ -31,10 +30,10 @@ class CommandObjectSettingsSet : public CommandObjectRaw
 {
 public:
     CommandObjectSettingsSet (CommandInterpreter &interpreter) :
-        CommandObjectRaw(interpreter,
-                         "settings set",
-                         "Set or change the value of a single debugger setting variable.",
-                         nullptr),
+        CommandObjectRaw (interpreter,
+                          "settings set",
+                          "Set or change the value of a single debugger setting variable.",
+                          NULL),
         m_options (interpreter)
     {
         CommandArgumentEntry arg1;
@@ -83,7 +82,8 @@ insert-before or insert-after."
 
     }
 
-    ~CommandObjectSettingsSet() override = default;
+
+    ~CommandObjectSettingsSet () override {}
 
     // Overrides base class's behavior where WantsCompletion = !WantsRawCommandString.
     bool
@@ -98,13 +98,14 @@ insert-before or insert-after."
     class CommandOptions : public Options
     {
     public:
+
         CommandOptions (CommandInterpreter &interpreter) :
             Options (interpreter),
             m_global (false)
         {
         }
 
-        ~CommandOptions() override = default;
+        ~CommandOptions () override {}
 
         Error
         SetOptionValue (uint32_t option_idx, const char *option_arg) override
@@ -159,7 +160,7 @@ insert-before or insert-after."
         std::string completion_str (input.GetArgumentAtIndex (cursor_index), cursor_char_position);
 
         const size_t argc = input.GetArgumentCount();
-        const char *arg = nullptr;
+        const char *arg = NULL;
         int setting_var_idx;
         for (setting_var_idx = 1; setting_var_idx < static_cast<int>(argc);
              ++setting_var_idx)
@@ -171,14 +172,14 @@ insert-before or insert-after."
         if (cursor_index == setting_var_idx)
         {
             // Attempting to complete setting variable name
-            CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                                CommandCompletions::eSettingsNameCompletion,
-                                                                completion_str.c_str(),
-                                                                match_start_point,
-                                                                max_return_elements,
-                                                                nullptr,
-                                                                word_complete,
-                                                                matches);
+            CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                                 CommandCompletions::eSettingsNameCompletion,
+                                                                 completion_str.c_str(),
+                                                                 match_start_point,
+                                                                 max_return_elements,
+                                                                 NULL,
+                                                                 word_complete,
+                                                                 matches);
         }
         else
         {
@@ -230,7 +231,7 @@ protected:
         }
 
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        if ((var_name == nullptr) || (var_name[0] == '\0'))
+        if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings set' command requires a valid variable name");
             result.SetStatus (eReturnStatusFailed);
@@ -245,10 +246,10 @@ protected:
         Error error;
         if (m_options.m_global)
         {
-            error = m_interpreter.GetDebugger().SetPropertyValue(nullptr,
-                                                                 eVarSetOperationAssign,
-                                                                 var_name,
-                                                                 var_value_cstr);
+            error = m_interpreter.GetDebugger().SetPropertyValue (NULL,
+                                                                  eVarSetOperationAssign,
+                                                                  var_name,
+                                                                  var_value_cstr);
         }
         
         if (error.Success())
@@ -279,7 +280,6 @@ protected:
 
         return result.Succeeded();
     }
-
 private:
     CommandOptions m_options;
 };
@@ -287,9 +287,10 @@ private:
 OptionDefinition
 CommandObjectSettingsSet::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_2, false, "global", 'g', OptionParser::eNoArgument,   nullptr, nullptr, 0, eArgTypeNone, "Apply the new value to the global default value." },
-    { 0, false, nullptr, 0, 0, nullptr, nullptr, 0, eArgTypeNone, nullptr }
+    { LLDB_OPT_SET_2, false, "global", 'g', OptionParser::eNoArgument,   NULL, NULL, 0, eArgTypeNone, "Apply the new value to the global default value." },
+    { 0, false, NULL, 0, 0, NULL, NULL, 0, eArgTypeNone, NULL }
 };
+
 
 //-------------------------------------------------------------------------
 // CommandObjectSettingsShow -- Show current values
@@ -299,10 +300,10 @@ class CommandObjectSettingsShow : public CommandObjectParsed
 {
 public:
     CommandObjectSettingsShow (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "settings show",
-                            "Show the specified internal debugger setting variable and its value, or show all the currently set variables and their values, if nothing is specified.",
-                            nullptr)
+        CommandObjectParsed (interpreter,
+                             "settings show",
+                             "Show the specified internal debugger setting variable and its value, or show all the currently set variables and their values, if nothing is specified.",
+                             NULL)
     {
         CommandArgumentEntry arg1;
         CommandArgumentData var_name_arg;
@@ -318,7 +319,8 @@ public:
         m_arguments.push_back (arg1);
     }
 
-    ~CommandObjectSettingsShow() override = default;
+    ~CommandObjectSettingsShow () override {}
+
 
     int
     HandleArgumentCompletion (Args &input,
@@ -332,14 +334,14 @@ public:
     {
         std::string completion_str (input.GetArgumentAtIndex (cursor_index), cursor_char_position);
 
-        CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                            CommandCompletions::eSettingsNameCompletion,
-                                                            completion_str.c_str(),
-                                                            match_start_point,
-                                                            max_return_elements,
-                                                            nullptr,
-                                                            word_complete,
-                                                            matches);
+        CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                             CommandCompletions::eSettingsNameCompletion,
+                                                             completion_str.c_str(),
+                                                             match_start_point,
+                                                             max_return_elements,
+                                                             NULL,
+                                                             word_complete,
+                                                             matches);
         return matches.GetSize();
     }
 
@@ -352,7 +354,7 @@ protected:
         const size_t argc = args.GetArgumentCount ();
         if (argc > 0)
         {
-            for (size_t i = 0; i < argc; ++i)
+            for (size_t i=0; i<argc; ++i)
             {
                 const char *property_path = args.GetArgumentAtIndex (i);
 
@@ -385,10 +387,10 @@ class CommandObjectSettingsList : public CommandObjectParsed
 {
 public: 
     CommandObjectSettingsList (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "settings list",
-                            "List and describe all the internal debugger settings variables that are available to the user to 'set' or 'show', or describe a particular variable or set of variables (by specifying the variable name or a common prefix).",
-                            nullptr)
+        CommandObjectParsed (interpreter,
+                             "settings list",
+                             "List and describe all the internal debugger settings variables that are available to the user to 'set' or 'show', or describe a particular variable or set of variables (by specifying the variable name or a common prefix).",
+                             NULL)
     {
         CommandArgumentEntry arg;
         CommandArgumentData var_name_arg;
@@ -409,7 +411,7 @@ public:
         m_arguments.push_back (arg);
     }
 
-    ~CommandObjectSettingsList() override = default;
+    ~CommandObjectSettingsList () override {}
 
     int
     HandleArgumentCompletion (Args &input,
@@ -423,14 +425,14 @@ public:
     {
         std::string completion_str (input.GetArgumentAtIndex (cursor_index), cursor_char_position);
 
-        CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                            CommandCompletions::eSettingsNameCompletion,
-                                                            completion_str.c_str(),
-                                                            match_start_point,
-                                                            max_return_elements,
-                                                            nullptr,
-                                                            word_complete,
-                                                            matches);
+        CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                             CommandCompletions::eSettingsNameCompletion,
+                                                             completion_str.c_str(),
+                                                             match_start_point,
+                                                             max_return_elements,
+                                                             NULL,
+                                                             word_complete,
+                                                             matches);
         return matches.GetSize();
     }
 
@@ -446,7 +448,7 @@ protected:
         {
             const bool dump_qualified_name = true;
 
-            for (size_t i = 0; i < argc; ++i)
+            for (size_t i=0; i<argc; ++i)
             {
                 const char *property_path = args.GetArgumentAtIndex (i);
                 
@@ -480,10 +482,10 @@ class CommandObjectSettingsRemove : public CommandObjectRaw
 {
 public:
     CommandObjectSettingsRemove (CommandInterpreter &interpreter) :
-        CommandObjectRaw(interpreter,
-                         "settings remove",
-                         "Remove the specified element from an array or dictionary settings variable.",
-                         nullptr)
+        CommandObjectRaw (interpreter,
+                          "settings remove",
+                          "Remove the specified element from an array or dictionary settings variable.",
+                          NULL)
     {
         CommandArgumentEntry arg1;
         CommandArgumentEntry arg2;
@@ -515,7 +517,7 @@ public:
         m_arguments.push_back (arg2);
     }
 
-    ~CommandObjectSettingsRemove() override = default;
+    ~CommandObjectSettingsRemove () override {}
 
     int
     HandleArgumentCompletion (Args &input,
@@ -531,14 +533,14 @@ public:
 
         // Attempting to complete variable name
         if (cursor_index < 2)
-            CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                                CommandCompletions::eSettingsNameCompletion,
-                                                                completion_str.c_str(),
-                                                                match_start_point,
-                                                                max_return_elements,
-                                                                nullptr,
-                                                                word_complete,
-                                                                matches);
+            CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                                 CommandCompletions::eSettingsNameCompletion,
+                                                                 completion_str.c_str(),
+                                                                 match_start_point,
+                                                                 max_return_elements,
+                                                                 NULL,
+                                                                 word_complete,
+                                                                 matches);
 
         return matches.GetSize();
     }
@@ -564,7 +566,7 @@ protected:
         }
         
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        if ((var_name == nullptr) || (var_name[0] == '\0'))
+        if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings set' command requires a valid variable name");
             result.SetStatus (eReturnStatusFailed);
@@ -599,10 +601,10 @@ class CommandObjectSettingsReplace : public CommandObjectRaw
 {
 public:
     CommandObjectSettingsReplace (CommandInterpreter &interpreter) :
-        CommandObjectRaw(interpreter,
-                         "settings replace",
-                         "Replace the specified element from an internal debugger settings array or dictionary variable with the specified new value.",
-                         nullptr)
+        CommandObjectRaw (interpreter,
+                          "settings replace",
+                          "Replace the specified element from an internal debugger settings array or dictionary variable with the specified new value.",
+                          NULL)
     {
         CommandArgumentEntry arg1;
         CommandArgumentEntry arg2;
@@ -644,7 +646,8 @@ public:
         m_arguments.push_back (arg3);
     }
 
-    ~CommandObjectSettingsReplace() override = default;
+
+    ~CommandObjectSettingsReplace () override {}
 
     // Overrides base class's behavior where WantsCompletion = !WantsRawCommandString.
     bool
@@ -664,14 +667,14 @@ public:
 
         // Attempting to complete variable name
         if (cursor_index < 2)
-            CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                                CommandCompletions::eSettingsNameCompletion,
-                                                                completion_str.c_str(),
-                                                                match_start_point,
-                                                                max_return_elements,
-                                                                nullptr,
-                                                                word_complete,
-                                                                matches);
+            CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                                 CommandCompletions::eSettingsNameCompletion,
+                                                                 completion_str.c_str(),
+                                                                 match_start_point,
+                                                                 max_return_elements,
+                                                                 NULL,
+                                                                 word_complete,
+                                                                 matches);
 
         return matches.GetSize();
     }
@@ -684,12 +687,13 @@ protected:
 
         Args cmd_args(command);
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        if ((var_name == nullptr) || (var_name[0] == '\0'))
+        if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings replace' command requires a valid variable name; No value supplied");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
+
 
         // Split the raw command into var_name, index_value, and value triple.
         llvm::StringRef raw_str(command);
@@ -724,10 +728,10 @@ class CommandObjectSettingsInsertBefore : public CommandObjectRaw
 {
 public:
     CommandObjectSettingsInsertBefore (CommandInterpreter &interpreter) :
-        CommandObjectRaw(interpreter,
-                         "settings insert-before",
-                         "Insert value(s) into an internal debugger settings array variable, immediately before the specified element.",
-                         nullptr)
+        CommandObjectRaw (interpreter,
+                          "settings insert-before",
+                          "Insert value(s) into an internal debugger settings array variable, immediately before the specified element.",
+                          NULL)
     {
         CommandArgumentEntry arg1;
         CommandArgumentEntry arg2;
@@ -763,7 +767,7 @@ public:
         m_arguments.push_back (arg3);
     }
 
-    ~CommandObjectSettingsInsertBefore() override = default;
+    ~CommandObjectSettingsInsertBefore () override {}
 
     // Overrides base class's behavior where WantsCompletion = !WantsRawCommandString.
     bool
@@ -783,14 +787,14 @@ public:
 
         // Attempting to complete variable name
         if (cursor_index < 2)
-            CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                                CommandCompletions::eSettingsNameCompletion,
-                                                                completion_str.c_str(),
-                                                                match_start_point,
-                                                                max_return_elements,
-                                                                nullptr,
-                                                                word_complete,
-                                                                matches);
+            CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                                 CommandCompletions::eSettingsNameCompletion,
+                                                                 completion_str.c_str(),
+                                                                 match_start_point,
+                                                                 max_return_elements,
+                                                                 NULL,
+                                                                 word_complete,
+                                                                 matches);
 
         return matches.GetSize();
     }
@@ -812,7 +816,7 @@ protected:
         }
 
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        if ((var_name == nullptr) || (var_name[0] == '\0'))
+        if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings insert-before' command requires a valid variable name; No value supplied");
             result.SetStatus (eReturnStatusFailed);
@@ -847,10 +851,10 @@ class CommandObjectSettingsInsertAfter : public CommandObjectRaw
 {
 public:
     CommandObjectSettingsInsertAfter (CommandInterpreter &interpreter) :
-        CommandObjectRaw(interpreter,
-                         "settings insert-after",
-                         "Insert value(s) into an internal debugger settings array variable, immediately after the specified element.",
-                         nullptr)
+        CommandObjectRaw (interpreter,
+                          "settings insert-after",
+                          "Insert value(s) into an internal debugger settings array variable, immediately after the specified element.",
+                          NULL)
     {
         CommandArgumentEntry arg1;
         CommandArgumentEntry arg2;
@@ -886,7 +890,7 @@ public:
         m_arguments.push_back (arg3);
     }
 
-    ~CommandObjectSettingsInsertAfter() override = default;
+    ~CommandObjectSettingsInsertAfter () override {}
 
     // Overrides base class's behavior where WantsCompletion = !WantsRawCommandString.
     bool
@@ -906,14 +910,14 @@ public:
 
         // Attempting to complete variable name
         if (cursor_index < 2)
-            CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                                CommandCompletions::eSettingsNameCompletion,
-                                                                completion_str.c_str(),
-                                                                match_start_point,
-                                                                max_return_elements,
-                                                                nullptr,
-                                                                word_complete,
-                                                                matches);
+            CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                                 CommandCompletions::eSettingsNameCompletion,
+                                                                 completion_str.c_str(),
+                                                                 match_start_point,
+                                                                 max_return_elements,
+                                                                 NULL,
+                                                                 word_complete,
+                                                                 matches);
 
         return matches.GetSize();
     }
@@ -935,7 +939,7 @@ protected:
         }
 
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        if ((var_name == nullptr) || (var_name[0] == '\0'))
+        if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings insert-after' command requires a valid variable name; No value supplied");
             result.SetStatus (eReturnStatusFailed);
@@ -970,10 +974,10 @@ class CommandObjectSettingsAppend : public CommandObjectRaw
 {
 public:
     CommandObjectSettingsAppend (CommandInterpreter &interpreter) :
-        CommandObjectRaw(interpreter,
-                         "settings append",
-                         "Append a new value to the end of an internal debugger settings array, dictionary or string variable.",
-                         nullptr)
+        CommandObjectRaw (interpreter,
+                          "settings append",
+                          "Append a new value to the end of an internal debugger settings array, dictionary or string variable.",
+                          NULL)
     {
         CommandArgumentEntry arg1;
         CommandArgumentEntry arg2;
@@ -999,7 +1003,7 @@ public:
         m_arguments.push_back (arg2);
     }
 
-    ~CommandObjectSettingsAppend() override = default;
+    ~CommandObjectSettingsAppend () override {}
 
     // Overrides base class's behavior where WantsCompletion = !WantsRawCommandString.
     bool
@@ -1019,14 +1023,14 @@ public:
 
         // Attempting to complete variable name
         if (cursor_index < 2)
-            CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                                CommandCompletions::eSettingsNameCompletion,
-                                                                completion_str.c_str(),
-                                                                match_start_point,
-                                                                max_return_elements,
-                                                                nullptr,
-                                                                word_complete,
-                                                                matches);
+            CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                                 CommandCompletions::eSettingsNameCompletion,
+                                                                 completion_str.c_str(),
+                                                                 match_start_point,
+                                                                 max_return_elements,
+                                                                 NULL,
+                                                                 word_complete,
+                                                                 matches);
 
         return matches.GetSize();
     }
@@ -1047,7 +1051,7 @@ protected:
         }
 
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        if ((var_name == nullptr) || (var_name[0] == '\0'))
+        if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings append' command requires a valid variable name; No value supplied");
             result.SetStatus (eReturnStatusFailed);
@@ -1085,10 +1089,10 @@ class CommandObjectSettingsClear : public CommandObjectParsed
 {
 public:
     CommandObjectSettingsClear (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "settings clear",
-                            "Erase all the contents of an internal debugger settings variables; this is only valid for variables with clearable types, i.e. strings, arrays or dictionaries.",
-                            nullptr)
+        CommandObjectParsed (interpreter,
+                             "settings clear",
+                             "Erase all the contents of an internal debugger settings variables; this is only valid for variables with clearable types, i.e. strings, arrays or dictionaries.",
+                             NULL)
     {
         CommandArgumentEntry arg;
         CommandArgumentData var_name_arg;
@@ -1104,7 +1108,7 @@ public:
         m_arguments.push_back (arg);
     }
 
-    ~CommandObjectSettingsClear() override = default;
+    ~CommandObjectSettingsClear () override {}
 
     int
     HandleArgumentCompletion (Args &input,
@@ -1120,14 +1124,14 @@ public:
 
         // Attempting to complete variable name
         if (cursor_index < 2)
-            CommandCompletions::InvokeCommonCompletionCallbacks(m_interpreter,
-                                                                CommandCompletions::eSettingsNameCompletion,
-                                                                completion_str.c_str(),
-                                                                match_start_point,
-                                                                max_return_elements,
-                                                                nullptr,
-                                                                word_complete,
-                                                                matches);
+            CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                                 CommandCompletions::eSettingsNameCompletion,
+                                                                 completion_str.c_str(),
+                                                                 match_start_point,
+                                                                 max_return_elements,
+                                                                 NULL,
+                                                                 word_complete,
+                                                                 matches);
 
         return matches.GetSize();
     }
@@ -1147,17 +1151,17 @@ protected:
         }
 
         const char *var_name = command.GetArgumentAtIndex (0);
-        if ((var_name == nullptr) || (var_name[0] == '\0'))
+        if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings clear' command requires a valid variable name; No value supplied");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
         
-        Error error(m_interpreter.GetDebugger().SetPropertyValue(&m_exe_ctx,
-                                                                 eVarSetOperationClear,
-                                                                 var_name,
-                                                                 nullptr));
+        Error error (m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
+                                                                   eVarSetOperationClear,
+                                                                   var_name,
+                                                                   NULL));
         if (error.Fail())
         {
             result.AppendError (error.AsCString());
@@ -1190,4 +1194,6 @@ CommandObjectMultiwordSettings::CommandObjectMultiwordSettings (CommandInterpret
     LoadSubCommand ("clear",         CommandObjectSP (new CommandObjectSettingsClear (interpreter)));
 }
 
-CommandObjectMultiwordSettings::~CommandObjectMultiwordSettings() = default;
+CommandObjectMultiwordSettings::~CommandObjectMultiwordSettings ()
+{
+}

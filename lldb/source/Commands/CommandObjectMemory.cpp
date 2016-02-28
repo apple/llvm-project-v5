@@ -7,15 +7,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CommandObjectMemory.h"
+
 // C Includes
 #include <inttypes.h>
 
 // C++ Includes
 // Other libraries and framework includes
 #include "clang/AST/Decl.h"
-
 // Project includes
-#include "CommandObjectMemory.h"
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/Debugger.h"
@@ -35,13 +35,10 @@
 #include "lldb/Interpreter/OptionValueString.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/TypeList.h"
-#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Target/MemoryHistory.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Thread.h"
-
-#include "lldb/lldb-private.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -49,18 +46,21 @@ using namespace lldb_private;
 static OptionDefinition
 g_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "num-per-line" ,'l', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeNumberPerLine ,"The number of items per line to display."},
-    { LLDB_OPT_SET_2, false, "binary"       ,'b', OptionParser::eNoArgument      , nullptr, nullptr, 0, eArgTypeNone          ,"If true, memory will be saved as binary. If false, the memory is saved save as an ASCII dump that uses the format, size, count and number per line settings."},
-    { LLDB_OPT_SET_3, true , "type"         ,'t', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeNone          ,"The name of a type to view memory as."},
-    { LLDB_OPT_SET_3, false , "offset"      ,'E', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeCount         ,"How many elements of the specified type to skip before starting to display data."},
+    { LLDB_OPT_SET_1, false, "num-per-line" ,'l', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeNumberPerLine ,"The number of items per line to display."},
+    { LLDB_OPT_SET_2, false, "binary"       ,'b', OptionParser::eNoArgument      , NULL, NULL, 0, eArgTypeNone          ,"If true, memory will be saved as binary. If false, the memory is saved save as an ASCII dump that uses the format, size, count and number per line settings."},
+    { LLDB_OPT_SET_3, true , "type"         ,'t', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeNone          ,"The name of a type to view memory as."},
+    { LLDB_OPT_SET_3, false , "offset"      ,'E', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeCount         ,"How many elements of the specified type to skip before starting to display data."},
     { LLDB_OPT_SET_1|
       LLDB_OPT_SET_2|
-      LLDB_OPT_SET_3, false, "force"        ,'r', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone          ,"Necessary if reading over target.max-memory-read-size bytes."},
+      LLDB_OPT_SET_3, false, "force"        ,'r', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone          ,"Necessary if reading over target.max-memory-read-size bytes."},
 };
+
+
 
 class OptionGroupReadMemory : public OptionGroup
 {
 public:
+
     OptionGroupReadMemory () :
         m_num_per_line (1,1),
         m_output_as_binary (false),
@@ -69,8 +69,11 @@ public:
     {
     }
 
-    ~OptionGroupReadMemory() override = default;
-
+    ~OptionGroupReadMemory () override
+    {
+    }
+    
+    
     uint32_t
     GetNumDefinitions () override
     {
@@ -214,7 +217,6 @@ public:
                 if (!count_option_set)
                     format_options.GetCountValue() = 32;
                 break;
-
             case eFormatCharArray:
             case eFormatChar:
             case eFormatCharPrintable:
@@ -225,7 +227,6 @@ public:
                 if (!count_option_set)
                     format_options.GetCountValue() = 64;
                 break;
-
             case eFormatComplex:
                 if (!byte_size_option_set)
                     byte_size_value = 8;
@@ -234,7 +235,6 @@ public:
                 if (!count_option_set)
                     format_options.GetCountValue() = 8;
                 break;
-
             case eFormatComplexInteger:
                 if (!byte_size_option_set)
                     byte_size_value = 8;
@@ -243,7 +243,6 @@ public:
                 if (!count_option_set)
                     format_options.GetCountValue() = 8;
                 break;
-
             case eFormatHex:
                 if (!byte_size_option_set)
                     byte_size_value = 4;
@@ -310,18 +309,21 @@ public:
     OptionValueUInt64 m_offset;
 };
 
+
+
 //----------------------------------------------------------------------
 // Read memory from the inferior process
 //----------------------------------------------------------------------
 class CommandObjectMemoryRead : public CommandObjectParsed
 {
 public:
+
     CommandObjectMemoryRead (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "memory read",
-                            "Read from the memory of the process being debugged.",
-                            nullptr,
-                            eCommandRequiresTarget | eCommandProcessMustBePaused),
+        CommandObjectParsed (interpreter,
+                             "memory read",
+                             "Read from the memory of the process being debugged.",
+                             NULL,
+                             eCommandRequiresTarget | eCommandProcessMustBePaused),
         m_option_group (interpreter),
         m_format_options (eFormatBytesWithASCII, 1, 8),
         m_memory_options (),
@@ -374,7 +376,9 @@ public:
         m_option_group.Finalize();
     }
 
-    ~CommandObjectMemoryRead() override = default;
+    ~CommandObjectMemoryRead () override
+    {
+    }
 
     Options *
     GetOptions () override
@@ -483,7 +487,7 @@ protected:
                     {
                     case '*':
                         ++pointer_count;
-                        LLVM_FALLTHROUGH;
+                        // fall through...
                     case ' ':
                     case '\t':
                         type_str.erase(type_str.size()-1);
@@ -510,7 +514,6 @@ protected:
                 }
             }
                     
-            llvm::DenseSet<lldb_private::SymbolFile *> searched_symbol_files;
             ConstString lookup_type_name(type_str.c_str());
             StackFrame *frame = m_exe_ctx.GetFramePtr();
             if (frame)
@@ -521,8 +524,7 @@ protected:
                     sc.module_sp->FindTypes (sc,
                                              lookup_type_name,
                                              exact_match,
-                                             1,
-                                             searched_symbol_files,
+                                             1, 
                                              type_list);
                 }
             }
@@ -531,8 +533,7 @@ protected:
                 target->GetImages().FindTypes (sc, 
                                                lookup_type_name, 
                                                exact_match, 
-                                               1,
-                                               searched_symbol_files,
+                                               1, 
                                                type_list);
             }
 
@@ -550,7 +551,7 @@ protected:
                 }
             }
 
-            if (!clang_ast_type.IsValid())
+            if (clang_ast_type.IsValid() == false)
             {
                 if (type_list.GetSize() == 0)
                 {
@@ -661,8 +662,7 @@ protected:
 
         if (argc == 2)
         {
-            lldb::addr_t end_addr = Args::StringToAddress(&m_exe_ctx, command.GetArgumentAtIndex(1),
-                                                          LLDB_INVALID_ADDRESS, nullptr);
+            lldb::addr_t end_addr = Args::StringToAddress(&m_exe_ctx, command.GetArgumentAtIndex(1), LLDB_INVALID_ADDRESS, 0);
             if (end_addr == LLDB_INVALID_ADDRESS)
             {
                 result.AppendError("invalid end address expression.");
@@ -702,7 +702,7 @@ protected:
         if (clang_ast_type.GetOpaqueQualType())
         {
             // Make sure we don't display our type as ASCII bytes like the default memory read
-            if (!m_format_options.GetFormatValue().OptionWasSet())
+            if (m_format_options.GetFormatValue().OptionWasSet() == false)
                 m_format_options.GetFormatValue().SetCurrentValue(eFormatDefault);
 
             bytes_read = clang_ast_type.GetByteSize(nullptr) * m_format_options.GetCountValue().GetCurrentValue();
@@ -713,14 +713,14 @@ protected:
         else if (m_format_options.GetFormatValue().GetCurrentValue() != eFormatCString)
         {
             data_sp.reset (new DataBufferHeap (total_byte_size, '\0'));
-            if (data_sp->GetBytes() == nullptr)
+            if (data_sp->GetBytes() == NULL)
             {
                 result.AppendErrorWithFormat ("can't allocate 0x%" PRIx32 " bytes for the memory read buffer, specify a smaller size to read", (uint32_t)total_byte_size);
                 result.SetStatus(eReturnStatusFailed);
                 return false;
             }
 
-            Address address(addr, nullptr);
+            Address address(addr, NULL);
             bytes_read = target->ReadMemory(address, false, data_sp->GetBytes (), data_sp->GetByteSize(), error);
             if (bytes_read == 0)
             {
@@ -750,7 +750,7 @@ protected:
             if (!m_format_options.GetCountValue().OptionWasSet())
                 item_count = 1;
             data_sp.reset (new DataBufferHeap ((item_byte_size+1) * item_count, '\0')); // account for NULLs as necessary
-            if (data_sp->GetBytes() == nullptr)
+            if (data_sp->GetBytes() == NULL)
             {
                 result.AppendErrorWithFormat ("can't allocate 0x%" PRIx64 " bytes for the memory read buffer, specify a smaller size to read", (uint64_t)((item_byte_size+1) * item_count));
                 result.SetStatus(eReturnStatusFailed);
@@ -804,7 +804,7 @@ protected:
         m_prev_clang_ast_type = clang_ast_type;
 
         StreamFile outfile_stream;
-        Stream *output_stream = nullptr;
+        Stream *output_stream = NULL;
         const FileSpec &outfile_spec = m_outfile_options.GetFile().GetCurrentValue();
         if (outfile_spec)
         {
@@ -855,6 +855,7 @@ protected:
             output_stream = &result.GetOutputStream();
         }
 
+
         ExecutionContextScope *exe_scope = m_exe_ctx.GetBestExecutionContextScope();
         if (clang_ast_type.GetOpaqueQualType())
         {
@@ -901,7 +902,7 @@ protected:
             && (item_byte_size != 1))
         {
             // if a count was not passed, or it is 1
-            if (!m_format_options.GetCountValue().OptionWasSet() || item_count == 1)
+            if (m_format_options.GetCountValue().OptionWasSet() == false || item_count == 1)
             {
                 // this turns requests such as
                 // memory read -fc -s10 -c1 *charPtrPtr
@@ -955,10 +956,10 @@ protected:
 OptionDefinition
 g_memory_find_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "expression", 'e', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeExpression, "Evaluate an expression to obtain a byte pattern."},
-    { LLDB_OPT_SET_2, false, "string", 's', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeName,   "Use text to find a byte pattern."},
-    { LLDB_OPT_SET_1|LLDB_OPT_SET_2, false, "count", 'c', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeCount,   "How many times to perform the search."},
-    { LLDB_OPT_SET_1|LLDB_OPT_SET_2, false, "dump-offset", 'o', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeOffset,   "When dumping memory for a match, an offset from the match location to start dumping from."},
+    { LLDB_OPT_SET_1, false, "expression", 'e', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeExpression, "Evaluate an expression to obtain a byte pattern."},
+    { LLDB_OPT_SET_2, false, "string", 's', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeName,   "Use text to find a byte pattern."},
+    { LLDB_OPT_SET_1|LLDB_OPT_SET_2, false, "count", 'c', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeCount,   "How many times to perform the search."},
+    { LLDB_OPT_SET_1|LLDB_OPT_SET_2, false, "dump-offset", 'o', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeOffset,   "When dumping memory for a match, an offset from the match location to start dumping from."},
 };
 
 //----------------------------------------------------------------------
@@ -967,6 +968,7 @@ g_memory_find_option_table[] =
 class CommandObjectMemoryFind : public CommandObjectParsed
 {
 public:
+  
   class OptionGroupFindMemory : public OptionGroup
   {
   public:
@@ -976,9 +978,11 @@ public:
       m_offset(0)
     {
     }
-
-    ~OptionGroupFindMemory() override = default;
-
+    
+    ~OptionGroupFindMemory () override
+    {
+    }
+    
     uint32_t
     GetNumDefinitions () override
     {
@@ -1041,11 +1045,11 @@ public:
   };
   
   CommandObjectMemoryFind (CommandInterpreter &interpreter) :
-  CommandObjectParsed(interpreter,
-                      "memory find",
-                      "Find a value in the memory of the process being debugged.",
-                      nullptr,
-                      eCommandRequiresProcess | eCommandProcessMustBeLaunched),
+  CommandObjectParsed (interpreter,
+                       "memory find",
+                       "Find a value in the memory of the process being debugged.",
+                       NULL,
+                       eCommandRequiresProcess | eCommandProcessMustBeLaunched),
   m_option_group (interpreter),
   m_memory_options ()
   {
@@ -1075,9 +1079,11 @@ public:
     m_option_group.Append (&m_memory_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_2);
     m_option_group.Finalize();
   }
-
-  ~CommandObjectMemoryFind() override = default;
-
+  
+  ~CommandObjectMemoryFind () override
+  {
+  }
+  
   Options *
   GetOptions () override
   {
@@ -1130,7 +1136,7 @@ protected:
           StackFrame* frame = m_exe_ctx.GetFramePtr();
           ValueObjectSP result_sp;
           if ((eExpressionCompleted == process->GetTarget().EvaluateExpression(m_memory_options.m_expr.GetStringValue(), frame, result_sp)) &&
-              result_sp)
+              result_sp.get())
           {
               uint64_t value = result_sp->GetValueAsUnsigned(0);
               switch (result_sp->GetCompilerType().GetByteSize(nullptr))
@@ -1240,11 +1246,12 @@ protected:
     OptionGroupFindMemory m_memory_options;
 };
 
+
 OptionDefinition
 g_memory_write_option_table[] =
 {
-{ LLDB_OPT_SET_1, true,  "infile", 'i', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeFilename, "Write memory using the contents of a file."},
-{ LLDB_OPT_SET_1, false, "offset", 'o', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeOffset,   "Start writing bytes from an offset within the input file."},
+{ LLDB_OPT_SET_1, true,  "infile", 'i', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeFilename, "Write memory using the contents of a file."},
+{ LLDB_OPT_SET_1, false, "offset", 'o', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeOffset,   "Start writing bytes from an offset within the input file."},
 };
 
 //----------------------------------------------------------------------
@@ -1253,6 +1260,7 @@ g_memory_write_option_table[] =
 class CommandObjectMemoryWrite : public CommandObjectParsed
 {
 public:
+
     class OptionGroupWriteMemory : public OptionGroup
     {
     public:
@@ -1261,7 +1269,9 @@ public:
         {
         }
 
-        ~OptionGroupWriteMemory() override = default;
+        ~OptionGroupWriteMemory () override
+        {
+        }
 
         uint32_t
         GetNumDefinitions () override
@@ -1324,11 +1334,11 @@ public:
     };
 
     CommandObjectMemoryWrite (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "memory write",
-                            "Write to the memory of the process being debugged.",
-                            nullptr,
-                            eCommandRequiresProcess | eCommandProcessMustBeLaunched),
+        CommandObjectParsed (interpreter,
+                             "memory write",
+                             "Write to the memory of the process being debugged.",
+                             NULL,
+                             eCommandRequiresProcess | eCommandProcessMustBeLaunched),
         m_option_group (interpreter),
         m_format_options (eFormatBytes, 1, UINT64_MAX),
         m_memory_options ()
@@ -1360,9 +1370,12 @@ public:
         m_option_group.Append (&m_format_options, OptionGroupFormat::OPTION_GROUP_SIZE  , LLDB_OPT_SET_1|LLDB_OPT_SET_2);
         m_option_group.Append (&m_memory_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_2);
         m_option_group.Finalize();
+
     }
 
-    ~CommandObjectMemoryWrite() override = default;
+    ~CommandObjectMemoryWrite () override
+    {
+    }
 
     Options *
     GetOptions () override
@@ -1538,6 +1551,7 @@ protected:
             case eFormatHex:
             case eFormatHexUppercase:
             case eFormatPointer:
+                
                 // Decode hex bytes
                 uval64 = StringConvert::ToUInt64(value_str, UINT64_MAX, 16, &success);
                 if (!success)
@@ -1685,13 +1699,13 @@ protected:
 class CommandObjectMemoryHistory : public CommandObjectParsed
 {
 public:
+    
     CommandObjectMemoryHistory (CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "memory history",
-                            "Prints out the recorded stack traces for allocation/deallocation of a memory address.",
-                            nullptr,
-                            eCommandRequiresTarget | eCommandRequiresProcess | eCommandProcessMustBePaused |
-                            eCommandProcessMustBeLaunched)
+    CommandObjectParsed (interpreter,
+                         "memory history",
+                         "Prints out the recorded stack traces for allocation/deallocation of a memory address.",
+                         NULL,
+                         eCommandRequiresTarget | eCommandRequiresProcess | eCommandProcessMustBePaused | eCommandProcessMustBeLaunched)
     {
         CommandArgumentEntry arg1;
         CommandArgumentData addr_arg;
@@ -1706,9 +1720,11 @@ public:
         // Push the data for the first argument into the m_arguments vector.
         m_arguments.push_back (arg1);
     }
-
-    ~CommandObjectMemoryHistory() override = default;
-
+    
+    ~CommandObjectMemoryHistory () override
+    {
+    }
+    
     const char *
     GetRepeatCommand (Args &current_command_args, uint32_t index) override
     {
@@ -1747,7 +1763,7 @@ protected:
         const ProcessSP &process_sp = m_exe_ctx.GetProcessSP();
         const MemoryHistorySP &memory_history = MemoryHistory::FindPlugin(process_sp);
         
-        if (!memory_history)
+        if (! memory_history.get())
         {
             result.AppendError("no available memory history provider");
             result.SetStatus(eReturnStatusFailed);
@@ -1764,7 +1780,9 @@ protected:
         
         return true;
     }
+    
 };
+
 
 //-------------------------------------------------------------------------
 // CommandObjectMemory
@@ -1782,4 +1800,6 @@ CommandObjectMemory::CommandObjectMemory (CommandInterpreter &interpreter) :
     LoadSubCommand ("history", CommandObjectSP (new CommandObjectMemoryHistory (interpreter)));
 }
 
-CommandObjectMemory::~CommandObjectMemory() = default;
+CommandObjectMemory::~CommandObjectMemory ()
+{
+}

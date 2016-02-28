@@ -7,10 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// C Includes
-// C++ Includes
-// Other libraries and framework includes
-// Project includes
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Queue.h"
 #include "lldb/Target/QueueList.h"
@@ -36,7 +32,9 @@ Queue::Queue (ProcessSP process_sp, lldb::queue_id_t queue_id, const char *queue
     m_process_wp = process_sp;
 }
 
-Queue::~Queue() = default;
+Queue::~Queue ()
+{
+}
 
 queue_id_t
 Queue::GetID ()
@@ -47,7 +45,10 @@ Queue::GetID ()
 const char *
 Queue::GetName ()
 {
-    return (m_queue_name.empty() ? nullptr : m_queue_name.c_str());
+    const char *result = NULL;
+    if (m_queue_name.size() > 0)
+        result = m_queue_name.c_str();
+    return result;
 }
 
 uint32_t
@@ -61,7 +62,7 @@ Queue::GetThreads ()
 {
     std::vector<ThreadSP> result;
     ProcessSP process_sp = m_process_wp.lock();
-    if (process_sp)
+    if (process_sp.get ())
     {
         for (ThreadSP thread_sp : process_sp->Threads())
         {
@@ -85,6 +86,7 @@ Queue::GetNumRunningWorkItems () const
 {
     return m_running_work_items_count;
 }
+
 
 void
 Queue::SetNumPendingWorkItems (uint32_t count)
@@ -110,10 +112,11 @@ Queue::GetLibdispatchQueueAddress () const
     return m_dispatch_queue_t_addr;
 }
 
+
 const std::vector<lldb::QueueItemSP> &
 Queue::GetPendingItems ()
 {
-    if (m_pending_items.empty())
+    if (m_pending_items.size() == 0)
     {
         ProcessSP process_sp = m_process_wp.lock();
         if (process_sp && process_sp->GetSystemRuntime())

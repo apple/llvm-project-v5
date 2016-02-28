@@ -38,7 +38,6 @@
 #include "lldb/API/SBLanguageRuntime.h"
 #include "lldb/API/SBListener.h"
 #include "lldb/API/SBStream.h"
-#include "lldb/API/SBStringList.h"
 #include "lldb/API/SBTarget.h"
 #include "lldb/API/SBThread.h"
 #include "lldb/API/SBProcess.h"
@@ -347,27 +346,21 @@ ShowUsage (FILE *out, OptionDefinition *option_table, Driver::OptionData data)
              indent_level, "");
     indent_level += 5;
     
-    fprintf (out, "\n%*sMultiple \"-s\" and \"-o\" options can be provided.  They will be processed"
-                  "\n%*sfrom left to right in order, with the source files and commands"
-                  "\n%*sinterleaved.  The same is true of the \"-S\" and \"-O\" options.  The before"
-                  "\n%*sfile and after file sets can intermixed freely, the command parser will"
-                  "\n%*ssort them out.  The order of the file specifiers (\"-c\", \"-f\", etc.) is"
-                  "\n%*snot significant in this regard.\n\n",
+    fprintf (out, "\n%*sMultiple \"-s\" and \"-o\" options can be provided.  They will be processed from left to right in order, "
+                  "\n%*swith the source files and commands interleaved.  The same is true of the \"-S\" and \"-O\" options."
+                  "\n%*sThe before file and after file sets can intermixed freely, the command parser will sort them out."
+                  "\n%*sThe order of the file specifiers (\"-c\", \"-f\", etc.) is not significant in this regard.\n\n",
              indent_level, "", 
              indent_level, "", 
-             indent_level, "",
-             indent_level, "",
              indent_level, "",
              indent_level, "");
     
-    fprintf (out, "\n%*sIf you don't provide -f then the first argument will be the file to be"
-                  "\n%*sdebugged which means that '%s -- <filename> [<ARG1> [<ARG2>]]' also"
-                  "\n%*sworks.  But remember to end the options with \"--\" if any of your"
-                  "\n%*sarguments have a \"-\" in them.\n\n",
+    fprintf (out, "\n%*sIf you don't provide -f then the first argument will be the file to be debugged"
+                  "\n%*swhich means that '%s -- <filename> [<ARG1> [<ARG2>]]' also works."
+                  "\n%*sBut remember to end the options with \"--\" if any of your arguments have a \"-\" in them.\n\n",
              indent_level, "", 
              indent_level, "",
              name, 
-             indent_level, "",
              indent_level, "");
 }
 
@@ -442,24 +435,13 @@ Driver::OptionData::Clear ()
     m_script_lang = lldb::eScriptLanguageDefault;
     m_initial_commands.clear ();
     m_after_file_commands.clear ();
-
-    // If there is a local .lldbinit, add that to the
-    // list of things to be sourced, if the settings
-    // permit it.
-    SBFileSpec local_lldbinit (".lldbinit", true);
-
-    SBFileSpec homedir_dot_lldb = SBHostOS::GetUserHomeDirectory();
-    homedir_dot_lldb.AppendPathComponent (".lldbinit");
-
-    // Only read .lldbinit in the current working directory
-    // if it's not the same as the .lldbinit in the home
-    // directory (which is already being read in).
-    if (local_lldbinit.Exists()
-        && strcmp (local_lldbinit.GetDirectory(), homedir_dot_lldb.GetDirectory()) != 0)
+    // If there is a local .lldbinit, source that:
+    SBFileSpec local_lldbinit("./.lldbinit", true);
+    if (local_lldbinit.Exists())
     {
         char path[2048];
         local_lldbinit.GetPath(path, 2047);
-        InitialCmdEntry entry(path, true, true, true);
+        InitialCmdEntry entry(path, true, true);
         m_after_file_commands.push_back (entry);
     }
     
@@ -498,18 +480,18 @@ Driver::OptionData::AddInitialCommand (const char *command, CommandPlacement pla
     {
         SBFileSpec file(command);
         if (file.Exists())
-            command_set->push_back (InitialCmdEntry(command, is_file, false));
+            command_set->push_back (InitialCmdEntry(command, is_file));
         else if (file.ResolveExecutableLocation())
         {
             char final_path[PATH_MAX];
             file.GetPath (final_path, sizeof(final_path));
-            command_set->push_back (InitialCmdEntry(final_path, is_file, false));
+            command_set->push_back (InitialCmdEntry(final_path, is_file));
         }
         else
             error.SetErrorStringWithFormat("file specified in --source (-s) option doesn't exist: '%s'", optarg);
     }
     else
-        command_set->push_back (InitialCmdEntry(command, is_file, false));
+        command_set->push_back (InitialCmdEntry(command, is_file));
 }
 
 void
@@ -562,30 +544,6 @@ Driver::WriteCommandsForSourcing (CommandPlacement placement, SBStream &strm)
         const char *command = command_entry.contents.c_str();
         if (command_entry.is_file)
         {
-            // If this command_entry is a file to be sourced, and it's the ./.lldbinit file (the .lldbinit
-            // file in the current working directory), only read it if target.load-cwd-lldbinit is 'true'.
-            if (command_entry.is_cwd_lldbinit_file_read)
-            {
-                SBStringList strlist = m_debugger.GetInternalVariableValue ("target.load-cwd-lldbinit", 
-                                                                            m_debugger.GetInstanceName());
-                if (strlist.GetSize() == 1 && strcmp (strlist.GetStringAtIndex(0), "warn") == 0)
-                {
-                    FILE *output = m_debugger.GetOutputFileHandle ();
-                    ::fprintf (output, 
-                            "There is a .lldbinit file in the current directory which is not being read.\n"
-                            "To silence this warning without sourcing in the local .lldbinit,\n"
-                            "add the following to the lldbinit file in your home directory:\n"
-                            "    settings set target.load-cwd-lldbinit false\n"
-                            "To allow lldb to source .lldbinit files in the current working directory,\n"
-                            "set the value of this variable to true.  Only do so if you understand and\n"
-                            "accept the security risk.\n");
-                    return;
-                }
-                if (strlist.GetSize() == 1 && strcmp (strlist.GetStringAtIndex(0), "false") == 0)
-                {
-                    return;
-                }
-            }
             bool source_quietly = m_option_data.m_source_quietly || command_entry.source_quietly;
             strm.Printf("command source -s %i '%s'\n", source_quietly, command);
         }
@@ -950,8 +908,7 @@ PrepareCommandsForSourcing (const char *commands_data, size_t commands_size, int
         {
             fprintf(stderr, "error: write(%i, %p, %" PRIu64 ") failed (errno = %i) "
                             "when trying to open LLDB commands pipe\n",
-                    fds[WRITE], static_cast<const void *>(commands_data),
-                    static_cast<uint64_t>(commands_size), errno);
+                    fds[WRITE], commands_data, static_cast<uint64_t>(commands_size), errno);
         }
         else if (static_cast<size_t>(nrwr) == commands_size)
         {
@@ -1069,7 +1026,7 @@ Driver::MainLoop ()
     SBStream commands_stream;
     
     // First source in the commands specified to be run before the file arguments are processed.
-    WriteCommandsForSourcing (eCommandPlacementBeforeFile, commands_stream);
+    WriteCommandsForSourcing(eCommandPlacementBeforeFile, commands_stream);
         
     const size_t num_args = m_option_data.m_args.size();
     if (num_args > 0)

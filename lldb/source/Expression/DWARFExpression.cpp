@@ -1108,21 +1108,12 @@ DWARFExpression::Evaluate
     ClangExpressionDeclMap *decl_map,
     lldb::addr_t loclist_base_load_addr,
     const Value* initial_value_ptr,
-    const Value* object_address_ptr,
     Value& result,
     Error *error_ptr
 ) const
 {
     ExecutionContext exe_ctx (exe_scope);
-    return Evaluate(&exe_ctx,
-                    expr_locals,
-                    decl_map,
-                    nullptr,
-                    loclist_base_load_addr,
-                    initial_value_ptr,
-                    object_address_ptr,
-                    result,
-                    error_ptr);
+    return Evaluate(&exe_ctx, expr_locals, decl_map, NULL, loclist_base_load_addr, initial_value_ptr, result, error_ptr);
 }
 
 bool
@@ -1134,7 +1125,6 @@ DWARFExpression::Evaluate
     RegisterContext *reg_ctx,
     lldb::addr_t loclist_base_load_addr,
     const Value* initial_value_ptr,
-    const Value* object_address_ptr,
     Value& result,
     Error *error_ptr
 ) const
@@ -1199,7 +1189,6 @@ DWARFExpression::Evaluate
                                                       length,
                                                       m_reg_kind,
                                                       initial_value_ptr,
-                                                      object_address_ptr,
                                                       result,
                                                       error_ptr);
                 }
@@ -1223,7 +1212,6 @@ DWARFExpression::Evaluate
                                       m_data.GetByteSize(),
                                       m_reg_kind,
                                       initial_value_ptr,
-                                      object_address_ptr,
                                       result,
                                       error_ptr);
 }
@@ -1244,7 +1232,6 @@ DWARFExpression::Evaluate
     const lldb::offset_t opcodes_length,
     const lldb::RegisterKind reg_kind,
     const Value* initial_value_ptr,
-    const Value* object_address_ptr,
     Value& result,
     Error *error_ptr
 )
@@ -2702,15 +2689,9 @@ DWARFExpression::Evaluate
         // during user expression evaluation.
         //----------------------------------------------------------------------
         case DW_OP_push_object_address:
-            if (object_address_ptr)
-                stack.push_back(*object_address_ptr);
-            else
-            {
-                if (error_ptr)
-                    error_ptr->SetErrorString ("DW_OP_push_object_address used without specifying an object address");
-                return false;
-            }
-            break;
+            if (error_ptr)
+                error_ptr->SetErrorString ("Unimplemented opcode DW_OP_push_object_address.");
+            return false;
 
         //----------------------------------------------------------------------
         // OPCODE: DW_OP_call2

@@ -6,9 +6,8 @@ from __future__ import print_function
 
 import os, time, signal
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 
 class SendSignalTestCase(TestBase):
@@ -21,7 +20,7 @@ class SendSignalTestCase(TestBase):
         # Find the line number to break inside main().
         self.line = line_number('main.c', 'Put breakpoint here')
 
-    @expectedFailureAll(oslist=['freebsd'], bugnumber="llvm.org/pr23318: does not report running state")
+    @expectedFailureFreeBSD("llvm.org/pr23318: does not report running state")
     @skipIfWindows # Windows does not support signals
     def test_with_run_command(self):
         """Test that lldb command 'process signal SIGUSR1' sends a signal to the inferior process."""

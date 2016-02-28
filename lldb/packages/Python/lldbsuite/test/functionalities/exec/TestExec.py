@@ -8,10 +8,9 @@ from __future__ import print_function
 import lldb
 import os
 import time
-from lldbsuite.support import seven
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
+import lldbsuite.support.seven as seven
 
 def execute_command (command):
     #print('%% %s' % (command))
@@ -56,18 +55,15 @@ class ExecTestCase(TestBase):
             self.assertTrue(process.GetState() == lldb.eStateStopped,
                             STOPPED_DUE_TO_BREAKPOINT)
 
-            threads = lldbutil.get_threads_stopped_at_breakpoint(process, breakpoint)
-            self.assertTrue(len(threads) == 1)
+            thread = process.GetThreadAtIndex (0)
 
-            # We had a deadlock tearing down the TypeSystemMap on exec, but only if some
-            # expression had been evaluated.  So make sure we do that here so the teardown
-            # is not trivial.
+            self.assertTrue (thread.IsValid(),
+                             "Process stopped at 'main' should have a valid thread");
 
-            thread = threads[0]
-            value = thread.frames[0].EvaluateExpression("1 + 2")
-            self.assertTrue(value.IsValid(), "Expression evaluated successfully")
-            int_value = value.GetValueAsSigned()
-            self.assertTrue(int_value == 3, "Expression got the right result.")
+            stop_reason = thread.GetStopReason()
+            
+            self.assertTrue (stop_reason == lldb.eStopReasonBreakpoint,
+                             "Thread in process stopped in 'main' should have a stop reason of eStopReasonBreakpoint");
 
             # Run and we should stop due to exec
             process.Continue()
@@ -75,11 +71,15 @@ class ExecTestCase(TestBase):
             self.assertTrue(process.GetState() == lldb.eStateStopped,
                             "Process should be stopped at __dyld_start")
                         
-            threads = lldbutil.get_stopped_threads(process, lldb.eStopReasonExec)
-            self.assertTrue(len(threads) == 1, "We got a thread stopped for exec.")
-
+            thread = process.GetThreadAtIndex (0)
+        
+            self.assertTrue (thread.IsValid(),
+                             "Process stopped at exec should have a valid thread");
+        
+            stop_reason = thread.GetStopReason()
+        
+            self.assertTrue (stop_reason == lldb.eStopReasonExec,
+                             "Thread in process stopped on exec should have a stop reason of eStopReasonExec");
+        
              # Run and we should stop at breakpoint in main after exec
             process.Continue()        
-
-            threads = lldbutil.get_threads_stopped_at_breakpoint(process, breakpoint)
-            self.assertTrue(len(threads) == 1, "Stopped at breakpoint in exec'ed process.")

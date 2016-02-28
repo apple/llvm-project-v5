@@ -241,7 +241,8 @@ ObjectFile::ObjectFile (const lldb::ModuleSP &module_sp,
                         lldb::offset_t file_offset,
                         lldb::offset_t length,
                         const lldb::DataBufferSP& data_sp,
-                        lldb::offset_t data_offset) :
+                        lldb::offset_t data_offset
+) :
     ModuleChild (module_sp),
     m_file (),  // This file could be different from the original module's file
     m_type (eTypeInvalid),
@@ -253,8 +254,7 @@ ObjectFile::ObjectFile (const lldb::ModuleSP &module_sp,
     m_process_wp(),
     m_memory_addr (LLDB_INVALID_ADDRESS),
     m_sections_ap(),
-    m_symtab_ap (),
-    m_synthetic_symbol_idx (0)
+    m_symtab_ap ()
 {
     if (file_spec_ptr)
         m_file = *file_spec_ptr;
@@ -286,8 +286,7 @@ ObjectFile::ObjectFile (const lldb::ModuleSP &module_sp,
     m_process_wp (process_sp),
     m_memory_addr (header_addr),
     m_sections_ap(),
-    m_symtab_ap (),
-    m_synthetic_symbol_idx (0)
+    m_symtab_ap ()
 {
     if (header_data_sp)
         m_data.SetData (header_data_sp, 0, header_data_sp->GetByteSize());
@@ -363,7 +362,6 @@ ObjectFile::GetAddressClass (addr_t file_addr)
                     case eSectionTypeDWARFDebugLine:
                     case eSectionTypeDWARFDebugLoc:
                     case eSectionTypeDWARFDebugMacInfo:
-                    case eSectionTypeDWARFDebugMacro:
                     case eSectionTypeDWARFDebugPubNames:
                     case eSectionTypeDWARFDebugPubTypes:
                     case eSectionTypeDWARFDebugRanges:
@@ -385,11 +383,6 @@ ObjectFile::GetAddressClass (addr_t file_addr)
                     case eSectionTypeELFDynamicLinkInfo:
                     case eSectionTypeOther:
                         return eAddressClassUnknown;
-                    case eSectionTypeAbsoluteAddress:
-                        // In case of absolute sections decide the address class based on the symbol
-                        // type because the section type isn't specify if it is a code or a data
-                        // section.
-                        break;
                     }
                 }
             }
@@ -544,13 +537,14 @@ ObjectFile::ReadSectionData (const Section *section, DataExtractor& section_data
                 }
             }
         }
-        return GetData(section->GetFileOffset(), section->GetFileSize(), section_data);
     }
     else
     {
         // The object file now contains a full mmap'ed copy of the object file data, so just use this
         return MemoryMapSectionData (section, section_data);
     }
+    section_data.Clear();
+    return 0;
 }
 
 size_t
@@ -632,38 +626,3 @@ ObjectFile::GetSectionList(bool update_module_section_list)
     }
     return m_sections_ap.get();
 }
-
-lldb::SymbolType
-ObjectFile::GetSymbolTypeFromName (llvm::StringRef name,
-                                   lldb::SymbolType symbol_type_hint)
-{
-    if (!name.empty())
-    {
-        if (name.startswith("_OBJC_"))
-        {
-            // ObjC
-            if (name.startswith("_OBJC_CLASS_$_"))
-                return lldb::eSymbolTypeObjCClass;
-            if (name.startswith("_OBJC_METACLASS_$_"))
-                return lldb::eSymbolTypeObjCMetaClass;
-            if (name.startswith("_OBJC_IVAR_$_"))
-                return lldb::eSymbolTypeObjCIVar;
-        }
-        else if (name.startswith(".objc_class_name_"))
-        {
-            // ObjC v1
-            return lldb::eSymbolTypeObjCClass;
-        }
-    }
-    return symbol_type_hint;
-}
-
-ConstString
-ObjectFile::GetNextSyntheticSymbolName()
-{
-    StreamString ss;
-    ConstString file_name = GetModule()->GetFileSpec().GetFilename();
-    ss.Printf("___lldb_unnamed_symbol%u$$%s", ++m_synthetic_symbol_idx, file_name.GetCString());
-    return ConstString(ss.GetData());
-}
-

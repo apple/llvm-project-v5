@@ -707,15 +707,6 @@ SymbolFileDWARFDebugMap::ParseCompileUnitLineTable (const SymbolContext& sc)
 }
 
 bool
-SymbolFileDWARFDebugMap::ParseCompileUnitDebugMacros (const SymbolContext& sc)
-{
-    SymbolFileDWARF *oso_dwarf = GetSymbolFile (sc);
-    if (oso_dwarf)
-        return oso_dwarf->ParseCompileUnitDebugMacros (sc);
-    return false;
-}
-
-bool
 SymbolFileDWARFDebugMap::ParseCompileUnitSupportFiles (const SymbolContext& sc, FileSpecList &support_files)
 {
     SymbolFileDWARF *oso_dwarf = GetSymbolFile (sc);
@@ -1276,8 +1267,7 @@ SymbolFileDWARFDebugMap::FindTypes
     const ConstString &name,
     const CompilerDeclContext *parent_decl_ctx,
     bool append,
-    uint32_t max_matches,
-    llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
+    uint32_t max_matches, 
     TypeMap& types
 )
 {
@@ -1291,16 +1281,13 @@ SymbolFileDWARFDebugMap::FindTypes
     {
         oso_dwarf = GetSymbolFile (sc);
         if (oso_dwarf)
-            return oso_dwarf->FindTypes (sc, name, parent_decl_ctx, append, max_matches, searched_symbol_files, types);
+            return oso_dwarf->FindTypes (sc, name, parent_decl_ctx, append, max_matches, types);
     }
     else
     {
         ForEachSymbolFile([&](SymbolFileDWARF *oso_dwarf) -> bool {
-            oso_dwarf->FindTypes (sc, name, parent_decl_ctx, append, max_matches, searched_symbol_files, types);
-            if (types.GetSize() >= max_matches)
-                return true;
-            else
-                return false;
+            oso_dwarf->FindTypes (sc, name, parent_decl_ctx, append, max_matches, types);
+            return false;
         });
     }
 

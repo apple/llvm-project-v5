@@ -603,7 +603,6 @@ namespace lldb {
         eSectionTypeDWARFDebugLine,
         eSectionTypeDWARFDebugLoc,
         eSectionTypeDWARFDebugMacInfo,
-        eSectionTypeDWARFDebugMacro,
         eSectionTypeDWARFDebugPubNames,
         eSectionTypeDWARFDebugPubTypes,
         eSectionTypeDWARFDebugRanges,
@@ -622,7 +621,6 @@ namespace lldb {
         eSectionTypeARMextab,
         eSectionTypeCompactUnwind,        // compact unwind section in Mach-O, __TEXT,__unwind_info
         eSectionTypeGoSymtab,
-        eSectionTypeAbsoluteAddress,      // Dummy section for symbols with absolute address
         eSectionTypeOther
     };
 
@@ -962,8 +960,7 @@ namespace lldb {
         eTypeIsInteger          = (1u << 18),
         eTypeIsFloat            = (1u << 19),
         eTypeIsComplex          = (1u << 20),
-        eTypeIsSigned           = (1u << 21),
-        eTypeInstanceIsPointer  = (1u << 22)
+        eTypeIsSigned           = (1u << 21)
     };
     
     FLAGS_ENUM(CommandFlags)

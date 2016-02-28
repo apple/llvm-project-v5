@@ -5,12 +5,8 @@
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
-//===---------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 
-// C Includes
-// C++ Includes
-// Other libraries and framework includes
-// Project includes
 #include "lldb/lldb-private.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Core/PluginManager.h"
@@ -22,12 +18,12 @@ using namespace lldb_private;
 void
 InstrumentationRuntime::ModulesDidLoad(lldb_private::ModuleList &module_list, lldb_private::Process *process, InstrumentationRuntimeCollection &runtimes)
 {
-    InstrumentationRuntimeCreateInstance create_callback = nullptr;
+    InstrumentationRuntimeCreateInstance create_callback = NULL;
     InstrumentationRuntimeGetType get_type_callback;
     for (uint32_t idx = 0; ; ++idx)
     {
         create_callback = PluginManager::GetInstrumentationRuntimeCreateCallbackAtIndex(idx);
-        if (create_callback == nullptr)
+        if (create_callback == NULL)
             break;
         get_type_callback = PluginManager::GetInstrumentationRuntimeGetTypeCallbackAtIndex(idx);
         InstrumentationRuntimeType type = get_type_callback();

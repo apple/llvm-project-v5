@@ -43,7 +43,6 @@ Variable::Variable (lldb::user_id_t uid,
                     const lldb::SymbolFileTypeSP &symfile_type_sp,
                     ValueType scope,
                     SymbolContextScope *context,
-                    const RangeList& scope_range,
                     Declaration* decl_ptr,
                     const DWARFExpression& location,
                     bool external,
@@ -55,7 +54,6 @@ Variable::Variable (lldb::user_id_t uid,
     m_symfile_type_sp(symfile_type_sp),
     m_scope(scope),
     m_owner_scope(context),
-    m_scope_range(scope_range),
     m_declaration(decl_ptr),
     m_location(location),
     m_external(external),
@@ -358,24 +356,14 @@ Variable::IsInScope (StackFrame *frame)
             {
                 SymbolContext variable_sc;
                 CalculateSymbolContext (&variable_sc);
-
                 // Check for static or global variable defined at the compile unit 
                 // level that wasn't defined in a block
                 if (variable_sc.block == nullptr)
+                    return true;    
+
+                if (variable_sc.block == deepest_frame_block)
                     return true;
-
-                // Check if the variable is valid in the current block
-                if (variable_sc.block != deepest_frame_block &&
-                    !variable_sc.block->Contains(deepest_frame_block))
-                    return false;
-
-                // If no scope range is specified then it means that the scope is the same as the
-                // scope of the enclosing lexical block.
-                if (m_scope_range.IsEmpty())
-                    return true;
-
-                addr_t file_address = frame->GetFrameCodeAddress().GetFileAddress();
-                return m_scope_range.FindEntryThatContains(file_address) != nullptr;
+                return variable_sc.block->Contains (deepest_frame_block);
             }
         }
         break;
@@ -828,7 +816,6 @@ PrivateAutoComplete (StackFrame *frame,
                                                             word_complete);                            
                             }
                         }
-                        break;
                     default:
                         break;
                 }
@@ -865,7 +852,6 @@ PrivateAutoComplete (StackFrame *frame,
                                                         matches,
                                                         word_complete);
                         }
-                        break;
                     default:
                         break;
                 }

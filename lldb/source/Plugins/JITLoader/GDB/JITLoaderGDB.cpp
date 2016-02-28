@@ -90,6 +90,7 @@ typedef enum
     JIT_UNREGISTER_FN
 } jit_actions_t;
 
+#pragma pack(push, 4)
 template <typename ptr_t>
 struct jit_code_entry
 {
@@ -106,6 +107,7 @@ struct jit_descriptor
     ptr_t    relevant_entry; // pointer
     ptr_t    first_entry; // pointer
 };
+#pragma pack(pop)
 
 JITLoaderGDB::JITLoaderGDB (lldb_private::Process *process) :
     JITLoader(process),
@@ -340,9 +342,7 @@ JITLoaderGDB::ReadJITDescriptorImpl(bool all_entries)
 
             if (module_sp && module_sp->GetObjectFile())
             {
-                // load the symbol table right away
-                module_sp->GetObjectFile()->GetSymtab();
-
+                bool changed;
                 m_jit_objects.insert(std::make_pair(symbolfile_addr, module_sp));
                 if (module_sp->GetObjectFile()->GetPluginName() == ConstString("mach-o"))
                 {
@@ -362,9 +362,11 @@ JITLoaderGDB::ReadJITDescriptorImpl(bool all_entries)
                 }
                 else
                 {
-                    bool changed = false;
                     module_sp->SetLoadAddress(target, 0, true, changed);
                 }
+
+                // load the symbol table right away
+                module_sp->GetObjectFile()->GetSymtab();
 
                 module_list.AppendIfNeeded(module_sp);
 

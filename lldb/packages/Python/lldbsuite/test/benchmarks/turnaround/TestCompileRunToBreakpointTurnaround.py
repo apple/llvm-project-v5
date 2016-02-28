@@ -7,10 +7,6 @@ from __future__ import print_function
 import os, sys
 import lldb
 from lldbsuite.test.lldbbench import *
-from lldbsuite.test.decorators import *
-from lldbsuite.test.lldbtest import *
-from lldbsuite.test import configuration
-from lldbsuite.test import lldbutil
 
 class CompileRunToBreakpointBench(BenchBase):
 
@@ -20,14 +16,17 @@ class CompileRunToBreakpointBench(BenchBase):
         BenchBase.setUp(self)
         self.exe = lldbtest_config.lldbExec
         self.function = 'Driver::MainLoop()'
-        self.count = 3
+
+        self.count = lldb.bmIterationCount
+        if self.count <= 0:
+            self.count = 3
 
         self.lldb_avg = None
         self.gdb_avg = None
 
     @benchmarks_test
     @no_debug_info_test
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr22274: need a pexpect replacement for windows")
+    @expectedFailureWindows("llvm.org/pr22274: need a pexpect replacement for windows")
     def test_run_lldb_then_gdb(self):
         """Benchmark turnaround time with lldb vs. gdb."""
         print()

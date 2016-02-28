@@ -81,16 +81,14 @@ public:
 
         struct InitialCmdEntry
         {
-            InitialCmdEntry (const char *in_contents, bool in_is_file, bool is_cwd_lldbinit_file_read, bool in_quiet = false) :
+            InitialCmdEntry (const char *in_contents, bool in_is_file, bool in_quiet = false) :
                 contents (in_contents),
                 is_file  (in_is_file),
-                is_cwd_lldbinit_file_read (is_cwd_lldbinit_file_read),
-                source_quietly (in_quiet)
+                source_quietly(in_quiet)
             {}
 
             std::string contents;
             bool        is_file;
-            bool        is_cwd_lldbinit_file_read; // if this is reading ./.lldbinit - so we may skip if not permitted
             bool        source_quietly;
         };
 

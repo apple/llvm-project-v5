@@ -7,17 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/Target/StackID.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Target/StackID.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolContext.h"
 
 using namespace lldb_private;
+
 
 void
 StackID::Dump (Stream *s)
@@ -46,8 +48,8 @@ lldb_private::operator== (const StackID& lhs, const StackID& rhs)
     SymbolContextScope *lhs_scope = lhs.GetSymbolContextScope();
     SymbolContextScope *rhs_scope = rhs.GetSymbolContextScope();
 
-    // Only compare the PC values if both symbol context scopes are nullptr
-    if (lhs_scope == nullptr && rhs_scope == nullptr)
+    // Only compare the PC values if both symbol context scopes are NULL
+    if (lhs_scope == NULL && rhs_scope == NULL)
         return lhs.GetPC() == rhs.GetPC();
     
     return lhs_scope == rhs_scope;
@@ -62,7 +64,7 @@ lldb_private::operator!= (const StackID& lhs, const StackID& rhs)
     SymbolContextScope *lhs_scope = lhs.GetSymbolContextScope();
     SymbolContextScope *rhs_scope = rhs.GetSymbolContextScope();
 
-    if (lhs_scope == nullptr && rhs_scope == nullptr)
+    if (lhs_scope == NULL && rhs_scope == NULL)
         return lhs.GetPC() != rhs.GetPC();
 
     return lhs_scope != rhs_scope;
@@ -86,7 +88,7 @@ lldb_private::operator< (const StackID& lhs, const StackID& rhs)
     SymbolContextScope *lhs_scope = lhs.GetSymbolContextScope();
     SymbolContextScope *rhs_scope = rhs.GetSymbolContextScope();
 
-    if (lhs_scope != nullptr && rhs_scope != nullptr)
+    if (lhs_scope != NULL && rhs_scope != NULL)
     {
         // Same exact scope, lhs is not less than (younger than rhs)
         if (lhs_scope == rhs_scope)
@@ -99,8 +101,8 @@ lldb_private::operator< (const StackID& lhs, const StackID& rhs)
         
         // Items with the same function can only be compared
         if (lhs_sc.function == rhs_sc.function &&
-            lhs_sc.function != nullptr && lhs_sc.block != nullptr &&
-            rhs_sc.function != nullptr && rhs_sc.block != nullptr)
+            lhs_sc.function != NULL && lhs_sc.block != NULL &&
+            rhs_sc.function != NULL && rhs_sc.block != NULL)
         {
             return rhs_sc.block->Contains (lhs_sc.block);
         }

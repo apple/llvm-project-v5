@@ -815,7 +815,7 @@ DWARFCompileUnit::IndexPrivate (DWARFCompileUnit* dwarf_cu,
         bool is_declaration = false;
         //bool is_artificial = false;
         bool has_address = false;
-        bool has_location_or_const_value = false;
+        bool has_location = false;
         bool is_global_or_static_variable = false;
         
         DWARFFormValue specification_die_form;
@@ -860,8 +860,7 @@ DWARFCompileUnit::IndexPrivate (DWARFCompileUnit* dwarf_cu,
                     break;
 
                 case DW_AT_location:
-                case DW_AT_const_value:
-                    has_location_or_const_value = true;
+                    has_location = true;
                     if (tag == DW_TAG_variable)
                     {
                         const DWARFDebugInfoEntry* parent_die = die.GetParent();
@@ -1024,10 +1023,10 @@ DWARFCompileUnit::IndexPrivate (DWARFCompileUnit* dwarf_cu,
         case DW_TAG_union_type:
         case DW_TAG_typedef:
         case DW_TAG_unspecified_type:
-            if (name && !is_declaration)
+            if (name && is_declaration == false)
+            {
                 types.Insert (ConstString(name), DIERef(cu_offset, die.GetOffset()));
-            if (mangled_cstr && !is_declaration)
-                types.Insert (ConstString(mangled_cstr), DIERef(cu_offset, die.GetOffset()));
+            }
             break;
 
         case DW_TAG_namespace:
@@ -1036,7 +1035,7 @@ DWARFCompileUnit::IndexPrivate (DWARFCompileUnit* dwarf_cu,
             break;
 
         case DW_TAG_variable:
-            if (name && has_location_or_const_value && is_global_or_static_variable)
+            if (name && has_location && is_global_or_static_variable)
             {
                 globals.Insert (ConstString(name), DIERef(cu_offset, die.GetOffset()));
                 // Be sure to include variables by their mangled and demangled
@@ -1180,7 +1179,7 @@ DWARFCompileUnit::LanguageTypeFromDWARF(uint64_t val)
     {
     case DW_LANG_Mips_Assembler:
         return eLanguageTypeMipsAssembler;
-    case DW_LANG_GOOGLE_RenderScript:
+    case 0x8e57: // FIXME: needs to be added to llvm
         return eLanguageTypeExtRenderScript;
     default:
         return static_cast<LanguageType>(val);
@@ -1258,10 +1257,4 @@ DWARFCompileUnit::SetAddrBase(dw_addr_t addr_base, dw_offset_t base_obj_offset)
 {
     m_addr_base = addr_base;
     m_base_obj_offset = base_obj_offset;
-}
-
-lldb::ByteOrder
-DWARFCompileUnit::GetByteOrder() const
-{
-    return m_dwarf2Data->GetObjectFile()->GetByteOrder();
 }

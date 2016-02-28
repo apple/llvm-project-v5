@@ -7,11 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/Target/StackFrameList.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Target/StackFrameList.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Breakpoint/Breakpoint.h"
 #include "lldb/Core/Log.h"
@@ -59,6 +60,9 @@ StackFrameList::StackFrameList
     }
 }
 
+//----------------------------------------------------------------------
+// Destructor
+//----------------------------------------------------------------------
 StackFrameList::~StackFrameList()
 {
     // Call clear since this takes a lock and clears the stack frame list
@@ -106,7 +110,7 @@ StackFrameList::ResetCurrentInlinedDepth ()
     if (m_show_inlined_frames)
     {        
         GetFramesUpTo(0);
-        if (m_frames.empty())
+        if (m_frames.size() == 0)
             return;
         if (!m_frames[0]->IsInlined())
         {
@@ -187,7 +191,6 @@ StackFrameList::ResetCurrentInlinedDepth ()
                                         break;
                                     }
                                 }
-                                LLVM_FALLTHROUGH;
                             default:
                                 {
                                     // Otherwise, we should set ourselves at the container of the inlining, so that the
@@ -196,7 +199,7 @@ StackFrameList::ResetCurrentInlinedDepth ()
                                     int num_inlined_functions = 0;
                                     
                                     for  (Block *container_ptr = block_ptr->GetInlinedParent();
-                                              container_ptr != nullptr;
+                                              container_ptr != NULL;
                                               container_ptr = container_ptr->GetInlinedParent())
                                     {
                                         if (!container_ptr->GetRangeContainingAddress(pc_as_address, containing_range))
@@ -255,7 +258,7 @@ void
 StackFrameList::GetFramesUpTo(uint32_t end_idx)
 {
     // this makes sure we do not fetch frames for an invalid thread
-    if (!m_thread.IsValid())
+    if (m_thread.IsValid() == false)
         return;
 
     // We've already gotten more frames than asked for, or we've already finished unwinding, return.
@@ -301,6 +304,7 @@ StackFrameList::GetFramesUpTo(uint32_t end_idx)
                     
                     if (reg_ctx_sp)
                     {
+
                         const bool success = unwinder && unwinder->GetFrameInfoAtIndex(idx, cfa, pc);
                         // There shouldn't be any way not to get the frame info for frame 0.
                         // But if the unwinder can't make one, lets make one by hand with the
@@ -311,13 +315,13 @@ StackFrameList::GetFramesUpTo(uint32_t end_idx)
                             pc = reg_ctx_sp->GetPC();
                         }
                         
-                        unwind_frame_sp.reset(new StackFrame(m_thread.shared_from_this(),
-                                                             m_frames.size(), 
-                                                             idx,
-                                                             reg_ctx_sp,
-                                                             cfa,
-                                                             pc,
-                                                             nullptr));
+                        unwind_frame_sp.reset (new StackFrame (m_thread.shared_from_this(),
+                                                               m_frames.size(), 
+                                                               idx,
+                                                               reg_ctx_sp,
+                                                               cfa,
+                                                               pc,
+                                                               NULL));
                         m_frames.push_back (unwind_frame_sp);
                     }
                 }
@@ -339,8 +343,7 @@ StackFrameList::GetFramesUpTo(uint32_t end_idx)
                 const bool cfa_is_valid = true;
                 const bool stop_id_is_valid = false;
                 const bool is_history_frame = false;
-                unwind_frame_sp.reset(new StackFrame(m_thread.shared_from_this(), m_frames.size(), idx, cfa, cfa_is_valid, pc,
-                                                     0, stop_id_is_valid, is_history_frame, nullptr));
+                unwind_frame_sp.reset (new StackFrame (m_thread.shared_from_this(), m_frames.size(), idx, cfa, cfa_is_valid, pc, 0, stop_id_is_valid, is_history_frame, NULL));
                 m_frames.push_back (unwind_frame_sp);
             }
             
@@ -436,7 +439,7 @@ StackFrameList::GetFramesUpTo(uint32_t end_idx)
                 StackFrame *curr_frame = curr_frame_sp.get();
                 StackFrame *prev_frame = prev_frame_sp.get();
                 
-                if (curr_frame == nullptr || prev_frame == nullptr)
+                if (curr_frame == NULL || prev_frame == NULL)
                     break;
 
                 // Check the stack ID to make sure they are equal
@@ -499,7 +502,7 @@ StackFrameList::GetNumFrames (bool can_create)
 void
 StackFrameList::Dump (Stream *s)
 {
-    if (s == nullptr)
+    if (s == NULL)
         return;
     Mutex::Locker locker (m_mutex);
 
@@ -559,8 +562,7 @@ StackFrameList::GetFrameAtIndex (uint32_t idx)
                     const bool cfa_is_valid = true;
                     const bool stop_id_is_valid = false;
                     const bool is_history_frame = false;
-                    frame_sp.reset(new StackFrame(m_thread.shared_from_this(), idx, idx, cfa, cfa_is_valid, pc, 0,
-                                                  stop_id_is_valid, is_history_frame, nullptr));
+                    frame_sp.reset (new StackFrame (m_thread.shared_from_this(), idx, idx, cfa, cfa_is_valid, pc, 0, stop_id_is_valid, is_history_frame, NULL));
                     
                     Function *function = frame_sp->GetSymbolContext (eSymbolContextFunction).function;
                     if (function)
@@ -571,7 +573,7 @@ StackFrameList::GetFrameAtIndex (uint32_t idx)
                     }
                     else 
                     {
-                        // Set the symbol scope from the symbol regardless if it is nullptr or valid.
+                        // Set the symbol scope from the symbol regardless if it is NULL or valid.
                         frame_sp->SetSymbolContextScope (frame_sp->GetSymbolContext (eSymbolContextSymbol).symbol);
                     }
                     SetFrameAtIndex(idx, frame_sp);
@@ -584,16 +586,17 @@ StackFrameList::GetFrameAtIndex (uint32_t idx)
         // There should ALWAYS be a frame at index 0.  If something went wrong with the CurrentInlinedDepth such that
         // there weren't as many frames as we thought taking that into account, then reset the current inlined depth
         // and return the real zeroth frame.
-        if (m_frames.empty())
+        if (m_frames.size() > 0)
+        {
+            ResetCurrentInlinedDepth();
+            frame_sp = m_frames[original_idx];
+        }
+        else
         {
             // Why do we have a thread with zero frames, that should not ever happen...
             if (m_thread.IsValid())
                 assert ("A valid thread has no frames.");
-        }
-        else
-        {
-            ResetCurrentInlinedDepth();
-            frame_sp = m_frames[original_idx];
+            
         }
     }
     
@@ -683,6 +686,7 @@ StackFrameList::GetSelectedFrameIndex () const
     return m_selected_frame_idx;
 }
 
+
 uint32_t
 StackFrameList::SetSelectedFrame (lldb_private::StackFrame *frame)
 {
@@ -769,25 +773,25 @@ StackFrameList::InvalidateFrames (uint32_t start_idx)
 void
 StackFrameList::Merge (std::unique_ptr<StackFrameList>& curr_ap, lldb::StackFrameListSP& prev_sp)
 {
-    Mutex::Locker curr_locker(curr_ap ? &curr_ap->m_mutex : nullptr);
-    Mutex::Locker prev_locker(prev_sp ? &prev_sp->m_mutex : nullptr);
+    Mutex::Locker curr_locker (curr_ap.get() ? &curr_ap->m_mutex : NULL);
+    Mutex::Locker prev_locker (prev_sp.get() ? &prev_sp->m_mutex : NULL);
 
 #if defined (DEBUG_STACK_FRAMES)
     StreamFile s(stdout, false);
     s.PutCString("\n\nStackFrameList::Merge():\nPrev:\n");
-    if (prev_sp)
+    if (prev_sp.get())
         prev_sp->Dump (&s);
     else
         s.PutCString ("NULL");
     s.PutCString("\nCurr:\n");
-    if (curr_ap)
+    if (curr_ap.get())
         curr_ap->Dump (&s);
     else
         s.PutCString ("NULL");
     s.EOL();
 #endif
 
-    if (!curr_ap || curr_ap->GetNumFrames(false) == 0)
+    if (curr_ap.get() == NULL || curr_ap->GetNumFrames (false) == 0)
     {
 #if defined (DEBUG_STACK_FRAMES)
         s.PutCString("No current frames, leave previous frames alone...\n");
@@ -796,7 +800,7 @@ StackFrameList::Merge (std::unique_ptr<StackFrameList>& curr_ap, lldb::StackFram
         return;
     }
 
-    if (!prev_sp || prev_sp->GetNumFrames(false) == 0)
+    if (prev_sp.get() == NULL || prev_sp->GetNumFrames (false) == 0)
     {
 #if defined (DEBUG_STACK_FRAMES)
         s.PutCString("No previous frames, so use current frames...\n");
@@ -862,6 +866,8 @@ StackFrameList::Merge (std::unique_ptr<StackFrameList>& curr_ap, lldb::StackFram
     s.PutCString("\nMerged:\n");
     prev_sp->Dump (&s);
 #endif
+
+
 }
 
 lldb::StackFrameSP
@@ -907,7 +913,7 @@ StackFrameList::GetStatus (Stream& strm,
         last_frame = first_frame + num_frames;
     
     StackFrameSP selected_frame_sp = m_thread.GetSelectedFrame();
-    const char *unselected_marker = nullptr;
+    const char *unselected_marker = NULL;
     std::string buffer;
     if (selected_frame_marker)
     {
@@ -915,15 +921,15 @@ StackFrameList::GetStatus (Stream& strm,
         buffer.insert(buffer.begin(), len, ' ');
         unselected_marker = buffer.c_str();
     }
-    const char *marker = nullptr;
+    const char *marker = NULL;
     
     for (frame_idx = first_frame; frame_idx < last_frame; ++frame_idx)
     {
         frame_sp = GetFrameAtIndex(frame_idx);
-        if (!frame_sp)
+        if (frame_sp.get() == NULL)
             break;
         
-        if (selected_frame_marker != nullptr)
+        if (selected_frame_marker != NULL)
         {
             if (frame_sp == selected_frame_sp)
                 marker = selected_frame_marker;
@@ -941,3 +947,4 @@ StackFrameList::GetStatus (Stream& strm,
     strm.IndentLess();
     return num_frames_displayed;
 }
+

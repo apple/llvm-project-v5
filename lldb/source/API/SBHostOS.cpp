@@ -17,9 +17,6 @@
 #include "lldb/Host/HostThread.h"
 #include "lldb/Host/ThreadLauncher.h"
 
-#include "llvm/Support/Path.h"
-#include "llvm/ADT/SmallVector.h"
-
 using namespace lldb;
 using namespace lldb_private;
 
@@ -53,19 +50,6 @@ SBHostOS::GetLLDBPath (lldb::PathType path_type)
     FileSpec fspec;
     if (HostInfo::GetLLDBPath(path_type, fspec))
         sb_fspec.SetFileSpec (fspec);
-    return sb_fspec;
-}
-
-SBFileSpec
-SBHostOS::GetUserHomeDirectory ()
-{
-    SBFileSpec sb_fspec;
-
-    llvm::SmallString<64> home_dir_path;
-    llvm::sys::path::home_directory (home_dir_path);
-    FileSpec homedir (home_dir_path.c_str(), true);
-
-    sb_fspec.SetFileSpec (homedir);
     return sb_fspec;
 }
 

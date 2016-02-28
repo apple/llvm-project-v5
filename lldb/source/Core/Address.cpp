@@ -179,7 +179,7 @@ ReadCStringFromMemory (ExecutionContextScope *exe_scope, const Address &address,
     buf[k_buf_len] = '\0'; // NULL terminate
 
     // Byte order and address size don't matter for C string dumping..
-    DataExtractor data (buf, sizeof(buf), endian::InlHostByteOrder(), 4);
+    DataExtractor data (buf, sizeof(buf), lldb::endian::InlHostByteOrder(), 4);
     size_t total_len = 0;
     size_t bytes_read;
     Address curr_address(address);
@@ -442,13 +442,9 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
     case DumpStyleModuleWithFileAddress:
         if (section_sp)
         {
-            ModuleSP module_sp = section_sp->GetModule();
-            if (module_sp)
-                s->Printf("%s[", module_sp->GetFileSpec().GetFilename().AsCString("<Unknown>"));
-            else
-                s->Printf("%s[","<Unknown>");
+            s->Printf("%s[", section_sp->GetModule()->GetFileSpec().GetFilename().AsCString("<Unknown>"));
         }
-        LLVM_FALLTHROUGH;
+        // Fall through
     case DumpStyleFileAddress:
         {
             addr_t file_addr = GetFileAddress();
@@ -760,11 +756,10 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                     bool stop_if_block_is_inlined_function = false;
                     VariableList variable_list;
                     sc.block->AppendVariables (can_create,
-                                               get_parent_variables,
-                                               stop_if_block_is_inlined_function,
-                                               [](Variable*) { return true; },
+                                               get_parent_variables, 
+                                               stop_if_block_is_inlined_function, 
                                                &variable_list);
-
+                    
                     const size_t num_variables = variable_list.GetSize();
                     for (size_t var_idx = 0; var_idx < num_variables; ++var_idx)
                     {

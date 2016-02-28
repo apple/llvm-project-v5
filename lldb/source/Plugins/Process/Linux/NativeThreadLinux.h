@@ -13,8 +13,6 @@
 #include "lldb/lldb-private-forward.h"
 #include "lldb/Host/common/NativeThreadProtocol.h"
 
-#include <sched.h>
-
 #include <map>
 #include <memory>
 #include <string>
@@ -56,16 +54,11 @@ namespace process_linux {
         // ---------------------------------------------------------------------
         // Interface for friend classes
         // ---------------------------------------------------------------------
+        void
+        SetRunning ();
 
-        /// Resumes the thread.  If @p signo is anything but
-        /// LLDB_INVALID_SIGNAL_NUMBER, deliver that signal to the thread.
-        Error
-        Resume(uint32_t signo);
-
-        /// Single steps the thread.  If @p signo is anything but
-        /// LLDB_INVALID_SIGNAL_NUMBER, deliver that signal to the thread.
-        Error
-        SingleStep(uint32_t signo);
+        void
+        SetStepping ();
 
         void
         SetStoppedBySignal(uint32_t signo, const siginfo_t *info = nullptr);
@@ -109,18 +102,6 @@ namespace process_linux {
         void
         MaybeLogStateChange (lldb::StateType new_state);
 
-        NativeProcessLinux &
-        GetProcess();
-
-        void
-        SetStopped();
-
-        inline void
-        MaybePrepareSingleStepWorkaround();
-
-        inline void
-        MaybeCleanupSingleStepWorkaround();
-
         // ---------------------------------------------------------------------
         // Member Variables
         // ---------------------------------------------------------------------
@@ -130,7 +111,6 @@ namespace process_linux {
         std::string m_stop_description;
         using WatchpointIndexMap = std::map<lldb::addr_t, uint32_t>;
         WatchpointIndexMap m_watchpoint_index_map;
-        cpu_set_t m_original_cpu_set; // For single-step workaround.
     };
 
     typedef std::shared_ptr<NativeThreadLinux> NativeThreadLinuxSP;

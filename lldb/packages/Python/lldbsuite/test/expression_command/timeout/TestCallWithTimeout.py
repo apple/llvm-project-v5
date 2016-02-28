@@ -7,9 +7,8 @@ from __future__ import print_function
 
 
 import lldb
-from lldbsuite.test.decorators import *
+import lldbsuite.test.lldbutil as lldbutil
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class ExprCommandWithTimeoutsTestCase(TestBase):
 
@@ -24,7 +23,8 @@ class ExprCommandWithTimeoutsTestCase(TestBase):
 
 
     @expectedFlakeyFreeBSD("llvm.org/pr19605")
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr21765")
+    @expectedFlakeyLinux("llvm.org/pr20275")
+    @expectedFailureWindows("llvm.org/pr21765")
     def test(self):
         """Test calling std::String member function."""
         self.build()
@@ -57,7 +57,7 @@ class ExprCommandWithTimeoutsTestCase(TestBase):
 
         frame = thread.GetFrameAtIndex(0)
         
-        value = frame.EvaluateExpression ("wait_a_while (200000)", options)
+        value = frame.EvaluateExpression ("wait_a_while (50000)", options)
         self.assertTrue (value.IsValid())
         self.assertFalse (value.GetError().Success())
 
@@ -65,7 +65,7 @@ class ExprCommandWithTimeoutsTestCase(TestBase):
         interp = self.dbg.GetCommandInterpreter()
 
         result = lldb.SBCommandReturnObject()
-        return_value = interp.HandleCommand ("expr -t 100 -u true -- wait_a_while(200000)", result)
+        return_value = interp.HandleCommand ("expr -t 100 -u true -- wait_a_while(50000)", result)
         self.assertTrue (return_value == lldb.eReturnStatusFailed)
 
         # Okay, now do it again with long enough time outs:

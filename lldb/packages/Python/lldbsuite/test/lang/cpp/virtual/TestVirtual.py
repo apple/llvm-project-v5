@@ -7,9 +7,8 @@ from __future__ import print_function
 import os, time
 import re
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 def Msg(expr, val):
     return "'expression %s' matches the output (from compiled code): %s" % (expr, val)
@@ -32,8 +31,7 @@ class CppVirtualMadness(TestBase):
         self.source = 'main.cpp'
         self.line = line_number(self.source, '// Set first breakpoint here.')
 
-    @expectedFailureAll(compiler="icc", bugnumber="llvm.org/pr16808 lldb does not call the correct virtual function with icc.")
-    @expectedFailureAll(oslist=['windows'])
+    @expectedFailureIcc('llvm.org/pr16808') # lldb does not call the correct virtual function with icc
     def test_virtual_madness(self):
         """Test that expression works correctly with virtual inheritance as well as virtual function."""
         self.build()
@@ -62,8 +60,6 @@ class CppVirtualMadness(TestBase):
         # series of printf statements.
         stdout = process.GetSTDOUT(1024)
         
-        self.assertIsNotNone(stdout, "Encountered an error reading the process's output")
-
         # This golden list contains a list of "my_expr = 'value' pairs extracted
         # from the golden output.
         gl = []

@@ -8,9 +8,8 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class CppDataFormatterTestCase(TestBase):
 
@@ -22,7 +21,7 @@ class CppDataFormatterTestCase(TestBase):
         # Find the line number to break at.
         self.line = line_number('main.cpp', '// Set break point at this line.')
 
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr24462: Data formatters have problems on Windows")
+    @expectedFailureWindows("llvm.org/pr24462") # Data formatters have problems on Windows
     def test_with_run_command(self):
         """Test that that file and class static variables display correctly."""
         self.build()
@@ -85,7 +84,7 @@ class CppDataFormatterTestCase(TestBase):
 
         # Delete type format for 'Speed', we should expect an error message.
         self.expect("type format delete Speed", error=True,
-            substrs = ['no custom formatter for Speed'])
+            substrs = ['no custom format for Speed'])
         
         self.runCmd("type summary add --summary-string \"arr = ${var%s}\" -x \"char \\[[0-9]+\\]\" -v")
         

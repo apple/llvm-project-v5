@@ -134,25 +134,11 @@ SymbolFile::FindFunctions (const RegularExpression& regex, bool include_inlines,
     return 0;
 }
 
-void
-SymbolFile::GetMangledNamesForFunction(const std::string &scope_qualified_name, std::vector<ConstString> &mangled_names)
-{
-    return;
-}
-
 uint32_t
-SymbolFile::FindTypes (const SymbolContext& sc, const ConstString &name, const CompilerDeclContext *parent_decl_ctx, bool append, uint32_t max_matches, llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files, TypeMap& types)
+SymbolFile::FindTypes (const SymbolContext& sc, const ConstString &name, const CompilerDeclContext *parent_decl_ctx, bool append, uint32_t max_matches, TypeMap& types)
 {
     if (!append)
         types.Clear();
     return 0;
 }
 
-
-size_t
-SymbolFile::FindTypes (const std::vector<CompilerContext> &context, bool append, TypeMap& types)
-{
-    if (!append)
-        types.Clear();
-    return 0;
-}

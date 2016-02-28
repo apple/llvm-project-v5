@@ -7,11 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CommandObjectLog.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "CommandObjectLog.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Host/FileSpec.h"
@@ -22,19 +23,23 @@
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/Timer.h"
+
 #include "lldb/Core/Debugger.h"
 #include "lldb/Host/StringConvert.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
+
 #include "lldb/Symbol/LineTable.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
+
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
 using namespace lldb_private;
+
 
 class CommandObjectLogEnable : public CommandObjectParsed
 {
@@ -43,12 +48,13 @@ public:
     // Constructors and Destructors
     //------------------------------------------------------------------
     CommandObjectLogEnable(CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "log enable",
-                            "Enable logging for a single log channel.",
-                            nullptr),
+        CommandObjectParsed (interpreter,
+                             "log enable",
+                             "Enable logging for a single log channel.",
+                             NULL),
         m_options (interpreter)
     {
+
         CommandArgumentEntry arg1;
         CommandArgumentEntry arg2;
         CommandArgumentData channel_arg;
@@ -71,7 +77,9 @@ public:
         m_arguments.push_back (arg2);
     }
 
-    ~CommandObjectLogEnable() override = default;
+    ~CommandObjectLogEnable() override
+    {
+    }
 
     Options *
     GetOptions () override
@@ -104,6 +112,7 @@ public:
     class CommandOptions : public Options
     {
     public:
+
         CommandOptions (CommandInterpreter &interpreter) :
             Options (interpreter),
             log_file (),
@@ -111,7 +120,10 @@ public:
         {
         }
 
-        ~CommandOptions () override = default;
+
+        ~CommandOptions () override
+        {
+        }
 
         Error
         SetOptionValue (uint32_t option_idx, const char *option_arg) override
@@ -199,17 +211,17 @@ protected:
 OptionDefinition
 CommandObjectLogEnable::CommandOptions::g_option_table[] =
 {
-{ LLDB_OPT_SET_1, false, "file",       'f', OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeFilename,   "Set the destination file to log to."},
-{ LLDB_OPT_SET_1, false, "threadsafe", 't', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,        "Enable thread safe logging to avoid interweaved log lines." },
-{ LLDB_OPT_SET_1, false, "verbose",    'v', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Enable verbose logging." },
-{ LLDB_OPT_SET_1, false, "debug",      'g', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Enable debug logging." },
-{ LLDB_OPT_SET_1, false, "sequence",   's', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Prepend all log lines with an increasing integer sequence id." },
-{ LLDB_OPT_SET_1, false, "timestamp",  'T', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Prepend all log lines with a timestamp." },
-{ LLDB_OPT_SET_1, false, "pid-tid",    'p', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Prepend all log lines with the process and thread ID that generates the log line." },
-{ LLDB_OPT_SET_1, false, "thread-name",'n', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Prepend all log lines with the thread name for the thread that generates the log line." },
-{ LLDB_OPT_SET_1, false, "stack",      'S', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Append a stack backtrace to each log line." },
-{ LLDB_OPT_SET_1, false, "append",     'a', OptionParser::eNoArgument,       nullptr, nullptr, 0, eArgTypeNone,       "Append to the log file instead of overwriting." },
-{ 0, false, nullptr,                       0,  0,                 nullptr, nullptr, 0, eArgTypeNone,       nullptr }
+{ LLDB_OPT_SET_1, false, "file",       'f', OptionParser::eRequiredArgument, NULL, NULL, 0, eArgTypeFilename,   "Set the destination file to log to."},
+{ LLDB_OPT_SET_1, false, "threadsafe", 't', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,        "Enable thread safe logging to avoid interweaved log lines." },
+{ LLDB_OPT_SET_1, false, "verbose",    'v', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Enable verbose logging." },
+{ LLDB_OPT_SET_1, false, "debug",      'g', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Enable debug logging." },
+{ LLDB_OPT_SET_1, false, "sequence",   's', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Prepend all log lines with an increasing integer sequence id." },
+{ LLDB_OPT_SET_1, false, "timestamp",  'T', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Prepend all log lines with a timestamp." },
+{ LLDB_OPT_SET_1, false, "pid-tid",    'p', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Prepend all log lines with the process and thread ID that generates the log line." },
+{ LLDB_OPT_SET_1, false, "thread-name",'n', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Prepend all log lines with the thread name for the thread that generates the log line." },
+{ LLDB_OPT_SET_1, false, "stack",      'S', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Append a stack backtrace to each log line." },
+{ LLDB_OPT_SET_1, false, "append",     'a', OptionParser::eNoArgument,       NULL, NULL, 0, eArgTypeNone,       "Append to the log file instead of overwriting." },
+{ 0, false, NULL,                       0,  0,                 NULL, NULL, 0, eArgTypeNone,       NULL }
 };
 
 class CommandObjectLogDisable : public CommandObjectParsed
@@ -219,10 +231,10 @@ public:
     // Constructors and Destructors
     //------------------------------------------------------------------
     CommandObjectLogDisable(CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "log disable",
-                            "Disable one or more log channel categories.",
-                            nullptr)
+        CommandObjectParsed (interpreter,
+                             "log disable",
+                             "Disable one or more log channel categories.",
+                             NULL)
     {
         CommandArgumentEntry arg1;
         CommandArgumentEntry arg2;
@@ -246,7 +258,9 @@ public:
         m_arguments.push_back (arg2);
     }
 
-    ~CommandObjectLogDisable() override = default;
+    ~CommandObjectLogDisable() override
+    {
+    }
 
 protected:
     bool
@@ -296,10 +310,10 @@ public:
     // Constructors and Destructors
     //------------------------------------------------------------------
     CommandObjectLogList(CommandInterpreter &interpreter) :
-        CommandObjectParsed(interpreter,
-                            "log list",
-                            "List the log categories for one or more log channels.  If none specified, lists them all.",
-                            nullptr)
+        CommandObjectParsed (interpreter, 
+                             "log list",
+                             "List the log categories for one or more log channels.  If none specified, lists them all.",
+                             NULL)
     {
         CommandArgumentEntry arg;
         CommandArgumentData channel_arg;
@@ -315,7 +329,9 @@ public:
         m_arguments.push_back (arg);
     }
 
-    ~CommandObjectLogList() override = default;
+    ~CommandObjectLogList() override
+    {
+    }
 
 protected:
     bool
@@ -376,7 +392,9 @@ public:
     {
     }
 
-    ~CommandObjectLogTimer() override = default;
+    ~CommandObjectLogTimer() override
+    {
+    }
 
 protected:
     bool
@@ -411,6 +429,7 @@ protected:
                 Timer::ResetCategoryTimes ();
                 result.SetStatus(eReturnStatusSuccessFinishResult);
             }
+
         }
         else if (argc == 2)
         {
@@ -451,6 +470,9 @@ protected:
     }
 };
 
+//----------------------------------------------------------------------
+// CommandObjectLog constructor
+//----------------------------------------------------------------------
 CommandObjectLog::CommandObjectLog(CommandInterpreter &interpreter) :
     CommandObjectMultiword (interpreter,
                             "log",
@@ -463,4 +485,13 @@ CommandObjectLog::CommandObjectLog(CommandInterpreter &interpreter) :
     LoadSubCommand ("timers",  CommandObjectSP (new CommandObjectLogTimer (interpreter)));
 }
 
-CommandObjectLog::~CommandObjectLog() = default;
+//----------------------------------------------------------------------
+// Destructor
+//----------------------------------------------------------------------
+CommandObjectLog::~CommandObjectLog()
+{
+}
+
+
+
+

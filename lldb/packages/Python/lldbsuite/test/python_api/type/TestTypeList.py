@@ -6,14 +6,11 @@ from __future__ import print_function
 
 
 
-import os
+import os, time
 import re
-import time
-
 import lldb
-from lldbsuite.test.decorators import *
+import lldbsuite.test.lldbutil as lldbutil
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class TypeAndTypeListTestCase(TestBase):
 
@@ -62,16 +59,11 @@ class TypeAndTypeListTestCase(TestBase):
         for type in type_list:
             self.assertTrue(type)
             self.DebugSBType(type)
-            self.assertFalse(type.IsAnonymousType(), "Task is not anonymous")
             for field in type.fields:
                 if field.name == "type":
                     for enum_member in field.type.enum_members:
                         self.assertTrue(enum_member)
                         self.DebugSBType(enum_member.type)
-                elif field.name == "my_type_is_nameless":
-                    self.assertTrue(field.type.IsAnonymousType(), "my_type_is_nameless has an anonymous type")
-                elif field.name == "my_type_is_named":
-                    self.assertFalse(field.type.IsAnonymousType(), "my_type_is_named has a named type")
 
         # Pass an empty string.  LLDB should not crash. :-)
         fuzz_types = target.FindTypes(None)

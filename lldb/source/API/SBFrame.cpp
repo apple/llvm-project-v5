@@ -789,10 +789,9 @@ SBFrame::FindVariable (const char *name, lldb::DynamicValueType use_dynamic)
                     const bool get_parent_variables = true;
                     const bool stop_if_block_is_inlined_function = true;
 
-                    if (sc.block->AppendVariables (can_create,
+                    if (sc.block->AppendVariables (can_create, 
                                                    get_parent_variables,
                                                    stop_if_block_is_inlined_function,
-                                                   [frame](Variable* v) { return v->IsInScope(frame); },
                                                    &variable_list))
                     {
                         var_sp = variable_list.FindVariable (ConstString(name));
@@ -888,7 +887,6 @@ SBFrame::FindValue (const char *name, ValueType value_type, lldb::DynamicValueTy
                             sc.block->AppendVariables(can_create,
                                                       get_parent_variables,
                                                       stop_if_block_is_inlined_function,
-                                                      [frame](Variable* v) { return v->IsInScope(frame); },
                                                       &variable_list);
                         if (value_type == eValueTypeVariableGlobal)
                         {
@@ -1391,7 +1389,6 @@ SBFrame::EvaluateExpression (const char *expr)
         lldb::DynamicValueType fetch_dynamic_value = frame->CalculateTarget()->GetPreferDynamicValue();
         options.SetFetchDynamicValue (fetch_dynamic_value);
         options.SetUnwindOnError (true);
-        options.SetIgnoreBreakpoints (true);
         if (target->GetLanguage() != eLanguageTypeUnknown)
             options.SetLanguage(target->GetLanguage());
         else
@@ -1407,7 +1404,6 @@ SBFrame::EvaluateExpression (const char *expr, lldb::DynamicValueType fetch_dyna
     SBExpressionOptions options;
     options.SetFetchDynamicValue (fetch_dynamic_value);
     options.SetUnwindOnError (true);
-    options.SetIgnoreBreakpoints (true);
     ExecutionContext exe_ctx(m_opaque_sp.get());
     StackFrame *frame = exe_ctx.GetFramePtr();
     Target *target = exe_ctx.GetTargetPtr();
@@ -1425,7 +1421,6 @@ SBFrame::EvaluateExpression (const char *expr, lldb::DynamicValueType fetch_dyna
     ExecutionContext exe_ctx(m_opaque_sp.get());
     options.SetFetchDynamicValue (fetch_dynamic_value);
     options.SetUnwindOnError (unwind_on_error);
-    options.SetIgnoreBreakpoints (true);
     StackFrame *frame = exe_ctx.GetFramePtr();
     Target *target = exe_ctx.GetTargetPtr();
     if (target && target->GetLanguage() != eLanguageTypeUnknown)

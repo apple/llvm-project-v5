@@ -8,9 +8,8 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 exe_name = "AttachResume"  # Must match Makefile
 
@@ -19,8 +18,9 @@ class AttachResumeTestCase(TestBase):
     mydir = TestBase.compute_mydir(__file__)
 
     @skipIfRemote
-    @expectedFailureAll(oslist=['freebsd'], bugnumber='llvm.org/pr19310')
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr24778")
+    @expectedFailureFreeBSD('llvm.org/pr19310')
+    @expectedFailureWindows("llvm.org/pr24778")
+    @expectedFlakeyLinux('llvm.org/pr19310')
     def test_attach_continue_interrupt_detach(self):
         """Test attach/continue/interrupt/detach"""
         self.build()
@@ -51,9 +51,6 @@ class AttachResumeTestCase(TestBase):
 
         self.runCmd("process interrupt")
         lldbutil.expect_state_changes(self, listener, [lldb.eStateStopped])
-
-        # Second interrupt should have no effect.
-        self.expect("process interrupt", patterns=["Process is not running"], error=True)
 
         # check that this breakpoint is auto-cleared on detach (r204752)
         self.runCmd("br set -f main.cpp -l %u" % (line_number('main.cpp', '// Set breakpoint here')))

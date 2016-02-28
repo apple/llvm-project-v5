@@ -52,9 +52,6 @@ public:
     static void
     DebuggerInitialize (lldb_private::Debugger &debugger);
 
-    static lldb::addr_t
-    SearchForDarwinKernel (lldb_private::Process *process);
-
     //------------------------------------------------------------------
     /// Called after attaching a process.
     ///
@@ -339,6 +336,9 @@ protected:
                        uint32_t image_infos_count,
                        KextImageInfo::collection &image_infos);
 
+    static lldb::addr_t
+    SearchForDarwinKernel (lldb_private::Process *process);
+    
     static lldb::addr_t
     SearchForKernelAtSameLoadAddr (lldb_private::Process *process);
 

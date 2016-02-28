@@ -9,9 +9,8 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class StdStringDataFormatterTestCase(TestBase):
 
@@ -23,6 +22,7 @@ class StdStringDataFormatterTestCase(TestBase):
         # Find the line number to break at.
         self.line = line_number('main.cpp', '// Set break point at this line.')
 
+    @expectedFailureFreeBSD("llvm.org/pr20548") # fails to build on lab.llvm.org buildbot
     @skipIfWindows # libstdcpp not ported to Windows
     def test_with_run_command(self):
         """Test that that file and class static variables display correctly."""

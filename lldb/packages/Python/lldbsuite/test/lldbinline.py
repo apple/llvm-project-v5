@@ -3,6 +3,7 @@ from __future__ import absolute_import
 
 # System modules
 import os
+import sys
 
 # Third-party modules
 
@@ -10,7 +11,6 @@ import os
 import lldb
 from .lldbtest import *
 from . import lldbutil
-from .decorators import *
 
 def source_type(filename):
     _, extension = os.path.splitext(filename)
@@ -23,7 +23,6 @@ def source_type(filename):
         '.mm' : 'OBJCXX_SOURCES'
     }.get(extension, None)
 
-
 class CommandParser:
     def __init__(self):
         self.breakpoints = []
@@ -35,7 +34,7 @@ class CommandParser:
         new_breakpoint = True
 
         if len(parts) == 2:
-            command = parts[1].strip()  # take off whitespace
+            command = parts[1].strip() # take off whitespace
             new_breakpoint = parts[0].strip() != ""
 
         return (command, new_breakpoint)
@@ -86,7 +85,7 @@ class InlineTest(TestBase):
             return "-N dwarf %s" % (self.mydir)
         else:
             return "-N dsym %s" % (self.mydir)
-
+        
     def BuildMakefile(self):
         if os.path.exists("Makefile"):
             return
@@ -118,9 +117,9 @@ class InlineTest(TestBase):
             makefile.write("CXXFLAGS += -std=c++11\n")
 
         makefile.write("include $(LEVEL)/Makefile.rules\n")
-        makefile.write("\ncleanup:\n\trm -f Makefile *.d\n\n")
         makefile.flush()
         makefile.close()
+
 
     @skipUnlessDarwin
     def __test_with_dsym(self):
@@ -142,7 +141,7 @@ class InlineTest(TestBase):
         self.do_test()
 
     def execute_user_command(self, __command):
-        exec(__command, globals(), locals())
+        exec __command in globals(), locals()
 
     def do_test(self):
         exe_name = "a.out"
@@ -204,8 +203,6 @@ def MakeInlineTest(__file, __globals, decorators=None):
 
     # Add the test case to the globals, and hide InlineTest
     __globals.update({test_name : test})
-
-    # Store the name of the originating file.o
-    test.test_filename = __file
+    
     return test
 

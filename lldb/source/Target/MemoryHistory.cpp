@@ -1,4 +1,4 @@
-//===-- MemoryHistory.cpp ---------------------------------------*- C++ -*-===//
+//===-- MemoryHistory.cpp -------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,11 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-// C Includes
-// C++ Includes
-// Other libraries and framework includes
-// Project includes
 #include "lldb/Target/MemoryHistory.h"
+
 #include "lldb/Core/PluginManager.h"
 
 using namespace lldb;
@@ -20,12 +17,12 @@ using namespace lldb_private;
 lldb::MemoryHistorySP
 MemoryHistory::FindPlugin (const ProcessSP process)
 {
-    MemoryHistoryCreateInstance create_callback = nullptr;
+    MemoryHistoryCreateInstance create_callback = NULL;
     
-    for (uint32_t idx = 0; (create_callback = PluginManager::GetMemoryHistoryCreateCallbackAtIndex(idx)) != nullptr; ++idx)
+    for (uint32_t idx = 0; (create_callback = PluginManager::GetMemoryHistoryCreateCallbackAtIndex(idx)) != NULL; ++idx)
     {
         MemoryHistorySP memory_history_sp (create_callback (process));
-        if (memory_history_sp)
+        if (memory_history_sp.get())
             return memory_history_sp;
     }
     

@@ -6,9 +6,8 @@ from __future__ import print_function
 
 import os, sys, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class SBFormattersAPITestCase(TestBase):
 
@@ -291,8 +290,6 @@ class SBFormattersAPITestCase(TestBase):
         self.expect("frame variable e1", substrs=["I am an empty Empty1 {}"])
         self.expect("frame variable e2", substrs=["I am an empty Empty2"])
         self.expect("frame variable e2", substrs=["I am an empty Empty2 {}"], matching=False)
-        
-        self.assertTrue(self.dbg.GetCategory(lldb.eLanguageTypeObjC) is not None, "ObjC category is None")
 
     @add_test_categories(['pyapi'])
     def test_force_synth_off(self):

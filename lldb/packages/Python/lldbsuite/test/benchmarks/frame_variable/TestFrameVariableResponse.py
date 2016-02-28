@@ -6,9 +6,6 @@ from __future__ import print_function
 
 import os, sys
 import lldb
-from lldbsuite.test import configuration
-from lldbsuite.test import lldbtest_config
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbbench import *
 
 class FrameVariableResponseBench(BenchBase):
@@ -17,13 +14,22 @@ class FrameVariableResponseBench(BenchBase):
 
     def setUp(self):
         BenchBase.setUp(self)
-        self.exe = lldbtest_config.lldbExec
-        self.break_spec = '-n main'
-        self.count = 20
+        if lldb.bmExecutable:
+            self.exe = lldb.bmExecutable
+        else:
+            self.exe = lldbtest_config.lldbExec
+        if lldb.bmBreakpointSpec:
+            self.break_spec = lldb.bmBreakpointSpec
+        else:
+            self.break_spec = '-n main'
+
+        self.count = lldb.bmIterationCount
+        if self.count <= 0:
+            self.count = 20
 
     @benchmarks_test
     @no_debug_info_test
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr22274: need a pexpect replacement for windows")
+    @expectedFailureWindows("llvm.org/pr22274: need a pexpect replacement for windows")
     def test_startup_delay(self):
         """Test response time for the 'frame variable' command."""
         print()

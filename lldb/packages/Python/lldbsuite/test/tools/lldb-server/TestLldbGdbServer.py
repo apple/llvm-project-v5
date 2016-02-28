@@ -19,9 +19,7 @@ import gdbremote_testcase
 import lldbgdbserverutils
 import platform
 import signal
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
 
@@ -338,7 +336,6 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
         self.assert_valid_reg_info(lldbgdbserverutils.parse_reg_info_response(reg_info_packet))
 
     @debugserver_test
-    @expectedFailureDarwin("llvm.org/pr25486")
     def test_qRegisterInfo_returns_one_valid_result_debugserver(self):
         self.init_debugserver_test()
         self.build()
@@ -370,7 +367,6 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
             self.assert_valid_reg_info(reg_info)
 
     @debugserver_test
-    @expectedFailureDarwin("llvm.org/pr25486")
     def test_qRegisterInfo_returns_all_valid_results_debugserver(self):
         self.init_debugserver_test()
         self.build()
@@ -1232,7 +1228,6 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
         self.software_breakpoint_set_and_remove_work()
 
     @llgs_test
-    @expectedFlakeyLinux("llvm.org/pr25652")
     def test_software_breakpoint_set_and_remove_work_llgs(self):
         self.init_llgs_test()
         self.build()
@@ -1319,7 +1314,6 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
         self.written_M_content_reads_back_correctly()
 
     @llgs_test
-    @expectedFlakeyLinux("llvm.org/pr25652")
     def test_written_M_content_reads_back_correctly_llgs(self):
         self.init_llgs_test()
         self.build()

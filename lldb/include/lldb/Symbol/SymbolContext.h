@@ -244,9 +244,6 @@ public:
                      uint32_t range_idx, 
                      bool use_inline_block_range,
                      AddressRange &range) const;
-    
-    bool
-    GetAddressRangeFromHereToEndLine(uint32_t end_line, AddressRange &range, Error &error);
 
     void
     GetDescription(Stream *s, 
@@ -255,9 +252,6 @@ public:
     
     uint32_t
     GetResolvedMask () const;
-
-    lldb::LanguageType
-    GetLanguage () const;
 
     //------------------------------------------------------------------
     /// Find a block that defines the function represented by this

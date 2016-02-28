@@ -14,12 +14,10 @@
 
 #include "NativeProcessLinux.h"
 #include "NativeRegisterContextLinux.h"
-#include "SingleStepCheck.h"
 
 #include "lldb/Core/Log.h"
 #include "lldb/Core/State.h"
 #include "lldb/Host/HostNativeThread.h"
-#include "lldb/Host/linux/Ptrace.h"
 #include "lldb/Utility/LLDBAssert.h"
 #include "lldb/lldb-enumerations.h"
 
@@ -201,8 +199,8 @@ NativeThreadLinux::RemoveWatchpoint (lldb::addr_t addr)
     return Error ("Clearing hardware watchpoint failed.");
 }
 
-Error
-NativeThreadLinux::Resume(uint32_t signo)
+void
+NativeThreadLinux::SetRunning ()
 {
     const StateType new_state = StateType::eStateRunning;
     MaybeLogStateChange (new_state);
@@ -215,92 +213,29 @@ NativeThreadLinux::Resume(uint32_t signo)
     // then this is a new thread. So set all existing watchpoints.
     if (m_watchpoint_index_map.empty())
     {
-        NativeProcessLinux &process = GetProcess();
-
-        const auto &watchpoint_map = process.GetWatchpointMap();
-        GetRegisterContext()->ClearAllHardwareWatchpoints();
-        for (const auto &pair : watchpoint_map)
+        const auto process_sp = GetProcess();
+        if (process_sp)
         {
-            const auto &wp = pair.second;
-            SetWatchpoint(wp.m_addr, wp.m_size, wp.m_watch_flags, wp.m_hardware);
+            const auto &watchpoint_map = process_sp->GetWatchpointMap();
+            if (watchpoint_map.empty()) return;
+            GetRegisterContext()->ClearAllHardwareWatchpoints();
+            for (const auto &pair : watchpoint_map)
+            {
+                const auto& wp = pair.second;
+                SetWatchpoint(wp.m_addr, wp.m_size, wp.m_watch_flags, wp.m_hardware);
+            }
         }
-    }
-
-    intptr_t data = 0;
-
-    if (signo != LLDB_INVALID_SIGNAL_NUMBER)
-        data = signo;
-
-    return NativeProcessLinux::PtraceWrapper(PTRACE_CONT, GetID(), nullptr, reinterpret_cast<void *>(data));
-}
-
-void
-NativeThreadLinux::MaybePrepareSingleStepWorkaround()
-{
-    if (!SingleStepWorkaroundNeeded())
-        return;
-
-    Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_THREAD));
-
-    if (sched_getaffinity(static_cast<::pid_t>(m_tid), sizeof m_original_cpu_set, &m_original_cpu_set) != 0)
-    {
-        // This should really not fail. But, just in case...
-        if (log)
-        {
-            Error error(errno, eErrorTypePOSIX);
-            log->Printf("NativeThreadLinux::%s Unable to get cpu affinity for thread %" PRIx64 ": %s", __FUNCTION__,
-                        m_tid, error.AsCString());
-        }
-        return;
-    }
-
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    CPU_SET(0, &set);
-    if (sched_setaffinity(static_cast<::pid_t>(m_tid), sizeof set, &set) != 0 && log)
-    {
-        // This may fail in very locked down systems, if the thread is not allowed to run on
-        // cpu 0. If that happens, only thing we can do is it log it and continue...
-        Error error(errno, eErrorTypePOSIX);
-        log->Printf("NativeThreadLinux::%s Unable to set cpu affinity for thread %" PRIx64 ": %s", __FUNCTION__, m_tid,
-                    error.AsCString());
     }
 }
 
 void
-NativeThreadLinux::MaybeCleanupSingleStepWorkaround()
-{
-    if (!SingleStepWorkaroundNeeded())
-        return;
-
-    if (sched_setaffinity(static_cast<::pid_t>(m_tid), sizeof m_original_cpu_set, &m_original_cpu_set) != 0)
-    {
-        Error error(errno, eErrorTypePOSIX);
-        Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_THREAD));
-        log->Printf("NativeThreadLinux::%s Unable to reset cpu affinity for thread %" PRIx64 ": %s", __FUNCTION__,
-                    m_tid, error.AsCString());
-    }
-}
-
-Error
-NativeThreadLinux::SingleStep(uint32_t signo)
+NativeThreadLinux::SetStepping ()
 {
     const StateType new_state = StateType::eStateStepping;
     MaybeLogStateChange (new_state);
     m_state = new_state;
+
     m_stop_info.reason = StopReason::eStopReasonNone;
-
-    MaybePrepareSingleStepWorkaround();
-
-    intptr_t data = 0;
-    if (signo != LLDB_INVALID_SIGNAL_NUMBER)
-        data = signo;
-
-    // If hardware single-stepping is not supported, we just do a continue. The breakpoint on the
-    // next instruction has been setup in NativeProcessLinux::Resume.
-    return NativeProcessLinux::PtraceWrapper(GetProcess().SupportHardwareSingleStepping() ? PTRACE_SINGLESTEP
-                                                                                          : PTRACE_CONT,
-                                             m_tid, nullptr, reinterpret_cast<void *>(data));
 }
 
 void
@@ -310,7 +245,9 @@ NativeThreadLinux::SetStoppedBySignal(uint32_t signo, const siginfo_t *info)
     if (log)
         log->Printf ("NativeThreadLinux::%s called with signal 0x%02" PRIx32, __FUNCTION__, signo);
 
-    SetStopped();
+    const StateType new_state = StateType::eStateStopped;
+    MaybeLogStateChange (new_state);
+    m_state = new_state;
 
     m_stop_info.reason = StopReason::eStopReasonSignal;
     m_stop_info.details.signal.signo = signo;
@@ -351,17 +288,6 @@ NativeThreadLinux::IsStopped (int *signo)
     return true;
 }
 
-void
-NativeThreadLinux::SetStopped()
-{
-    if (m_state == StateType::eStateStepping)
-        MaybeCleanupSingleStepWorkaround();
-
-    const StateType new_state = StateType::eStateStopped;
-    MaybeLogStateChange(new_state);
-    m_state = new_state;
-    m_stop_description.clear();
-}
 
 void
 NativeThreadLinux::SetStoppedByExec ()
@@ -370,7 +296,9 @@ NativeThreadLinux::SetStoppedByExec ()
     if (log)
         log->Printf ("NativeThreadLinux::%s()", __FUNCTION__);
 
-    SetStopped();
+    const StateType new_state = StateType::eStateStopped;
+    MaybeLogStateChange (new_state);
+    m_state = new_state;
 
     m_stop_info.reason = StopReason::eStopReasonExec;
     m_stop_info.details.signal.signo = SIGSTOP;
@@ -379,7 +307,9 @@ NativeThreadLinux::SetStoppedByExec ()
 void
 NativeThreadLinux::SetStoppedByBreakpoint ()
 {
-    SetStopped();
+    const StateType new_state = StateType::eStateStopped;
+    MaybeLogStateChange (new_state);
+    m_state = new_state;
 
     m_stop_info.reason = StopReason::eStopReasonBreakpoint;
     m_stop_info.details.signal.signo = SIGTRAP;
@@ -389,7 +319,10 @@ NativeThreadLinux::SetStoppedByBreakpoint ()
 void
 NativeThreadLinux::SetStoppedByWatchpoint (uint32_t wp_index)
 {
-    SetStopped();
+    const StateType new_state = StateType::eStateStopped;
+    MaybeLogStateChange (new_state);
+    m_state = new_state;
+    m_stop_description.clear ();
 
     lldbassert(wp_index != LLDB_INVALID_INDEX32 &&
                "wp_index cannot be invalid");
@@ -430,7 +363,9 @@ NativeThreadLinux::IsStoppedAtWatchpoint ()
 void
 NativeThreadLinux::SetStoppedByTrace ()
 {
-    SetStopped();
+    const StateType new_state = StateType::eStateStopped;
+    MaybeLogStateChange (new_state);
+    m_state = new_state;
 
     m_stop_info.reason = StopReason::eStopReasonTrace;
     m_stop_info.details.signal.signo = SIGTRAP;
@@ -439,7 +374,9 @@ NativeThreadLinux::SetStoppedByTrace ()
 void
 NativeThreadLinux::SetStoppedWithNoReason ()
 {
-    SetStopped();
+    const StateType new_state = StateType::eStateStopped;
+    MaybeLogStateChange (new_state);
+    m_state = new_state;
 
     m_stop_info.reason = StopReason::eStopReasonNone;
     m_stop_info.details.signal.signo = 0;
@@ -460,9 +397,11 @@ NativeThreadLinux::RequestStop ()
 {
     Log* log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
 
-    NativeProcessLinux &process = GetProcess();
+    const auto process_sp = GetProcess();
+    if (! process_sp)
+        return Error("Process is null.");
 
-    lldb::pid_t pid = process.GetID();
+    lldb::pid_t pid = process_sp->GetID();
     lldb::tid_t tid = GetID();
 
     if (log)
@@ -498,12 +437,4 @@ NativeThreadLinux::MaybeLogStateChange (lldb::StateType new_state)
 
     // Log it.
     log->Printf ("NativeThreadLinux: thread (pid=%" PRIu64 ", tid=%" PRIu64 ") changing from state %s to %s", pid, GetID (), StateAsCString (old_state), StateAsCString (new_state));
-}
-
-NativeProcessLinux &
-NativeThreadLinux::GetProcess()
-{
-    auto process_sp = std::static_pointer_cast<NativeProcessLinux>(NativeThreadProtocol::GetProcess());
-    assert(process_sp);
-    return *process_sp;
 }

@@ -33,7 +33,6 @@
 #include "Plugins/Platform/Linux/PlatformLinux.h"
 #include "Plugins/Platform/MacOSX/PlatformMacOSX.h"
 #include "Plugins/Platform/MacOSX/PlatformRemoteiOS.h"
-#include "Plugins/Platform/NetBSD/PlatformNetBSD.h"
 #include "Plugins/Platform/Windows/PlatformWindows.h"
 #include "Plugins/Process/gdb-remote/ProcessGDBRemoteLog.h"
 
@@ -97,6 +96,7 @@ SystemInitializerCommon::Initialize()
 
     Log::Initialize();
     HostInfo::Initialize();
+    Timer::Initialize();
     Timer scoped_timer(__PRETTY_FUNCTION__, __PRETTY_FUNCTION__);
 
     llvm::install_fatal_error_handler(fatal_error_handler, 0);
@@ -114,7 +114,6 @@ SystemInitializerCommon::Initialize()
     DynamicLoaderWindowsDYLD::Initialize();
     platform_freebsd::PlatformFreeBSD::Initialize();
     platform_linux::PlatformLinux::Initialize();
-    platform_netbsd::PlatformNetBSD::Initialize();
     PlatformWindows::Initialize();
     PlatformKalimba::Initialize();
     platform_android::PlatformAndroid::Initialize();
@@ -162,7 +161,6 @@ SystemInitializerCommon::Terminate()
     DynamicLoaderWindowsDYLD::Terminate();
     platform_freebsd::PlatformFreeBSD::Terminate();
     platform_linux::PlatformLinux::Terminate();
-    platform_netbsd::PlatformNetBSD::Terminate();
     PlatformWindows::Terminate();
     PlatformKalimba::Terminate();
     platform_android::PlatformAndroid::Terminate();
@@ -194,6 +192,5 @@ SystemInitializerCommon::Terminate()
 #endif
     OperatingSystemGo::Terminate();
 
-    HostInfo::Terminate();
     Log::Terminate();
 }

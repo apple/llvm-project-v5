@@ -8,9 +8,8 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
+import lldbsuite.test.lldbutil as lldbutil
 
 class CategoriesDataFormatterTestCase(TestBase):
 
@@ -321,10 +320,7 @@ class CategoriesDataFormatterTestCase(TestBase):
         # Now delete all categories
         self.runCmd("type category delete CircleCategory RectangleStarCategory BaseCategory RectangleCategory")
 
-        # check that a deleted category with filter does not blow us up
+        # last of all, check that a deleted category with filter does not blow us up
         self.expect('frame variable r2',
                     substrs = ['w = 9',
                                'h = 16'])
-
-        # and also validate that one can print formatters for a language
-        self.expect('type summary list -l c++', substrs=['vector', 'map', 'list', 'string'])

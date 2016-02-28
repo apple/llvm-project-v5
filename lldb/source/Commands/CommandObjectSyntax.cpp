@@ -7,13 +7,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CommandObjectSyntax.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "CommandObjectSyntax.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/Options.h"
+
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/CommandObjectMultiword.h"
@@ -45,7 +47,10 @@ CommandObjectSyntax::CommandObjectSyntax (CommandInterpreter &interpreter) :
     m_arguments.push_back (arg);
 }
 
-CommandObjectSyntax::~CommandObjectSyntax() = default;
+CommandObjectSyntax::~CommandObjectSyntax()
+{
+}
+
 
 bool
 CommandObjectSyntax::DoExecute (Args& command, CommandReturnObject &result)
@@ -77,10 +82,10 @@ CommandObjectSyntax::DoExecute (Args& command, CommandReturnObject &result)
             }
         }
         
-        if (all_okay && (cmd_obj != nullptr))
+        if (all_okay && (cmd_obj != NULL))
         {
             Stream &output_strm = result.GetOutputStream();
-            if (cmd_obj->GetOptions() != nullptr)
+            if (cmd_obj->GetOptions() != NULL)
             {
                 output_strm.Printf ("\nSyntax: %s\n", cmd_obj->GetSyntax());
                 output_strm.Printf ("(Try 'help %s' for more information on command options syntax.)\n",

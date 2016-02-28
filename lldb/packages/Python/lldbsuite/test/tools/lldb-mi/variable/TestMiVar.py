@@ -7,9 +7,7 @@ from __future__ import print_function
 
 
 import lldbmi_testcase
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class MiVarTestCase(lldbmi_testcase.MiTestCaseBase):
 
@@ -17,6 +15,7 @@ class MiVarTestCase(lldbmi_testcase.MiTestCaseBase):
 
     @skipIfWindows #llvm.org/pr24452: Get lldb-mi tests working on Windows
     @skipIfFreeBSD # llvm.org/pr22411: Failure presumably due to known thread races
+    @expectedFailureAll("llvm.org/pr23560", oslist=["linux"], compiler="gcc", compiler_version=[">=","4.9"], archs=["i386"])
     def test_lldbmi_eval(self):
         """Test that 'lldb-mi --interpreter' works for evaluating."""
 
@@ -38,7 +37,7 @@ class MiVarTestCase(lldbmi_testcase.MiTestCaseBase):
         self.runCmd("-var-create var1 * undef")
         self.expect("\^error,msg=\"error: error: use of undeclared identifier \'undef\'\\\\nerror: 1 errors parsing expression\\\\n\"")
         self.runCmd("-data-evaluate-expression undef")
-        self.expect("\^error,msg=\"error: use of undeclared identifier \'undef\'\\\\nerror: 1 errors parsing expression\\\\n\"")
+        self.expect("\^error,msg=\"Could not evaluate expression\"")
 
         # Print global "g_MyVar", modify, delete and create again
         self.runCmd("-data-evaluate-expression g_MyVar")
@@ -50,9 +49,6 @@ class MiVarTestCase(lldbmi_testcase.MiTestCaseBase):
         self.runCmd("-var-show-attributes var2")
         self.expect("\^done,status=\"editable\"")
         self.runCmd("-var-list-children var2")
-        self.expect("\^done,numchild=\"0\",has_more=\"0\"")
-        # Ensure -var-list-children also works with quotes
-        self.runCmd("-var-list-children \"var2\"")
         self.expect("\^done,numchild=\"0\",has_more=\"0\"")
         self.runCmd("-data-evaluate-expression \"g_MyVar=30\"")
         self.expect("\^done,value=\"30\"")

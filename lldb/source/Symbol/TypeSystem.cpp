@@ -55,12 +55,6 @@ TypeSystem::CreateInstance (lldb::LanguageType language, Target *target)
     return lldb::TypeSystemSP();
 }
 
-bool
-TypeSystem::IsAnonymousType (lldb::opaque_compiler_type_t type)
-{
-    return false;
-}
-
 CompilerType
 TypeSystem::GetLValueReferenceType (lldb::opaque_compiler_type_t type)
 {
@@ -110,7 +104,7 @@ TypeSystem::GetTypeForFormatters (void* type)
 }
 
 LazyBool
-TypeSystem::ShouldPrintAsOneLiner (void* type, ValueObject* valobj)
+TypeSystem::ShouldPrintAsOneLiner (void* type)
 {
     return eLazyBoolCalculate;
 }
@@ -121,52 +115,11 @@ TypeSystem::IsMeaninglessWithoutDynamicResolution (void* type)
     return false;
 }
 
-ConstString
-TypeSystem::DeclGetMangledName (void *opaque_decl)
-{
-    return ConstString();
-}
-
-CompilerDeclContext
-TypeSystem::DeclGetDeclContext (void *opaque_decl)
-{
-    return CompilerDeclContext();
-}
-
-CompilerType
-TypeSystem::DeclGetFunctionReturnType(void *opaque_decl)
-{
-    return CompilerType();
-}
-
-size_t
-TypeSystem::DeclGetFunctionNumArguments(void *opaque_decl)
-{
-    return 0;
-}
-
-CompilerType
-TypeSystem::DeclGetFunctionArgumentType (void *opaque_decl, size_t arg_idx)
-{
-    return CompilerType();
-}
-
-
-std::vector<CompilerDecl>
-TypeSystem::DeclContextFindDeclByName (void *opaque_decl_ctx,
-                                       ConstString name,
-                                       bool ignore_imported_decls)
-{
-    return std::vector<CompilerDecl>();
-}
-
-
 #pragma mark TypeSystemMap
 
 TypeSystemMap::TypeSystemMap() :
     m_mutex (),
-    m_map (),
-    m_clear_in_progress(false)
+    m_map ()
 {
 }
 
@@ -177,28 +130,8 @@ TypeSystemMap::~TypeSystemMap()
 void
 TypeSystemMap::Clear ()
 {
-    collection map;
-    {
-        Mutex::Locker locker (m_mutex);
-        map = m_map;
-        m_clear_in_progress = true;
-    }
-    std::set<TypeSystem *> visited;
-    for (auto pair : map)
-    {
-        TypeSystem *type_system = pair.second.get();
-        if (type_system && !visited.count(type_system))
-        {
-            visited.insert(type_system);
-            type_system->Finalize();
-        }
-    }
-    map.clear();
-    {
-        Mutex::Locker locker (m_mutex);
-        m_map.clear();
-        m_clear_in_progress = false;
-    }
+    Mutex::Locker locker (m_mutex);
+    m_map.clear();
 }
 
 
@@ -235,7 +168,7 @@ TypeSystemMap::GetTypeSystemForLanguage (lldb::LanguageType language, Module *mo
         {
             // Add a new mapping for "language" to point to an already existing
             // TypeSystem that supports this language
-            AddToMap(language, pair.second);
+            m_map[language] = pair.second;
             return pair.second.get();
         }
     }
@@ -245,7 +178,7 @@ TypeSystemMap::GetTypeSystemForLanguage (lldb::LanguageType language, Module *mo
 
     // Cache even if we get a shared pointer that contains null type system back
     lldb::TypeSystemSP type_system_sp = TypeSystem::CreateInstance (language, module);
-    AddToMap (language, type_system_sp);
+    m_map[language] = type_system_sp;
     return type_system_sp.get();
 }
 
@@ -263,8 +196,7 @@ TypeSystemMap::GetTypeSystemForLanguage (lldb::LanguageType language, Target *ta
         {
             // Add a new mapping for "language" to point to an already existing
             // TypeSystem that supports this language
-
-            AddToMap(language, pair.second);
+            m_map[language] = pair.second;
             return pair.second.get();
         }
     }
@@ -273,17 +205,7 @@ TypeSystemMap::GetTypeSystemForLanguage (lldb::LanguageType language, Target *ta
         return nullptr;
 
     // Cache even if we get a shared pointer that contains null type system back
-    lldb::TypeSystemSP type_system_sp;
-    if (!m_clear_in_progress)
-        type_system_sp = TypeSystem::CreateInstance (language, target);
-
-    AddToMap(language, type_system_sp);
+    lldb::TypeSystemSP type_system_sp = TypeSystem::CreateInstance (language, target);
+    m_map[language] = type_system_sp;
     return type_system_sp.get();
-}
-
-void
-TypeSystemMap::AddToMap (lldb::LanguageType language, lldb::TypeSystemSP const &type_system_sp)
-{
-    if (!m_clear_in_progress)
-        m_map[language] = type_system_sp;
 }

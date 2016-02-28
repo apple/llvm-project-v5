@@ -8,10 +8,7 @@ from __future__ import print_function
 
 import os
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import configuration
-from lldbsuite.test import lldbutil
 
 class StopHookMechanismTestCase(TestBase):
 
@@ -28,7 +25,7 @@ class StopHookMechanismTestCase(TestBase):
 
     @skipIfFreeBSD # llvm.org/pr15037
     @expectedFlakeyLinux('llvm.org/pr15037') # stop-hooks sometimes fail to fire on Linux
-    @expectedFailureAll(hostoslist=["windows"], bugnumber="llvm.org/pr22274: need a pexpect replacement for windows")
+    @expectedFailureHostWindows("llvm.org/pr22274: need a pexpect replacement for windows")
     def test(self):
         """Test the stop-hook mechanism."""
         self.build()
@@ -50,9 +47,9 @@ class StopHookMechanismTestCase(TestBase):
             child.expect_exact(prompt)
             child.sendline('platform select %s' % lldb.remote_platform.GetName())
             child.expect_exact(prompt)
-            child.sendline('platform connect %s' % configuration.lldb_platform_url)
+            child.sendline('platform connect %s' % lldb.platform_url)
             child.expect_exact(prompt)
-            child.sendline('platform settings -w %s' % configuration.lldb_platform_working_dir)
+            child.sendline('platform settings -w %s' % lldb.remote_platform_working_dir)
 
         child.expect_exact(prompt)
         child.sendline('target create %s' % exe)

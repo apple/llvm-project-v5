@@ -16,7 +16,6 @@
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/SymbolContext.h"
-#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/TypeList.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
@@ -123,13 +122,11 @@ ObjCLanguageRuntime::LookupInCompleteClassCache (ConstString &name)
         const bool exact_match = true;
         const uint32_t max_matches = UINT32_MAX;
         TypeList types;
-
-        llvm::DenseSet<SymbolFile *> searched_symbol_files;
+        
         const uint32_t num_types = module_sp->FindTypes (null_sc,
                                                          name,
                                                          exact_match,
                                                          max_matches,
-                                                         searched_symbol_files,
                                                          types);
         
         if (num_types)
@@ -429,7 +426,7 @@ ObjCLanguageRuntime::ObjCExceptionPrecondition::EvaluatePrecondition(StoppointCa
 }
 
 void
-ObjCLanguageRuntime::ObjCExceptionPrecondition::GetDescription(Stream &stream, lldb::DescriptionLevel level)
+ObjCLanguageRuntime::ObjCExceptionPrecondition::DescribePrecondition(Stream &stream, lldb::DescriptionLevel level)
 {
 }
 

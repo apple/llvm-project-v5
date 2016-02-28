@@ -10,9 +10,7 @@ from __future__ import print_function
 
 import os, time
 import lldb
-from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class HelpCommandTestCase(TestBase):
 
@@ -136,7 +134,7 @@ class HelpCommandTestCase(TestBase):
 
     @no_debug_info_test
     def test_help_image_du_line_should_work(self):
-        """Command 'help image du line-table' is not ambiguous and should work."""
+        """Command 'help image du line' is not ambiguous and should work."""
         # 'image' is an alias for 'target modules'.
         self.expect("help image du line",
             substrs = ['Dump the line table for one or more compilation units'])

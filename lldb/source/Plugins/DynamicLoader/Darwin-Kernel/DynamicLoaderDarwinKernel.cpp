@@ -254,29 +254,27 @@ DynamicLoaderDarwinKernel::SearchForKernelWithDebugHints (Process *process)
 
     Error read_err;
     addr_t addr = LLDB_INVALID_ADDRESS;
-    addr_t kernel_addresses_64[] = { 0xffffff8000002010ULL, 0xffffff8000004010ULL, 
-                                     0xfffffff000002010ULL, 0xfffffff000004010ULL, 
-                                     LLDB_INVALID_ADDRESS };
-    addr_t kernel_addresses_32[] = { 0xffff0110,
-                                     LLDB_INVALID_ADDRESS };
-    for (size_t i = 0; kernel_addresses_64[i] != LLDB_INVALID_ADDRESS; i++)
+    if (process->GetTarget().GetArchitecture().GetAddressByteSize() == 8)
     {
-        addr = process->ReadUnsignedIntegerFromMemory (kernel_addresses_64[i], 8, LLDB_INVALID_ADDRESS, read_err);
+        addr = process->ReadUnsignedIntegerFromMemory (0xffffff8000002010ULL, 8, LLDB_INVALID_ADDRESS, read_err);
+        if (CheckForKernelImageAtAddress (addr, process).IsValid())
+        {
+            return addr;
+        }
+        addr = process->ReadUnsignedIntegerFromMemory (0xffffff8000004010ULL, 8, LLDB_INVALID_ADDRESS, read_err);
         if (CheckForKernelImageAtAddress (addr, process).IsValid())
         {
             return addr;
         }
     }
-
-    for (size_t i = 0; kernel_addresses_32[i] != LLDB_INVALID_ADDRESS; i++)
+    else
     {
-        addr = process->ReadUnsignedIntegerFromMemory (kernel_addresses_32[i], 4, LLDB_INVALID_ADDRESS, read_err);
+        addr = process->ReadUnsignedIntegerFromMemory (0xffff0110, 4, LLDB_INVALID_ADDRESS, read_err);
         if (CheckForKernelImageAtAddress (addr, process).IsValid())
         {
             return addr;
         }
     }
-
     return LLDB_INVALID_ADDRESS;
 }
 
@@ -303,14 +301,28 @@ DynamicLoaderDarwinKernel::SearchForKernelNearPC (Process *process)
     if (pc == LLDB_INVALID_ADDRESS)
         return LLDB_INVALID_ADDRESS;
 
+    addr_t kernel_range_low;
+    if (process->GetTarget().GetArchitecture().GetAddressByteSize() == 8)
+    {
+        kernel_range_low = 1ULL << 63;
+    }
+    else
+    {
+        kernel_range_low = 1ULL << 31;
+    }
+
+    // Outside the normal kernel address range, this is probably userland code running right now
+    if (pc < kernel_range_low)
+        return LLDB_INVALID_ADDRESS;
+
     // The kernel will load at at one megabyte boundary (0x100000), or at that boundary plus 
-    // an offset of one page (0x1000) or two, or four (0x4000), depending on the device.
+    // an offset of one page (0x1000) or two, depending on the device.
 
     // Round the current pc down to the nearest one megabyte boundary - the place where we will start searching.
     addr_t addr = pc & ~0xfffff;
 
-    // Search backwards 32 megabytes, looking for the start of the kernel at each one-megabyte boundary.
-    for (int i = 0; i < 32; i++, addr -= 0x100000)
+    int i = 0;
+    while (i < 32 && pc >= kernel_range_low)
     {
         if (CheckForKernelImageAtAddress (addr, process).IsValid())
             return addr;
@@ -320,6 +332,8 @@ DynamicLoaderDarwinKernel::SearchForKernelNearPC (Process *process)
             return addr + 0x2000;
         if (CheckForKernelImageAtAddress (addr + 0x4000, process).IsValid())
             return addr + 0x4000;
+        i++;
+        addr -= 0x100000;
     }
 
     return LLDB_INVALID_ADDRESS;
@@ -383,12 +397,8 @@ DynamicLoaderDarwinKernel::SearchForKernelViaExhaustiveSearch (Process *process)
 lldb_private::UUID
 DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress (lldb::addr_t addr, Process *process)
 {
-    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER));
     if (addr == LLDB_INVALID_ADDRESS)
         return UUID();
-
-    if (log)
-        log->Printf ("DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress: looking for kernel binary at 0x%" PRIx64, addr);
 
     // First try a quick test -- read the first 4 bytes and see if there is a valid Mach-O magic field there
     // (the first field of the mach_header/mach_header_64 struct).
@@ -405,19 +415,19 @@ DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress (lldb::addr_t addr, Proc
 
     // Read the mach header and see whether it looks like a kernel
     llvm::MachO::mach_header header;
-    if (process->DoReadMemory (addr, &header, sizeof (header), read_error) != sizeof (header))
+    if (process->DoReadMemory (addr, &header, sizeof(header), read_error) != sizeof(header))
         return UUID();
 
     if (header.magic == llvm::MachO::MH_CIGAM ||
         header.magic == llvm::MachO::MH_CIGAM_64)
     {
-        header.magic        = llvm::ByteSwap_32 (header.magic);
-        header.cputype      = llvm::ByteSwap_32 (header.cputype);
-        header.cpusubtype   = llvm::ByteSwap_32 (header.cpusubtype);
-        header.filetype     = llvm::ByteSwap_32 (header.filetype);
-        header.ncmds        = llvm::ByteSwap_32 (header.ncmds);
-        header.sizeofcmds   = llvm::ByteSwap_32 (header.sizeofcmds);
-        header.flags        = llvm::ByteSwap_32 (header.flags);
+        header.magic        = llvm::ByteSwap_32(header.magic);
+        header.cputype      = llvm::ByteSwap_32(header.cputype);
+        header.cpusubtype   = llvm::ByteSwap_32(header.cpusubtype);
+        header.filetype     = llvm::ByteSwap_32(header.filetype);
+        header.ncmds        = llvm::ByteSwap_32(header.ncmds);
+        header.sizeofcmds   = llvm::ByteSwap_32(header.sizeofcmds);
+        header.flags        = llvm::ByteSwap_32(header.flags);
     }
 
     // A kernel is an executable which does not have the dynamic link object flag set.
@@ -440,8 +450,6 @@ DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress (lldb::addr_t addr, Proc
             {
                 process->GetTarget().SetArchitecture (kernel_arch);
             }
-            if (log)
-                log->Printf ("DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress: kernel binary image found at 0x%" PRIx64, addr);
             return memory_module_sp->GetUUID();
         }
     }
@@ -999,7 +1007,7 @@ DynamicLoaderDarwinKernel::KextImageInfo::GetByteOrder()
         return m_memory_module_sp->GetArchitecture().GetByteOrder();
     if (m_module_sp)
         return m_module_sp->GetArchitecture().GetByteOrder();
-    return endian::InlHostByteOrder();
+    return lldb::endian::InlHostByteOrder();
 }
 
 lldb_private::ArchSpec
@@ -1673,11 +1681,11 @@ DynamicLoaderDarwinKernel::GetByteOrderFromMagic (uint32_t magic)
     {
         case llvm::MachO::MH_MAGIC:
         case llvm::MachO::MH_MAGIC_64:
-            return endian::InlHostByteOrder();
+            return lldb::endian::InlHostByteOrder();
             
         case llvm::MachO::MH_CIGAM:
         case llvm::MachO::MH_CIGAM_64:
-            if (endian::InlHostByteOrder() == lldb::eByteOrderBig)
+            if (lldb::endian::InlHostByteOrder() == lldb::eByteOrderBig)
                 return lldb::eByteOrderLittle;
             else
                 return lldb::eByteOrderBig;

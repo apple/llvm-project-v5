@@ -21,7 +21,6 @@
 #include "lldb/lldb-private.h"
 #include "lldb/Host/Mutex.h"
 #include "lldb/Utility/Iterable.h"
-#include "llvm/ADT/DenseSet.h"
 
 namespace lldb_private {
 
@@ -451,7 +450,6 @@ public:
                const ConstString &name,
                bool name_is_fully_qualified,
                size_t max_matches,
-               llvm::DenseSet<SymbolFile *> &searched_symbol_files,
                TypeList& types) const;
     
     bool

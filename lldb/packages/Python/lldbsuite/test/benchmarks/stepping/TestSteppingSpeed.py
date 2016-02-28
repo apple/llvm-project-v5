@@ -2,14 +2,11 @@
 
 from __future__ import print_function
 
+
+
 import os, sys
 import lldb
-from lldbsuite.test import configuration
-from lldbsuite.test import lldbtest_config
 from lldbsuite.test.lldbbench import *
-from lldbsuite.test.decorators import *
-from lldbsuite.test.lldbtest import *
-from lldbsuite.test import lldbutil
 
 class SteppingSpeedBench(BenchBase):
 
@@ -17,16 +14,25 @@ class SteppingSpeedBench(BenchBase):
 
     def setUp(self):
         BenchBase.setUp(self)
-        self.exe = lldbtest_config.lldbExec
-        self.break_spec = '-n main'
-        self.count = 50
+        if lldb.bmExecutable:
+            self.exe = lldb.bmExecutable
+        else:
+            self.exe = lldbtest_config.lldbExec
+        if lldb.bmBreakpointSpec:
+            self.break_spec = lldb.bmBreakpointSpec
+        else:
+            self.break_spec = '-n main'
+
+        self.count = lldb.bmIterationCount
+        if self.count <= 0:
+            self.count = 50
 
         #print("self.exe=%s" % self.exe)
         #print("self.break_spec=%s" % self.break_spec)
 
     @benchmarks_test
     @no_debug_info_test
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr22274: need a pexpect replacement for windows")
+    @expectedFailureWindows("llvm.org/pr22274: need a pexpect replacement for windows")
     def test_run_lldb_steppings(self):
         """Test lldb steppings on a large executable."""
         print()
